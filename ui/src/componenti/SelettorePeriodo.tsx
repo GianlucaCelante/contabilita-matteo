@@ -53,32 +53,54 @@ function PeriodoLibero({ da, a, imposta }: { da: string; a: string; imposta: (da
 // Settimana / Mese / Anno / Periodo con le frecce e l'etichetta del periodo.
 // Per il periodo libero compaiono due campi data (anche sul telefono, dove
 // vanno a capo). `conPeriodoLibero={false}` nasconde la scelta «Periodo».
-export default function SelettorePeriodo({ periodo, conPeriodoLibero = true }: { periodo: StatoPeriodo; conPeriodoLibero?: boolean }) {
-  const { tipo, intervallo, etichetta, imposta, sposta, impostaLibero } = periodo;
+export default function SelettorePeriodo({
+  periodo,
+  conPeriodoLibero = true,
+  senzaNavigatore = false,
+  className = "flex-wrap items-center gap-x-4 gap-y-2",
+}: {
+  periodo: StatoPeriodo;
+  conPeriodoLibero?: boolean;
+  senzaNavigatore?: boolean;
+  className?: string;
+}) {
+  const { tipo, imposta } = periodo;
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <div className="segmenti" role="group" aria-label="Tipo di periodo">
+    <div className={"flex max-md:flex-col max-md:items-stretch max-md:gap-3 " + className}>
+      <div className="segmenti max-md:flex max-md:h-11 max-md:min-h-0" role="group" aria-label="Tipo di periodo">
         {SEGMENTI.map(({ tipo: t, etichetta: e }) => (
-          <button key={t} type="button" aria-pressed={tipo === t} onClick={() => imposta(t)} className={t === "periodo" && !conPeriodoLibero ? "hidden" : undefined}>
+          <button
+            key={t}
+            type="button"
+            aria-pressed={tipo === t}
+            onClick={() => imposta(t)}
+            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[14px]"}
+          >
             {e}
           </button>
         ))}
       </div>
-      {tipo === "periodo" ? (
-        <PeriodoLibero da={intervallo.da} a={intervallo.a} imposta={impostaLibero} />
-      ) : (
-        <div className="flex items-center gap-1">
-          <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
-            <IconaSinistra larghezza={20} spessoreTratto={2} />
-          </button>
-          <span className="px-3 font-titolo text-[18px] font-semibold" aria-live="polite">
-            {etichetta}
-          </span>
-          <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
-            <IconaDestra larghezza={20} spessoreTratto={2} />
-          </button>
-        </div>
-      )}
+      {!senzaNavigatore && <NavigatorePeriodo periodo={periodo} />}
+    </div>
+  );
+}
+
+// Le frecce con l'etichetta del periodo, oppure i due campi data per il periodo
+// libero. Sul telefono le frecce stanno ai lati e l'etichetta al centro.
+export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoPeriodo; className?: string }) {
+  const { tipo, intervallo, etichetta, sposta, impostaLibero } = periodo;
+  if (tipo === "periodo") return <PeriodoLibero da={intervallo.da} a={intervallo.a} imposta={impostaLibero} />;
+  return (
+    <div className={"flex items-center gap-1 max-md:w-full max-md:justify-between " + className}>
+      <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
+        <IconaSinistra larghezza={20} spessoreTratto={2} />
+      </button>
+      <span className="px-3 text-center font-titolo text-[17px] font-semibold md:text-[18px]" aria-live="polite">
+        {etichetta}
+      </span>
+      <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
+        <IconaDestra larghezza={20} spessoreTratto={2} />
+      </button>
     </div>
   );
 }

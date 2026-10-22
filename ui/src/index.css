@@ -143,7 +143,7 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     background: var(--color-carta); min-height: 48px; flex-shrink: 0;
   }
   .segmenti > button, .segmenti > a {
-    padding: 0 16px; display: flex; align-items: center; font-size: 15px; font-weight: 700;
+    padding: 0 18px; display: flex; align-items: center; font-size: 15px; font-weight: 700;
     color: var(--color-spento); text-decoration: none; min-height: 44px; white-space: nowrap;
   }
   .segmenti > [aria-pressed="true"], .segmenti > [aria-current="page"] { background: var(--color-testo); color: #fff; }
