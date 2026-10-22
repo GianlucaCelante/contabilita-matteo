@@ -22,3 +22,6 @@ ui/dist/
 
 # File generati dalla build TypeScript
 *.tsbuildinfo
+
+# Worktree degli agenti
+.claude/worktrees/
