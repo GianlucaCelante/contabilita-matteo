@@ -65,7 +65,7 @@ export default function Esporta() {
           <section className="scheda flex min-w-0 flex-col gap-6 px-5 py-5 md:px-6" aria-label="Cosa esportare">
             <div>
               <div className="etichettaMaiuscola mb-2">Periodo</div>
-              <SelettorePeriodo periodo={periodo} conPeriodoLibero={false} />
+              <SelettorePeriodo periodo={periodo} />
             </div>
 
             <Gruppo titolo="Cosa includere">

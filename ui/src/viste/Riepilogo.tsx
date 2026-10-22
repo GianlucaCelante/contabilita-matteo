@@ -70,7 +70,7 @@ export default function Riepilogo() {
       <Testata titolo="Riepilogo" azioni={<PulsanteNuovoMovimento />} />
       <div className="px-4 pb-24 md:px-8 md:pb-8">
         <div className="pb-4">
-          <SelettorePeriodo periodo={periodo} conPeriodoLibero={false} />
+          <SelettorePeriodo periodo={periodo} />
         </div>
 
         {q.isPending && <Caricamento />}
