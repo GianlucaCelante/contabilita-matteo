@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, messaggioErrore } from "../api/client";
 import type { Tipo } from "../api/tipi";
+import { apiAllegati } from "../api/allegati";
+import CampoAllegato from "../componenti/CampoAllegato";
 import ConfermaUscita from "../componenti/ConfermaUscita";
 import FormMovimento from "../componenti/FormMovimento";
 import SelettoreModalita from "../componenti/SelettoreModalita";
@@ -79,7 +81,8 @@ export default function NuovoMovimento() {
   const [campi, setCampi] = useState<CampiForm>(campiVuoti);
   const [errori, setErrori] = useState<Errori>({});
   const [iniziali, setIniziali] = useState<CampiForm>(campi);
-  const modificato = JSON.stringify(campi) !== JSON.stringify(iniziali);
+  const [allegato, setAllegato] = useState<File | null>(null);
+  const modificato = JSON.stringify(campi) !== JSON.stringify(iniziali) || allegato !== null;
   const { blocker, consenti } = useBloccoUscita(modificato);
 
   const salva = useMutation({
@@ -106,12 +109,25 @@ export default function NuovoMovimento() {
       avvisa("Controlla i campi segnati in rosso.", { tipo: "errore" });
       return;
     }
+    let creato;
     try {
-      await salva.mutateAsync(input);
+      creato = await salva.mutateAsync(input);
     } catch {
       return; // l'avviso d'errore e' gia' mostrato da onError
     }
-    avvisa("Movimento salvato.");
+    // Il movimento e' salvato: se l'allegato non parte, il movimento resta e non si rifa' la POST.
+    let allegatoOk = true;
+    if (allegato) {
+      try {
+        await apiAllegati.carica(creato.id, allegato);
+        void client.invalidateQueries({ queryKey: ["movimenti"] });
+      } catch {
+        allegatoOk = false;
+      }
+    }
+    if (allegatoOk) avvisa("Movimento salvato.");
+    else avvisa("Movimento salvato, ma l'allegato non è stato caricato: puoi aggiungerlo dal dettaglio.", { tipo: "errore" });
+    setAllegato(null);
     if (eAltro) {
       // si riparte da un modulo vuoto dello stesso tipo, con la stessa data
       const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo };
@@ -137,6 +153,9 @@ export default function NuovoMovimento() {
       >
         <div className="scheda min-w-0 flex-1 px-5 py-6 md:px-7">
           <FormMovimento campi={campi} onCambia={cambia} errori={errori} />
+          <div className="mt-5">
+            <CampoAllegato file={allegato} onCambia={setAllegato} disabilitato={salva.isPending} />
+          </div>
           <div className="mt-6 flex flex-wrap justify-end gap-3 border-t border-riga pt-5">
             <button type="button" className="btn grande" onClick={() => void navigate("/movimenti")}>
               Annulla

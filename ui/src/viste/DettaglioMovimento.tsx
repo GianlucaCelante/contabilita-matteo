@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, ErroreRichiesta, messaggioErrore } from "../api/client";
-import { urlAllegato } from "../api/importa";
 import type { Ambito, Movimento } from "../api/tipi";
+import SchedaAllegato from "../componenti/SchedaAllegato";
 import ConfermaUscita from "../componenti/ConfermaUscita";
 import Finestra from "../componenti/Finestra";
 import FormMovimento from "../componenti/FormMovimento";
@@ -226,19 +226,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
               </div>
             </dl>
           </section>
-          {movimento.allegatoNome && (
-            <section className="scheda px-5 py-5" aria-label="Allegato">
-              <h2 className="mb-2 text-[20px] font-bold">Allegato</h2>
-              <div className="flex min-h-[48px] items-center justify-between gap-3 border-t border-riga pt-2 text-[15px]">
-                <span className="min-w-0 truncate font-bold" title={movimento.allegatoNome}>
-                  {movimento.allegatoNome}
-                </span>
-                <a href={urlAllegato(movimento.id)} target="_blank" rel="noreferrer" className="btn shrink-0" aria-label={`Apri l'allegato ${movimento.allegatoNome}`}>
-                  Apri
-                </a>
-              </div>
-            </section>
-          )}
+          <SchedaAllegato movimento={movimento} />
         </aside>
       </form>
 
@@ -325,5 +313,5 @@ export default function DettaglioMovimento() {
       </>
     );
   }
-  return <ModuloDettaglio key={`${q.data.id}-${q.dataUpdatedAt}`} movimento={q.data} />;
+  return <ModuloDettaglio key={q.data.id} movimento={q.data} />;
 }
