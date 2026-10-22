@@ -153,7 +153,7 @@ export default function RipristinaDaCopia({ onChiudi }: { onChiudi: () => void }
       {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
       {q.data && copie.length === 0 && <Vuoto titolo="Nessuna copia trovata" testo="Fai prima una copia con «Fai ora», oppure controlla la cartella delle copie." />}
       {copie.length > 0 && (
-        <fieldset className="m-0 flex max-h-[50vh] flex-col gap-2 overflow-auto border-0 p-0">
+        <fieldset className="m-0 flex max-h-[calc(50*var(--d-vh))] flex-col gap-2 overflow-auto border-0 p-0">
           <legend className="sr-only">Copie disponibili</legend>
           {copie.map((c) => (
             <label key={c.nome} className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-xl border border-bordo2 px-4 py-2 has-[:checked]:border-verde has-[:checked]:bg-verdechiaro">

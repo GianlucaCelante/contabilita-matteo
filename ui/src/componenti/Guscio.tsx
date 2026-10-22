@@ -1,5 +1,7 @@
 import { useEffect, useRef, type ComponentType, type MouseEvent } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { useBarreFisse } from "../hooks/useBarreFisse";
+import { useTastieraVirtuale } from "../hooks/useTastieraVirtuale";
 import ErroreVista from "./ErroreVista";
 import { IconaEsporta, IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, type ProprietaIcona } from "./Icone";
 
@@ -42,6 +44,10 @@ export default function Guscio() {
   const rifPrincipale = useRef<HTMLElement | null>(null);
   const percorsoPrecedente = useRef(posizione.pathname);
   const titolo = titoloPer(posizione.pathname);
+  // Le barre fisse in basso (Annulla/Salva, totali) e la tastiera virtuale del
+  // telefono: il fuoco non finisce sotto le une ne' sotto l'altra (hooks/).
+  useBarreFisse(rifPrincipale);
+  useTastieraVirtuale();
 
   useEffect(() => {
     document.title = `${titolo} · Contabilità`;
@@ -64,7 +70,7 @@ export default function Guscio() {
   const mostraNuovo = posizione.pathname === "/riepilogo" || posizione.pathname === "/movimenti";
 
   return (
-    <div className="fixed inset-0 flex flex-col md:flex-row">
+    <div className="guscio fixed inset-0 flex flex-col md:flex-row">
       <a href="#contenuto" className="saltaAlContenuto" onClick={saltaAlContenuto}>
         Salta al contenuto
       </a>
@@ -73,7 +79,7 @@ export default function Guscio() {
           Sul computer e' la barra a sinistra (order-first), sul telefono quella in basso. */}
       <nav
         aria-label="Sezioni dell'app"
-        className="order-last flex shrink-0 items-stretch justify-around border-t border-bordo bg-crema px-1 pb-[env(safe-area-inset-bottom)] pt-0.5 md:order-first md:w-[88px] md:flex-col md:items-center md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-4"
+        className="barraNavigazione order-last flex shrink-0 items-stretch justify-around border-t border-bordo bg-crema px-1 pb-[env(safe-area-inset-bottom)] pt-0.5 md:order-first md:w-[88px] md:flex-col md:items-center md:justify-start md:gap-2 md:border-r md:border-t-0 md:px-0 md:py-4"
       >
         <div className="mb-3 hidden h-11 w-11 items-center justify-center rounded-xl bg-verde text-white md:flex" aria-hidden="true">
           <IconaMarchio larghezza={24} spessoreTratto={2} />
@@ -84,7 +90,7 @@ export default function Guscio() {
             to={percorso}
             className={({ isActive }) =>
               // Telefono: la voce attiva e' solo colorata. Computer: pillola verde chiaro.
-              "flex min-h-[62px] flex-1 flex-col items-center justify-center gap-[3px] text-[11px] font-bold no-underline md:h-16 md:w-[72px] md:flex-none md:gap-1 md:rounded-xl md:text-[12px] " +
+              "flex min-h-[var(--d-nav)] flex-1 flex-col items-center justify-center gap-[3px] text-[11px] font-bold no-underline md:h-16 md:w-[72px] md:flex-none md:gap-1 md:rounded-xl md:text-[12px] " +
               (soloComputer ? "hidden md:flex " : "") +
               (isActive ? "text-verdescuro md:bg-verdechiaro" : "text-spento md:hover:bg-sabbia")
             }
@@ -107,8 +113,8 @@ export default function Guscio() {
           aria-label="Nuovo movimento"
           className={
             // In Movimenti sul telefono sopra la barra c'e' quella dei totali: il pulsante sale per non coprirla.
-            (posizione.pathname === "/movimenti" ? "bottom-[calc(140px+env(safe-area-inset-bottom))] " : "bottom-[calc(82px+env(safe-area-inset-bottom))] ") +
-            "fixed right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
+            (posizione.pathname === "/movimenti" ? "bottom-[calc(var(--d-nav)+78px+env(safe-area-inset-bottom))] " : "bottom-[calc(var(--d-nav)+20px+env(safe-area-inset-bottom))] ") +
+            "pulsanteNuovo fixed right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
           }
         >
           <IconaPiu larghezza={26} spessoreTratto={2.25} />

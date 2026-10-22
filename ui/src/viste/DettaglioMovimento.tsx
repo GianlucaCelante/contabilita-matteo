@@ -259,11 +259,11 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
               <span>Elimina movimento</span>
             </button>
             {/* Sul telefono la barra fissa copre quella di navigazione finche' si modifica. */}
-            <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2.5 border-t border-bordo bg-crema p-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-              <Link to="/movimenti" className="btn min-h-14 px-5 text-[16px]">
+            <div data-barra-fissa className="fixed inset-x-0 bottom-[var(--sotto-tastiera)] z-40 flex gap-2.5 border-t border-bordo bg-crema p-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+              <Link to="/movimenti" className="btn min-h-[var(--d-barra)] px-5 text-[16px]">
                 Annulla
               </Link>
-              <button type="submit" className="btn primario min-h-14 flex-1 text-[17px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+              <button type="submit" className="btn primario min-h-[var(--d-barra)] flex-1 text-[17px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
                 {salva.isPending ? "Salvo…" : "Salva modifiche"}
               </button>
             </div>

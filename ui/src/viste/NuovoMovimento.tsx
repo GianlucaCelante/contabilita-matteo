@@ -117,11 +117,11 @@ export default function NuovoMovimento() {
         <DoveFinisce campi={campi} />
         {/* Sul telefono la barra fissa copre quella di navigazione finche' si compila. */}
         {!grande && (
-          <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2.5 border-t border-bordo bg-crema p-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
-            <button type="button" className="btn min-h-14 px-5 text-[16px]" onClick={() => void navigate("/movimenti")}>
+          <div data-barra-fissa className="fixed inset-x-0 bottom-[var(--sotto-tastiera)] z-40 flex gap-2.5 border-t border-bordo bg-crema p-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+            <button type="button" className="btn min-h-[var(--d-barra)] px-5 text-[16px]" onClick={() => void navigate("/movimenti")}>
               Annulla
             </button>
-            <button type="submit" className="btn primario min-h-14 flex-1 text-[17px]" disabled={salva.isPending}>
+            <button type="submit" className="btn primario min-h-[var(--d-barra)] flex-1 text-[17px]" disabled={salva.isPending}>
               {salva.isPending ? "Salvo…" : "Salva"}
             </button>
           </div>

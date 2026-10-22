@@ -171,7 +171,7 @@ export default function Movimenti() {
       </div>
 
       {conTotali && (
-        <div className="sticky bottom-0 z-10 md:bg-fondo md:px-8 md:pb-7">
+        <div data-barra-fissa className="sticky bottom-0 z-10 md:bg-fondo md:px-8 md:pb-7">
           {/* Telefono: barra crema in fondo. Computer: barra scura attaccata alla tabella. */}
           <footer
             aria-label="Totali del periodo"
