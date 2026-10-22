@@ -67,14 +67,14 @@ export default function SelettorePeriodo({
   const { tipo, imposta } = periodo;
   return (
     <div className={"flex max-md:flex-col max-md:items-stretch max-md:gap-3 " + className}>
-      <div className="segmenti max-md:flex max-md:h-11 max-md:min-h-0" role="group" aria-label="Tipo di periodo">
+      <div className="segmenti max-md:flex max-md:h-[46px] max-md:min-h-0 max-md:w-full max-md:min-w-0" role="group" aria-label="Tipo di periodo">
         {SEGMENTI.map(({ tipo: t, etichetta: e }) => (
           <button
             key={t}
             type="button"
             aria-pressed={tipo === t}
             onClick={() => imposta(t)}
-            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[14px]"}
+            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:min-w-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[14px]"}
           >
             {e}
           </button>
