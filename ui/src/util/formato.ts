@@ -85,6 +85,11 @@ export function dataBreve(iso: string): string {
   const [a, m, g] = iso.split("-");
   return `${g}/${m}/${a}`;
 }
+// "2026-10-21" -> "21/10" oppure, con l'anno, "21/10/26"
+export function dataRiga(iso: string, conAnno: boolean): string {
+  const [a, m, g] = iso.split("-");
+  return conAnno ? `${g}/${m}/${(a ?? "").slice(2)}` : `${g}/${m}`;
+}
 // "2026-10-21" -> "Mercoledì 21 ottobre"
 export function dataGiorno(iso: string): string {
   const d = daIso(iso);
