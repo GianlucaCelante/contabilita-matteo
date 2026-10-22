@@ -168,6 +168,10 @@ public class RipristinoService {
         n.put("copia", file.toString());
         n.put("richiestoIl", LocalDateTime.now(clock).withNano(0).format(ISO));
         n.put("copiaDiSicurezza", nomeSicurezza);
+        Path allegati = file.resolveSibling(BackupService.NOME_CARTELLA_ALLEGATI);
+        if (Files.isDirectory(allegati)) { // solo se la copia li contiene: altrimenti quelli attuali restano dove sono
+            n.put("allegati", allegati.toString());
+        }
         Path temporaneo = marcatore.resolveSibling(marcatore.getFileName() + ".tmp");
         JSON.writerWithDefaultPrettyPrinter().writeValue(temporaneo.toFile(), n);
         try {

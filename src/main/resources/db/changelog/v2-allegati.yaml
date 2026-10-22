@@ -1,0 +1,14 @@
+databaseChangeLog:
+  # Versione 2 (fase 4, allegati): il nome INTERNO del file allegato (UUID + estensione) sta in
+  # allegato_file; allegato_nome (versione 1) conserva il nome originale, mostrato all'utente.
+  - changeSet:
+      id: 20-movimento-allegato-file
+      author: contabilita
+      comment: "Nome interno del file allegato in <cartella dati>/allegati/."
+      changes:
+        - addColumn:
+            tableName: movimento
+            columns:
+              - column:
+                  name: allegato_file
+                  type: TEXT

@@ -31,4 +31,5 @@ public class Fornitore {
     public String getNome() { return nome; }
     public String getNomeChiave() { return nomeChiave; }
     public String getPartitaIva() { return partitaIva; }
+    public void setPartitaIva(String partitaIva) { this.partitaIva = partitaIva; }
 }

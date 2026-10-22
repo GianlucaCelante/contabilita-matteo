@@ -110,7 +110,13 @@ public class AnagraficheService {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "La partita IVA è troppo lunga.");
         }
         return fornitori.findByNomeChiave(chiave(n))
-                .map(f -> new Esito<>(f, false))
+                .map(f -> {
+                    if (piva != null && f.getPartitaIva() == null) {
+                        f.setPartitaIva(piva); // il fornitore esisteva senza partita IVA (fase 4): ora la riceve
+                        fornitori.save(f);
+                    }
+                    return new Esito<>(f, false);
+                })
                 .orElseGet(() -> new Esito<>(fornitori.save(new Fornitore(n, chiave(n), piva)), true));
     }
 

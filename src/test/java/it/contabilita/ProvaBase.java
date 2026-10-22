@@ -64,8 +64,17 @@ public abstract class ProvaBase {
     protected ConfigurazioneProva.OrologioDiProva orologio;
 
     @BeforeEach
-    void svuotaTabelle() {
+    void svuotaTabelle() throws IOException {
         orologio.imposta("2026-01-01");
+        Path allegati = CARTELLA_DATI.resolve("allegati");
+        if (Files.isDirectory(allegati)) {
+            try (var file = Files.list(allegati)) {
+                for (Path p : file.toList()) {
+                    Files.deleteIfExists(p);
+                }
+            }
+            Files.deleteIfExists(allegati);
+        }
         jdbc.update("DELETE FROM movimento");
         jdbc.update("DELETE FROM ricorrenza");
         jdbc.update("DELETE FROM categoria");

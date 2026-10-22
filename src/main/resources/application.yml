@@ -37,9 +37,11 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
   servlet:
     multipart:
-      # Per gli allegati delle fasi successive (foto o PDF di fatture e scontrini).
-      max-file-size: 10MB
-      max-request-size: 10MB
+      # Fase 4: uno zip di fatture puo' pesare diverse decine di MB (i limiti sui file decompressi, 20 MB
+      # per file e 200 MB in totale, li applica LettoreFile); gli allegati (foto, PDF) sono limitati a 8 MB
+      # da AllegatiService.
+      max-file-size: 100MB
+      max-request-size: 120MB
 
 contabilita:
   # Cartella dati: creata all'avvio se manca (vedi ContabilitaApplication.main). Sovrascrivibile

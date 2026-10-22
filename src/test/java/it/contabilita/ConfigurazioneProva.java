@@ -20,6 +20,10 @@ public class ConfigurazioneProva {
             istante = Instant.parse(data + "T10:00:00Z");
         }
 
+        public void avanza(long secondi) {
+            istante = istante.plusSeconds(secondi);
+        }
+
         @Override
         public ZoneId getZone() {
             return ZoneOffset.UTC;

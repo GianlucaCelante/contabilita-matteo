@@ -6,6 +6,7 @@ import it.contabilita.api.Dto.MovimentoInput;
 import it.contabilita.api.Dto.Rif;
 import it.contabilita.api.Dto.RicorrenzaRif;
 import it.contabilita.api.Dto.Totali;
+import it.contabilita.allegati.AllegatiService;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Ambito;
 import it.contabilita.dati.Documento;
@@ -42,13 +43,15 @@ public class MovimentiService {
     private final AnagraficheService anagrafiche;
     private final RicorrenzeService ricorrenze;
     private final Clock clock;
+    private final AllegatiService allegati;
 
     public MovimentiService(MovimentoRepository movimenti, AnagraficheService anagrafiche,
-                            RicorrenzeService ricorrenze, Clock clock) {
+                            RicorrenzeService ricorrenze, Clock clock, AllegatiService allegati) {
         this.movimenti = movimenti;
         this.anagrafiche = anagrafiche;
         this.ricorrenze = ricorrenze;
         this.clock = clock;
+        this.allegati = allegati;
     }
 
     // ---- lettura ----
@@ -171,6 +174,7 @@ public class MovimentiService {
             m.getRicorrenza().setAttiva(false);
         }
         movimenti.delete(m);
+        allegati.eliminaFileDopoCommit(m.getAllegatoFile()); // il file sparisce solo se l'eliminazione e' confermata
     }
 
     // ---- validazione e conversioni ----
@@ -238,7 +242,7 @@ public class MovimentiService {
         return testo == null || testo.isBlank() ? null : testo.strip();
     }
 
-    static MovimentoDto dto(Movimento m) {
+    public static MovimentoDto dto(Movimento m) {
         Ricorrenza r = m.getRicorrenza();
         return new MovimentoDto(m.getId(), m.getData(), m.getTipo(), m.getDocumento(), m.getImportoCent(),
                 m.getCategoria() == null ? null : new Rif(m.getCategoria().getId(), m.getCategoria().getNome()),

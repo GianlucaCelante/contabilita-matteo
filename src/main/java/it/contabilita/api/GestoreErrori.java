@@ -108,6 +108,21 @@ public class GestoreErrori {
                 .body(Map.of("errore", "Richiesta non leggibile: JSON non valido."));
     }
 
+    /** Caricamento troppo grande per i limiti multipart (fase 4): errore di chi chiama, non del servizio. */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> gestisciCaricamentoTroppoGrande(Exception e) {
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Il file è troppo grande."));
+    }
+
+    /** Manca il campo multipart atteso (per esempio «file» o «files»). */
+    @ExceptionHandler(org.springframework.web.multipart.support.MissingServletRequestPartException.class)
+    public ResponseEntity<Map<String, String>> gestisciPartMancante(
+            org.springframework.web.multipart.support.MissingServletRequestPartException e) {
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Manca il campo «" + e.getRequestPartName() + "» nella richiesta."));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> gestisciValidazione(MethodArgumentNotValidException e) {
         String messaggio = e.getBindingResult().getFieldErrors().stream()

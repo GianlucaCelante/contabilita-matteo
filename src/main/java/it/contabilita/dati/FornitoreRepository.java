@@ -9,4 +9,6 @@ public interface FornitoreRepository extends JpaRepository<Fornitore, Long> {
     Optional<Fornitore> findByNomeChiave(String nomeChiave);
 
     List<Fornitore> findAllByOrderByNomeChiave();
+
+    Optional<Fornitore> findFirstByPartitaIvaOrderByIdAsc(String partitaIva);
 }
