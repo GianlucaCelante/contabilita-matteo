@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ErroreRichiesta, messaggioErrore } from "../api/client";
 import { apiImporta, type AnteprimaImportazione, type FatturaLetta } from "../api/importa";
 import Combobox from "../componenti/Combobox";
-import { IconaAllarme, IconaCarica, IconaCercaDiNuovo } from "../componenti/Icone";
+import { IconaAllarme, IconaCarica, IconaCercaDiNuovo, IconaInfo } from "../componenti/Icone";
 import SelettoreModalita from "../componenti/SelettoreModalita";
 import { Caricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
@@ -105,7 +105,7 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
         onDragLeave={() => setSopra(false)}
         onDrop={suDrop}
         className={
-          "flex flex-col gap-4 rounded-[18px] border-2 border-dashed px-5 py-4 md:flex-row md:items-center md:justify-between md:px-7 " +
+          "flex flex-col gap-4 rounded-[18px] border-2 border-dashed px-5 py-4 md:min-h-[88px] md:flex-row md:items-center md:justify-between md:gap-6 md:px-7 md:py-2 " +
           (sopra ? "border-verde bg-verdechiaro" : "border-tratteggio bg-crema")
         }
       >
@@ -120,14 +120,15 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button type="button" className="btn grande text-verdescuro" aria-expanded={aperto} aria-controls={idRiquadro} onClick={() => setAperto((a) => !a)}>
+        <div className="flex flex-wrap items-center gap-3 md:shrink-0 md:flex-nowrap">
+          <button type="button" className="btn grande !gap-2 !px-[18px] !text-[15px] text-verdescuro" aria-expanded={aperto} aria-controls={idRiquadro} onClick={() => setAperto((a) => !a)}>
+            <IconaInfo larghezza={20} spessoreTratto={2} />
             <span>Dove trovo i file?</span>
           </button>
           <input id={idInput} type="file" multiple accept=".xml,.p7m,.zip" className="peer sr-only" disabled={occupato} onChange={suScelta} />
           <label
             htmlFor={idInput}
-            className="btn grande peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-verde peer-disabled:opacity-55"
+            className="btn grande !px-[22px] peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-verde peer-disabled:opacity-55"
           >
             Scegli i file
           </label>

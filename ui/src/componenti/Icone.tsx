@@ -140,6 +140,14 @@ export function IconaCarica(p: ProprietaIcona) {
     </IconaBase>
   );
 }
+export function IconaInfo(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5M12 8h.01" />
+    </IconaBase>
+  );
+}
 export function IconaCercaDiNuovo(p: ProprietaIcona) {
   return (
     <IconaBase {...p}>
