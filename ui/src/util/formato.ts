@@ -98,6 +98,19 @@ export function dataOra(testo: string): string {
   return `${due(d.getDate())}/${due(d.getMonth() + 1)}/${d.getFullYear()} alle ${due(d.getHours())}:${due(d.getMinutes())}`;
 }
 
+// 1234567 -> "1,2 MB"; 900 -> "900 byte"
+export function dimensioneLeggibile(byte: number): string {
+  if (byte < 1024) return `${byte} byte`;
+  const unita = ["KB", "MB", "GB"];
+  let valore = byte / 1024;
+  let i = 0;
+  while (valore >= 1024 && i < unita.length - 1) {
+    valore /= 1024;
+    i++;
+  }
+  return `${valore.toLocaleString("it-IT", { maximumFractionDigits: 1 })} ${unita[i]}`;
+}
+
 // ---- periodi ----
 
 export type TipoPeriodo = "settimana" | "mese" | "anno" | "periodo";

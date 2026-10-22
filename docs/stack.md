@@ -28,7 +28,7 @@ Stesso stack del progetto delle etichette, copiato e adattato a pezzi (mai inter
 | SQLite robusta | parametri JDBC in `application.yml` (WAL, `date_class=TEXT`, `busy_timeout`, pool a 1) | Copiare tali e quali |
 | Migrazioni | `db/changelog/db.changelog-master.yaml` | Solo la struttura (un file per versione con `include`); lo schema è nuovo |
 | Impostazioni chiave/valore | `dati/Impostazione`, `ImpostazioneRepository`, `api/ImpostazioniController` | Riusabili subito |
-| Backup | `programma/BackupService` (`VACUUM INTO`, cartella datata, automatico alle 03:00), `EsploratoreCartelle`, `ProgrammaController`, `update.ps1` (backup pre-aggiornamento) | Togliere la parte foto o adattarla agli allegati. Manca un vero «ripristino» dall'app: da scrivere |
+| Backup | `programma/BackupService` (`VACUUM INTO`, cartella datata, automatico alle 03:00), `EsploratoreCartelle`, `ProgrammaController`, `update.ps1` (backup pre-aggiornamento) | Parte foto tolta. Il «ripristino» dall'app è scritto da zero (a riavvio con uscita 75, vedi `api.md`) |
 | Rete e QR | `rete/IndirizziRete` (+ test), `api/ReteController` | Invariati |
 | Telefoni con nome | `dispositivi/*`, `RichiediNomeDispositivo.tsx` | Opzionale: «inserito da» |
 | Installer | `installer/` (Build-Setup.ps1, Etichette.xml, install/update/uninstall, wix) | Rinominare tutto: servizio, cartella ProgramData, regola firewall, UpgradeCode WiX (nuovo GUID), icona |
@@ -47,7 +47,7 @@ Stesso stack del progetto delle etichette, copiato e adattato a pezzi (mai inter
 
 ## Da scrivere da zero
 
-Schema dati e API dei movimenti; ricorrenze; creazione al volo di categorie, fornitori e dipendenti; import fatture XML (FatturaPA) e ZIP; riepilogo per periodo; ripristino da copia; test UI.
+Schema dati e API dei movimenti; ricorrenze; creazione al volo di categorie, fornitori e dipendenti; import fatture XML (FatturaPA) e ZIP; riepilogo per periodo; test UI. (Ripristino da copia: fatto, vedi `api.md`.)
 
 ## Rischi
 

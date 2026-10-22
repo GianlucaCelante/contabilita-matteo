@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, messaggioErrore, urlQr } from "../api/client";
 import type { IndirizzoRete } from "../api/tipi";
 import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
+import RipristinaDaCopia from "../componenti/RipristinaDaCopia";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { dataOra } from "../util/formato";
@@ -101,6 +102,7 @@ function DatiECopie() {
     },
     onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
   });
+  const [ripristinoAperto, setRipristinoAperto] = useState(false);
   const p = q.data;
 
   return (
@@ -119,10 +121,20 @@ function DatiECopie() {
             }
           />
           <Dato nome="Dove vanno le copie" valore={p.cartellaBackup} />
+          <Dato
+            nome="Ripristina da una copia"
+            valore="Sostituisce i dati attuali"
+            azione={
+              <button type="button" className="btn" onClick={() => setRipristinoAperto(true)}>
+                Scegli copia
+              </button>
+            }
+          />
           <Dato nome="Dove sono i dati" valore="Solo su questo computer, mai online" />
           <Dato nome="Versione del programma" valore={p.versione} />
         </div>
       )}
+      {ripristinoAperto && <RipristinaDaCopia onChiudi={() => setRipristinoAperto(false)} />}
     </Sezione>
   );
 }

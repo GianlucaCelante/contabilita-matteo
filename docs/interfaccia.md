@@ -229,9 +229,11 @@ File: `Impostazioni.dc.html`
 2. **Dati e copie**, tre righe, ciascuna con un pulsante:
    - Ultima copia di sicurezza ("Oggi alle 03:00 · automatica") con **Fai ora**.
    - Dove sono i dati ("Solo su questo computer, mai online") con **Apri cartella**.
-   - Ripristina da una copia ("Sostituisce i dati attuali") con **Scegli file**.
+   - Ripristina da una copia ("Sostituisce i dati attuali") con **Scegli copia**. Nel mockup il pulsante era «Scegli file»; nell'app si sceglie da un elenco (vedi sotto).
 
-**Regole visibili.** Copia automatica notturna; i dati restano solo sul computer; il ripristino sostituisce i dati attuali (nel mockup non è disegnata una conferma).
+**Ripristino (implementato, non nel mockup).** «Scegli copia» apre una finestra con le copie trovate (radio con data e ora in italiano, dimensione leggibile, etichetta «fatta prima di un ripristino»; stato vuoto «Nessuna copia trovata»). Poi due passi di conferma: il testo «I dati attuali vengono sostituiti da quelli del <data>. Prima ne viene fatta una copia di sicurezza. L'app si riavvia.» e «Ultima conferma» con «Sì, sostituisci i dati». Dopo la richiesta compare «Riavvio in corso…»: interroga `GET /api/versione` una volta al secondo e ricarica la pagina quando il servizio è tornato (dopo 60 s mostra un errore con «Ricarica la pagina»).
+
+**Regole visibili.** Copia automatica notturna; i dati restano solo sul computer; il ripristino sostituisce i dati attuali dopo una copia di sicurezza e una doppia conferma.
 
 ---
 

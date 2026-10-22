@@ -36,6 +36,26 @@ public class ConfigurazioneProva {
         }
     }
 
+    /** Al posto dell'uscita vera: registra i codici richiesti, non ferma mai la JVM dei test. */
+    public static final class UscitaDiProva implements it.contabilita.programma.Uscita {
+        private final java.util.List<Integer> chiamate = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+        @Override
+        public void esci(int codice) {
+            chiamate.add(codice);
+        }
+
+        public java.util.List<Integer> chiamate() {
+            return chiamate;
+        }
+    }
+
+    @Bean
+    @Primary
+    public UscitaDiProva uscitaDiProva() {
+        return new UscitaDiProva();
+    }
+
     @Bean
     @Primary
     public OrologioDiProva orologioDiProva() {

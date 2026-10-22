@@ -57,6 +57,7 @@ public class BackupService {
     private static final Pattern NOME_CARTELLA_COPIA = Pattern.compile("\\d{4}-\\d{2}-\\d{2}_\\d{6}(-\\d+)?");
     private static final int COPIE_DA_TENERE = 10;
     static final String NOME_FILE_DATABASE = "contabilita.db";
+    static final String PREFISSO_PRIMA_DEL_RIPRISTINO = "prima-del-ripristino-";
 
     public record UltimoBackup(String quando, String cartella) {
     }
@@ -137,6 +138,33 @@ public class BackupService {
         }
     }
 
+    /** La cartella delle copie configurata, o null. */
+    public String cartellaConfigurata() {
+        return leggiValore(CHIAVE_CARTELLA);
+    }
+
+    /**
+     * Copia dei dati attuali in {@code prima-del-ripristino-AAAA-MM-GG_HHMMSS} nella cartella delle
+     * copie, prima di un ripristino. 409 se manca la cartella o una copia e' in corso; 500 se fallisce.
+     */
+    public Path copiaPrimaDelRipristino() {
+        String cartella = leggiValore(CHIAVE_CARTELLA);
+        if (cartella == null) {
+            throw new ErroreApi(HttpStatus.CONFLICT, "Nessuna cartella per le copie: sceglila prima.");
+        }
+        if (!inCorso.compareAndSet(false, true)) {
+            throw new ErroreApi(HttpStatus.CONFLICT, "Una copia è già in corso.");
+        }
+        try {
+            return copia(cartella, PREFISSO_PRIMA_DEL_RIPRISTINO, false);
+        } catch (Exception e) {
+            log.error("Copia di sicurezza prima del ripristino fallita: {}", e.toString(), e);
+            throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR, messaggioErrore(e));
+        } finally {
+            inCorso.set(false);
+        }
+    }
+
     // ---- automatico ----
 
     @Scheduled(cron = "0 0 3 * * *")
@@ -182,8 +210,16 @@ public class BackupService {
     // ---- la copia vera ----
 
     private Path copia(String cartella) throws IOException, SQLException {
+        return copia(cartella, "", true);
+    }
+
+    /**
+     * {@code registra} = copia "normale": aggiorna l'ultima copia riuscita e fa pulizia delle vecchie.
+     * La copia di sicurezza prima di un ripristino ({@code prefisso} non vuoto) non fa ne' l'una ne' l'altra.
+     */
+    private Path copia(String cartella, String prefisso, boolean registra) throws IOException, SQLException {
         LocalDateTime quando = LocalDateTime.now(clock).withNano(0);
-        Path destinazione = sottocartellaLibera(Path.of(cartella), quando);
+        Path destinazione = sottocartellaLibera(Path.of(cartella), prefisso, quando);
         Files.createDirectories(destinazione);
         try {
             copiaDatabase(destinazione.resolve(NOME_FILE_DATABASE));
@@ -191,16 +227,18 @@ public class BackupService {
             eliminaSilenziosamente(destinazione);
             throw e;
         }
-        salva(CHIAVE_ULTIMO_QUANDO, quando.toString());
-        salva(CHIAVE_ULTIMO_CARTELLA, destinazione.toString());
         log.info("Copia di sicurezza riuscita in {}", destinazione);
-        pulisciCopieVecchie(Path.of(cartella));
+        if (registra) {
+            salva(CHIAVE_ULTIMO_QUANDO, quando.toString());
+            salva(CHIAVE_ULTIMO_CARTELLA, destinazione.toString());
+            pulisciCopieVecchie(Path.of(cartella));
+        }
         return destinazione;
     }
 
     /** Nome datato; se esiste gia' (due copie nello stesso secondo) un progressivo -2, -3, ... */
-    private static Path sottocartellaLibera(Path cartella, LocalDateTime quando) {
-        String base = quando.format(NOME_SOTTOCARTELLA);
+    private static Path sottocartellaLibera(Path cartella, String prefisso, LocalDateTime quando) {
+        String base = prefisso + quando.format(NOME_SOTTOCARTELLA);
         Path candidata = cartella.resolve(base);
         for (int n = 2; Files.exists(candidata); n++) {
             candidata = cartella.resolve(base + "-" + n);

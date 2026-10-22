@@ -1,6 +1,7 @@
 import type {
   Ambito,
   Categoria,
+  CopiaBackup,
   CorpoErrore,
   Dipendente,
   ElencoMovimenti,
@@ -11,6 +12,7 @@ import type {
   Programma,
   Rete,
   Riepilogo,
+  RispostaRipristino,
   Tipo,
 } from "./tipi";
 
@@ -84,6 +86,17 @@ export const api = {
   rete: () => richiedi<Rete>("/rete"),
   programma: () => richiedi<Programma>("/programma"),
   backupOra: () => richiedi<{ cartella: string }>("/programma/backup", { method: "POST" }),
+  copie: () => richiedi<CopiaBackup[]>("/programma/copie"),
+  ripristina: (copia: string) => richiedi<RispostaRipristino>("/programma/ripristina", { method: "POST", ...json({ copia }) }),
+  // Risponde finche' il servizio e' acceso: serve a capire quando e' tornato dopo un riavvio.
+  servizioRisponde: async (): Promise<boolean> => {
+    try {
+      const r = await fetch(`${BASE}/versione`, { cache: "no-store" });
+      return r.ok;
+    } catch {
+      return false;
+    }
+  },
 };
 
 export function urlQr(ip: string): string {
@@ -101,4 +114,5 @@ export const chiavi = {
   dipendenti: (q: string) => ["dipendenti", q] as const,
   rete: ["rete"] as const,
   programma: ["programma"] as const,
+  copie: ["copie"] as const,
 };

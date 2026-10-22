@@ -1,5 +1,6 @@
 package it.contabilita;
 
+import it.contabilita.programma.RipristinoInSospeso;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.SpringApplication;
@@ -34,6 +35,8 @@ public class ContabilitaApplication {
             throw new IllegalStateException("Impossibile creare la cartella dati: " + dataDir, e);
         }
         log.info("Cartella dati: {}", Path.of(dataDir).toAbsolutePath());
+        // Un ripristino da copia richiesto dall'app si applica qui, con il database ancora chiuso.
+        RipristinoInSospeso.applica(Path.of(dataDir));
         SpringApplication.run(ContabilitaApplication.class, args);
     }
 }

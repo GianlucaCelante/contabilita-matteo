@@ -19,3 +19,6 @@ ui/dist/
 .playwright-mcp/
 .idea/
 *.log
+
+# File generati dalla build TypeScript
+*.tsbuildinfo

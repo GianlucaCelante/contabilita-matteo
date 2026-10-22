@@ -119,3 +119,14 @@ export interface Programma {
   cartellaBackup: string;
   ultimoBackup: { quando: string; cartella: string } | null;
 }
+
+// Una copia di sicurezza trovata nella cartella delle copie (GET /api/programma/copie).
+export interface CopiaBackup {
+  nome: string;
+  quando: string;
+  dimensioneByte: number;
+}
+export interface RispostaRipristino {
+  riavvio: boolean;
+  copiaDiSicurezza: string;
+}
