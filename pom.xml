@@ -37,6 +37,8 @@
         -->
         <hibernate-community-dialects.version>6.6.53.Final</hibernate-community-dialects.version>
         <zxing.version>3.5.3</zxing.version>
+        <!-- Esportazione Excel (GET /api/esporta): fastexcel, scrittura XLSX in streaming -->
+        <fastexcel.version>0.20.2</fastexcel.version>
 
         <!-- Interfaccia React (ui/): disattivabile con -Dskip.ui=true -->
         <skip.ui>false</skip.ui>
@@ -84,6 +86,13 @@
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
             <version>${zxing.version}</version>
+        </dependency>
+
+        <!-- Esportazione Excel (foglio Movimenti e Riepilogo) -->
+        <dependency>
+            <groupId>org.dhatim</groupId>
+            <artifactId>fastexcel</artifactId>
+            <version>${fastexcel.version}</version>
         </dependency>
 
         <dependency>

@@ -59,7 +59,7 @@ async function richiedi<T>(percorso: string, opzioni?: RequestInit): Promise<T> 
   return (await risposta.json()) as T;
 }
 
-function stringaQuery(parametri: Record<string, string | number | undefined>): string {
+export function stringaQuery(parametri: Record<string, string | number | undefined>): string {
   const p = new URLSearchParams();
   for (const [chiave, valore] of Object.entries(parametri)) {
     if (valore !== undefined && valore !== "") p.set(chiave, String(valore));
