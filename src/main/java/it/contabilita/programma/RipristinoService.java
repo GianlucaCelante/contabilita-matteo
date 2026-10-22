@@ -74,16 +74,15 @@ public class RipristinoService {
         this.cartellaDati = Path.of(cartellaDati).toAbsolutePath();
     }
 
-    /** Le copie presenti nella cartella configurata, dalla piu' recente. Vuoto se non c'e' cartella. */
+    /** Le copie presenti nella cartella delle copie (scelta o predefinita), dalla piu' recente. */
     public List<Copia> elenca() {
-        String cartella = backup.cartellaConfigurata();
-        if (cartella == null) {
-            return List.of();
-        }
-        return elencaIn(Path.of(cartella));
+        return elencaIn(backup.cartellaEffettiva());
     }
 
     private List<Copia> elencaIn(Path cartella) {
+        if (!Files.isDirectory(cartella)) { // la cartella predefinita nasce con la prima copia
+            return List.of();
+        }
         List<Copia> copie = new ArrayList<>();
         try (Stream<Path> figli = Files.list(cartella)) {
             for (Path figlio : (Iterable<Path>) figli::iterator) {
@@ -121,18 +120,15 @@ public class RipristinoService {
                 || nome.contains("/") || nome.contains("\\") || nome.contains(":") || !nome.equals(nome.strip())) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "copia: nome non valido");
         }
-        String cartella = backup.cartellaConfigurata();
-        if (cartella == null) {
-            throw new ErroreApi(HttpStatus.CONFLICT, "Nessuna cartella per le copie: sceglila prima.");
-        }
+        Path cartella = backup.cartellaEffettiva();
         Path marcatore = cartellaDati.resolve(RipristinoInSospeso.MARCATORE);
         if (Files.exists(marcatore)) {
             throw new ErroreApi(HttpStatus.CONFLICT, "C'è già un ripristino in attesa: l'app si sta per riavviare.");
         }
-        if (elencaIn(Path.of(cartella)).stream().noneMatch(c -> c.nome().equals(nome))) {
+        if (elencaIn(cartella).stream().noneMatch(c -> c.nome().equals(nome))) {
             throw new ErroreApi(HttpStatus.NOT_FOUND, "Copia non trovata.");
         }
-        Path file = Path.of(cartella).resolve(nome).resolve(BackupService.NOME_FILE_DATABASE).toAbsolutePath().normalize();
+        Path file = cartella.resolve(nome).resolve(BackupService.NOME_FILE_DATABASE).toAbsolutePath().normalize();
 
         Set<String> idDellaCopia;
         try {

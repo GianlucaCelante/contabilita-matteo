@@ -60,12 +60,15 @@ public class BackupService {
     static final String NOME_FILE_DATABASE = "contabilita.db";
     /** Cartella dei file allegati, sia nella cartella dati sia dentro una copia datata (fase 4). */
     static final String NOME_CARTELLA_ALLEGATI = "allegati";
+    /** Cartella delle copie predefinita, dentro la cartella dati. */
+    static final String NOME_CARTELLA_COPIE = "copie";
     static final String PREFISSO_PRIMA_DEL_RIPRISTINO = "prima-del-ripristino-";
 
     public record UltimoBackup(String quando, String cartella) {
     }
 
-    public record StatoProgramma(String versione, String cartellaBackup, UltimoBackup ultimoBackup) {
+    public record StatoProgramma(String versione, String cartellaBackup, boolean cartellaPredefinita,
+                                 UltimoBackup ultimoBackup) {
     }
 
     public record CartellaBackup(String cartella) {
@@ -75,6 +78,9 @@ public class BackupService {
     private final DataSource dataSource;
     private final Clock clock;
     private final Path cartellaAllegati;
+    private final Path cartellaDati;
+    /** Dove vanno le copie se non e' stata scelta una cartella: {@code <cartella dati>/copie}. */
+    private final Path cartellaPredefinita;
 
     /** Una sola copia alla volta (409 se una copia e' gia' in corso). */
     private final AtomicBoolean inCorso = new AtomicBoolean(false);
@@ -84,7 +90,9 @@ public class BackupService {
         this.impostazioni = impostazioni;
         this.dataSource = dataSource;
         this.clock = clock;
-        this.cartellaAllegati = Path.of(cartellaDati).toAbsolutePath().resolve(NOME_CARTELLA_ALLEGATI);
+        this.cartellaDati = Path.of(cartellaDati).toAbsolutePath().normalize();
+        this.cartellaAllegati = this.cartellaDati.resolve(NOME_CARTELLA_ALLEGATI);
+        this.cartellaPredefinita = this.cartellaDati.resolve(NOME_CARTELLA_COPIE);
     }
 
     /** SOLO per i test: simula una copia gia' in corso. */
@@ -93,14 +101,19 @@ public class BackupService {
     }
 
     public StatoProgramma stato() {
-        String cartella = leggiValore(CHIAVE_CARTELLA);
+        Path cartella = cartellaEffettiva();
         String quando = leggiValore(CHIAVE_ULTIMO_QUANDO);
-        UltimoBackup ultimo = cartella != null && quando != null
+        UltimoBackup ultimo = quando != null
                 ? new UltimoBackup(quando, leggiValore(CHIAVE_ULTIMO_CARTELLA)) : null;
-        return new StatoProgramma(VersioneController.versione(), cartella, ultimo);
+        return new StatoProgramma(VersioneController.versione(), cartella.toString(),
+                cartella.equals(cartellaPredefinita), ultimo);
     }
 
-    /** {@code cartella} vuota o null spegne le copie; altrimenti 400 se non esiste o non e' scrivibile. */
+    /**
+     * {@code cartella} vuota o null: torna alla cartella predefinita. Altrimenti il percorso deve essere
+     * assoluto, creabile e scrivibile (si verifica creando la cartella e un file temporaneo) e non stare
+     * dentro la cartella dati, tranne quella predefinita; se no 400.
+     */
     public StatoProgramma impostaCartella(String cartella) {
         if (cartella == null || cartella.isBlank()) {
             impostazioni.deleteById(CHIAVE_CARTELLA);
@@ -109,33 +122,57 @@ public class BackupService {
             try {
                 percorso = Path.of(cartella.strip());
             } catch (RuntimeException e) {
-                throw new ErroreApi(HttpStatus.BAD_REQUEST, "cartella: percorso non valido");
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "La cartella delle copie non è un percorso valido.");
             }
             if (!percorso.isAbsolute()) {
-                throw new ErroreApi(HttpStatus.BAD_REQUEST, "cartella: il percorso deve essere assoluto");
+                throw new ErroreApi(HttpStatus.BAD_REQUEST,
+                        "La cartella delle copie deve essere un percorso completo (per esempio D:\\Copie).");
             }
-            if (!Files.exists(percorso)) {
-                throw new ErroreApi(HttpStatus.BAD_REQUEST, "cartella: non esiste");
+            percorso = percorso.normalize();
+            if (percorso.equals(cartellaPredefinita)) {
+                percorso = cartellaPredefinita;
+            } else if (percorso.startsWith(cartellaDati)) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST,
+                        "La cartella delle copie non può stare dentro i dati, tranne quella predefinita.");
             }
-            if (!Files.isDirectory(percorso) || !Files.isWritable(percorso)) {
-                throw new ErroreApi(HttpStatus.BAD_REQUEST, "cartella: non è scrivibile");
+            verificaScrivibile(percorso);
+            if (percorso.equals(cartellaPredefinita)) {
+                impostazioni.deleteById(CHIAVE_CARTELLA);
+            } else {
+                impostazioni.save(new Impostazione(CHIAVE_CARTELLA, percorso.toString()));
             }
-            impostazioni.save(new Impostazione(CHIAVE_CARTELLA, percorso.toString()));
         }
         return stato();
     }
 
-    /** Copia subito. 409 se manca la cartella o una copia e' gia' in corso; 500 se la copia fallisce. */
-    public CartellaBackup eseguiSubito() {
-        String cartella = leggiValore(CHIAVE_CARTELLA);
-        if (cartella == null) {
-            throw new ErroreApi(HttpStatus.CONFLICT, "Nessuna cartella per le copie: sceglila prima.");
+    private static void verificaScrivibile(Path cartella) {
+        try {
+            Files.createDirectories(cartella);
+        } catch (IOException | RuntimeException e) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST,
+                    "Non riesco a creare la cartella delle copie: controlla il percorso e i permessi.");
         }
+        try {
+            Path prova = Files.createTempFile(cartella, "prova-", ".tmp");
+            Files.deleteIfExists(prova);
+        } catch (IOException | RuntimeException e) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Non posso scrivere nella cartella delle copie: controlla i permessi.");
+        }
+    }
+
+    /** Dove vanno le copie ora: quella scelta dall'utente, altrimenti {@code <cartella dati>/copie}. */
+    public Path cartellaEffettiva() {
+        String scelta = leggiValore(CHIAVE_CARTELLA);
+        return scelta == null || scelta.isBlank() ? cartellaPredefinita : Path.of(scelta);
+    }
+
+    /** Copia subito. 409 se una copia e' gia' in corso; 500 se la copia fallisce. */
+    public CartellaBackup eseguiSubito() {
         if (!inCorso.compareAndSet(false, true)) {
             throw new ErroreApi(HttpStatus.CONFLICT, "Una copia è già in corso.");
         }
         try {
-            return new CartellaBackup(copia(cartella).toString());
+            return new CartellaBackup(copia(cartellaEffettiva()).toString());
         } catch (Exception e) {
             log.error("Copia di sicurezza fallita: {}", e.toString(), e);
             throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR, messaggioErrore(e));
@@ -144,25 +181,16 @@ public class BackupService {
         }
     }
 
-    /** La cartella delle copie configurata, o null. */
-    public String cartellaConfigurata() {
-        return leggiValore(CHIAVE_CARTELLA);
-    }
-
     /**
      * Copia dei dati attuali in {@code prima-del-ripristino-AAAA-MM-GG_HHMMSS} nella cartella delle
-     * copie, prima di un ripristino. 409 se manca la cartella o una copia e' in corso; 500 se fallisce.
+     * copie, prima di un ripristino. 409 se una copia e' in corso; 500 se fallisce.
      */
     public Path copiaPrimaDelRipristino() {
-        String cartella = leggiValore(CHIAVE_CARTELLA);
-        if (cartella == null) {
-            throw new ErroreApi(HttpStatus.CONFLICT, "Nessuna cartella per le copie: sceglila prima.");
-        }
         if (!inCorso.compareAndSet(false, true)) {
             throw new ErroreApi(HttpStatus.CONFLICT, "Una copia è già in corso.");
         }
         try {
-            return copia(cartella, PREFISSO_PRIMA_DEL_RIPRISTINO, false);
+            return copia(cartellaEffettiva(), PREFISSO_PRIMA_DEL_RIPRISTINO, false);
         } catch (Exception e) {
             log.error("Copia di sicurezza prima del ripristino fallita: {}", e.toString(), e);
             throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR, messaggioErrore(e));
@@ -185,10 +213,7 @@ public class BackupService {
     }
 
     void eseguiSeDovuto() {
-        String cartella = leggiValore(CHIAVE_CARTELLA);
-        if (cartella == null) {
-            return;
-        }
+        Path cartella = cartellaEffettiva();
         String quando = leggiValore(CHIAVE_ULTIMO_QUANDO);
         if (!backupDovuto(quando == null ? null : LocalDateTime.parse(quando), LocalDateTime.now(clock))) {
             return;
@@ -215,7 +240,7 @@ public class BackupService {
 
     // ---- la copia vera ----
 
-    private Path copia(String cartella) throws IOException, SQLException {
+    private Path copia(Path cartella) throws IOException, SQLException {
         return copia(cartella, "", true);
     }
 
@@ -223,9 +248,9 @@ public class BackupService {
      * {@code registra} = copia "normale": aggiorna l'ultima copia riuscita e fa pulizia delle vecchie.
      * La copia di sicurezza prima di un ripristino ({@code prefisso} non vuoto) non fa ne' l'una ne' l'altra.
      */
-    private Path copia(String cartella, String prefisso, boolean registra) throws IOException, SQLException {
+    private Path copia(Path cartella, String prefisso, boolean registra) throws IOException, SQLException {
         LocalDateTime quando = LocalDateTime.now(clock).withNano(0);
-        Path destinazione = sottocartellaLibera(Path.of(cartella), prefisso, quando);
+        Path destinazione = sottocartellaLibera(cartella, prefisso, quando);
         Files.createDirectories(destinazione);
         try {
             copiaDatabase(destinazione.resolve(NOME_FILE_DATABASE));
@@ -242,7 +267,7 @@ public class BackupService {
         if (registra) {
             salva(CHIAVE_ULTIMO_QUANDO, quando.toString());
             salva(CHIAVE_ULTIMO_CARTELLA, destinazione.toString());
-            pulisciCopieVecchie(Path.of(cartella));
+            pulisciCopieVecchie(cartella);
         }
         return destinazione;
     }
