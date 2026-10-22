@@ -153,17 +153,17 @@ export default function Movimenti() {
             {elenco.elementi.length} {elenco.elementi.length === 1 ? "movimento" : "movimenti"} · {periodo.etichetta}
           </span>
           <dl className="m-0 flex justify-between gap-3 md:justify-start md:gap-8">
-            <div className="flex items-baseline gap-2">
+            <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-2">
               <dt className="etichettaMaiuscola">Ricavi</dt>
-              <dd className="num m-0 font-titolo text-[18px] font-bold text-verdescuro">{euro(elenco.totali.ricaviCent)}</dd>
+              <dd className="num m-0 font-titolo text-[16px] font-bold md:text-[18px] text-verdescuro">{euro(elenco.totali.ricaviCent)}</dd>
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-2">
               <dt className="etichettaMaiuscola">Costi</dt>
-              <dd className="num m-0 font-titolo text-[18px] font-bold">{euro(elenco.totali.costiCent)}</dd>
+              <dd className="num m-0 font-titolo text-[16px] font-bold md:text-[18px]">{euro(elenco.totali.costiCent)}</dd>
             </div>
-            <div className="flex items-baseline gap-2">
+            <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-2">
               <dt className="etichettaMaiuscola">Saldo</dt>
-              <dd className={"num m-0 font-titolo text-[18px] font-bold " + (elenco.totali.saldoCent < 0 ? "text-rosso" : "text-verdescuro")}>{euro(elenco.totali.saldoCent)}</dd>
+              <dd className={"num m-0 font-titolo text-[16px] font-bold md:text-[18px] " + (elenco.totali.saldoCent < 0 ? "text-rosso" : "text-verdescuro")}>{euro(elenco.totali.saldoCent)}</dd>
             </div>
           </dl>
         </footer>
