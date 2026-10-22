@@ -208,7 +208,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
     <Campo key="fattura" etichetta="N. fattura" type="text" value={campi.numeroDocumento} onChange={(e) => onCambia({ numeroDocumento: e.target.value })} />
   ) : null;
   const campoDipendente = retribuzione ? (
-    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} {...dipendenti} />
+    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" genere="m" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} {...dipendenti} />
   ) : null;
   const campoNote = (
     <Campo
@@ -294,7 +294,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
           {fornitoreRichiesto !== "no" && (
             <Combobox
               etichetta="Fornitore"
-              cosa="fornitore"
+              cosa="fornitore" genere="m"
               value={campi.fornitore}
               onChange={(v) => onCambia({ fornitore: v })}
               facoltativo={fornitoreRichiesto === "facoltativo"}
@@ -306,7 +306,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
           {chiedeCategoria(campi) && (
             <Combobox
               etichetta="Categoria"
-              cosa="categoria"
+              cosa="categoria" genere="f"
               value={campi.categoria}
               onChange={(v) => onCambia({ categoria: v })}
               invalido={!!errori.categoria}

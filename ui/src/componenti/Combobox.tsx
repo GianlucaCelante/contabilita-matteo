@@ -5,6 +5,8 @@ interface ProprietaCombobox {
   etichetta: string;
   // Come si chiama la cosa da creare nel comando: "fornitore", "categoria"…
   cosa: string;
+  // Il genere di «cosa»: «Nuovo»/«un»/«Nessun» (m) oppure «Nuova»/«una»/«Nessuna» (f).
+  genere: "m" | "f";
   value: string;
   onChange: (valore: string) => void;
   // I nomi suggeriti per il testo scritto (gia' filtrati dal chiamante).
@@ -25,7 +27,7 @@ interface Voce {
 // lista): si scrive, si sceglie un suggerimento con mouse o frecce, oppure si
 // sceglie «Crea ...» per un nome nuovo. In ogni caso al salvataggio si manda
 // il solo nome: se non esiste, lo crea il servizio.
-export default function Combobox({ etichetta, cosa, value, onChange, opzioni, inCaricamento, errore, facoltativo, invalido, messaggioErrore }: ProprietaCombobox) {
+export default function Combobox({ etichetta, cosa, genere, value, onChange, opzioni, inCaricamento, errore, facoltativo, invalido, messaggioErrore }: ProprietaCombobox) {
   const id = useId();
   const idLista = `${id}-lista`;
   const idErrore = `${id}-errore`;
@@ -35,6 +37,9 @@ export default function Combobox({ etichetta, cosa, value, onChange, opzioni, in
   const testo = value.trim();
   const esatto = opzioni.some((o) => o.toLowerCase() === testo.toLowerCase());
   const nuova = testo !== "" && !esatto && !inCaricamento && !errore;
+
+  const f = genere === "f";
+  const etichettaNuovo = f ? "Nuova" : "Nuovo";
 
   const voci = useMemo<Voce[]>(() => {
     const lista: Voce[] = opzioni.slice(0, 8).map((o) => ({ testo: o, crea: false }));
@@ -93,7 +98,11 @@ export default function Combobox({ etichetta, cosa, value, onChange, opzioni, in
           onBlur={() => setAperto(false)}
           onKeyDown={suTasto}
         />
-        {nuova && <span className="inline-flex h-6 items-center rounded-xl bg-verdechiaro px-2 text-[12px] font-bold text-verdescuro">Nuova</span>}
+        {nuova && (
+          <span aria-label={`${etichettaNuovo} ${cosa}`} className="inline-flex h-6 items-center rounded-xl bg-verdechiaro px-2 text-[12px] font-bold text-verdescuro">
+            {etichettaNuovo}
+          </span>
+        )}
         <IconaGiu larghezza={18} spessoreTratto={2} className="text-spento" />
       </div>
       {invalido && messaggioErrore && (
@@ -112,7 +121,7 @@ export default function Combobox({ etichetta, cosa, value, onChange, opzioni, in
         {errore && <li role="presentation" className="px-3 py-2 text-[13px] font-bold text-rosso">Non riesco a caricare i suggerimenti.</li>}
         {!inCaricamento && !errore && opzioni.length === 0 && (
           <li role="presentation" className="px-3 py-2 text-[13px] text-spento">
-            {testo ? `Nessun ${cosa} con questo nome` : `Scrivi per cercare o creare un ${cosa}`}
+            {testo ? `Nessun${f ? "a" : ""} ${cosa} con questo nome` : `Scrivi per cercare o creare un${f ? "a" : ""} ${cosa}`}
           </li>
         )}
         {voci.map((v, i) => (

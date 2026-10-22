@@ -194,7 +194,7 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
           <div className="[&_.etichetta]:sr-only">
             <Combobox
               etichetta={etichetta}
-              cosa="categoria"
+              cosa="categoria" genere="f"
               value={categoria}
               onChange={onCategoria}
               opzioni={sugg.opzioni}
