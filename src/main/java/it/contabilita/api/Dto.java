@@ -5,6 +5,7 @@ import it.contabilita.dati.Origine;
 import it.contabilita.dati.Tipo;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /** Oggetti JSON del contratto (docs/api.md). Importi in centesimi, date ISO. */
@@ -43,7 +44,8 @@ public final class Dto {
     public record MovimentoDto(Long id, LocalDate data, Tipo tipo, Documento documento, long importoCent,
                                Rif categoria, Rif fornitore, Rif dipendente,
                                String descrizione, String numeroDocumento, String note,
-                               Origine origine, RicorrenzaRif ricorrenza, String allegatoNome) {
+                               Origine origine, RicorrenzaRif ricorrenza, String allegatoNome,
+                               LocalDateTime creatoIl, LocalDateTime modificatoIl) {
     }
 
     public record Totali(long ricaviCent, long costiCent, long saldoCent) {
