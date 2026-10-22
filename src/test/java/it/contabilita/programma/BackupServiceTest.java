@@ -26,6 +26,8 @@ class BackupServiceTest extends ProvaBase {
     @Autowired
     private BackupService backup;
 
+    private static final Path PREDEFINITA = CARTELLA_DATI.toAbsolutePath().resolve("copie");
+
     private Path nuovaCartella() throws Exception {
         return Files.createTempDirectory(CARTELLA_DATI.getParent(), "contabilita-backup-");
     }
@@ -35,25 +37,89 @@ class BackupServiceTest extends ProvaBase {
     }
 
     @Test
-    void ilProgrammaPartaSenzaCartellaENessunaCopia() throws Exception {
+    void ilProgrammaPartaConLaCartellaPredefinitaENessunaCopia() throws Exception {
         JsonNode p = leggi("/api/programma");
         assertThat(p.get("versione").asText()).isEqualTo("0.1.0");
-        assertThat(p.get("cartellaBackup").isNull()).isTrue();
+        assertThat(p.get("cartellaBackup").asText()).isEqualTo(PREDEFINITA.toString());
+        assertThat(p.get("cartellaPredefinita").asBoolean()).isTrue();
         assertThat(p.get("ultimoBackup").isNull()).isTrue();
     }
 
     @Test
-    void senzaCartellaLaCopiaDa409() throws Exception {
-        errore(post("/api/programma/backup"), null, 409);
+    void senzaCartellaConfigurataLaCopiaVaNellaCartellaPredefinita() throws Exception {
+        assertThat(PREDEFINITA).doesNotExist();
+        JsonNode esito = invia(post("/api/programma/backup"), null, 200);
+        Path copia = Path.of(esito.get("cartella").asText());
+        assertThat(copia.getParent()).isEqualTo(PREDEFINITA);
+        assertThat(copia.resolve("contabilita.db")).exists();
+        assertThat(leggi("/api/programma/copie")).hasSize(1);
+        assertThat(leggi("/api/programma").get("ultimoBackup").get("cartella").asText()).isEqualTo(copia.toString());
+    }
+
+    @Test
+    void laCopiaNonContieneLaCartellaDelleCopie() throws Exception {
+        invia(post("/api/programma/backup"), null, 200);
+        JsonNode esito = invia(post("/api/programma/backup"), null, 200);
+        assertThat(Path.of(esito.get("cartella").asText()).resolve("copie")).doesNotExist();
+    }
+
+    @Test
+    void ilRecuperoAllAvvioUsaLaCartellaPredefinita() throws Exception {
+        backup.controllaRecuperoAllAvvio();
+        try (Stream<Path> s = Files.list(PREDEFINITA)) {
+            assertThat(s.count()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    void tornareAlPredefinitoConNullOVuoto() throws Exception {
+        Path cartella = nuovaCartella();
+        JsonNode stato = invia(put("/api/programma/backup"), json(cartella), 200);
+        assertThat(stato.get("cartellaPredefinita").asBoolean()).isFalse();
+        assertThat(leggi("/api/programma").get("cartellaBackup").asText()).isEqualTo(cartella.toString());
+        JsonNode n = invia(put("/api/programma/backup"), "{\"cartella\":null}", 200);
+        assertThat(n.get("cartellaPredefinita").asBoolean()).isTrue();
+        assertThat(n.get("cartellaBackup").asText()).isEqualTo(PREDEFINITA.toString());
+        invia(put("/api/programma/backup"), json(cartella), 200);
+        JsonNode v = invia(put("/api/programma/backup"), "{\"cartella\":\"  \"}", 200);
+        assertThat(v.get("cartellaPredefinita").asBoolean()).isTrue();
+    }
+
+    @Test
+    void unaCartellaNuovaMaCreabileVieneCreataEIlFileDiProvaSparisce() throws Exception {
+        Path nuova = nuovaCartella().resolve("sotto").resolve("copie-mie");
+        JsonNode stato = invia(put("/api/programma/backup"), json(nuova), 200);
+        assertThat(stato.get("cartellaBackup").asText()).isEqualTo(nuova.toString());
+        assertThat(nuova).isDirectory();
+        try (Stream<Path> s = Files.list(nuova)) {
+            assertThat(s.count()).isZero();
+        }
+    }
+
+    @Test
+    void unaCartellaNonCreabileDa400ConMessaggioInItaliano() throws Exception {
+        Path file = Files.createTempFile(CARTELLA_DATI.getParent(), "contabilita-file-", ".txt");
+        JsonNode r = invia(put("/api/programma/backup"), json(file.resolve("sotto")), 400);
+        assertThat(r.get("errore").asText()).isNotBlank();
+    }
+
+    @Test
+    void unaCartellaDentroIDatiDa400TranneLaPredefinita() throws Exception {
+        JsonNode r = invia(put("/api/programma/backup"), json(CARTELLA_DATI.resolve("altro")), 400);
+        assertThat(r.get("errore").asText()).isEqualTo("La cartella delle copie non può stare dentro i dati, tranne quella predefinita.");
+        invia(put("/api/programma/backup"), json(CARTELLA_DATI.resolve("allegati")), 400);
+        invia(put("/api/programma/backup"), json(CARTELLA_DATI), 400);
+        JsonNode ok = invia(put("/api/programma/backup"), json(PREDEFINITA), 200);
+        assertThat(ok.get("cartellaPredefinita").asBoolean()).isTrue();
     }
 
     @Test
     void cartellaNonValidaDa400() throws Exception {
-        errore(put("/api/programma/backup"), "{\"cartella\":\"C:/non/esiste/proprio\"}", 400);
         Path file = Files.createTempFile(CARTELLA_DATI.getParent(), "contabilita-file-", ".txt");
+        errore(put("/api/programma/backup"), json(file.resolve("sotto")), 400);
         errore(put("/api/programma/backup"), json(file), 400);
         errore(put("/api/programma/backup"), "{\"cartella\":\"relativa\"}", 400);
-        assertThat(leggi("/api/programma").get("cartellaBackup").isNull()).isTrue();
+        assertThat(leggi("/api/programma").get("cartellaPredefinita").asBoolean()).isTrue();
     }
 
     @Test
@@ -84,8 +150,8 @@ class BackupServiceTest extends ProvaBase {
 
         // spegnere le copie
         JsonNode spento = invia(put("/api/programma/backup"), "{\"cartella\":null}", 200);
-        assertThat(spento.get("cartellaBackup").isNull()).isTrue();
-        assertThat(spento.get("ultimoBackup").isNull()).isTrue();
+        assertThat(spento.get("cartellaBackup").asText()).isEqualTo(PREDEFINITA.toString());
+        assertThat(spento.get("cartellaPredefinita").asBoolean()).isTrue();
     }
 
     @Test

@@ -75,6 +75,14 @@ public abstract class ProvaBase {
             }
             Files.deleteIfExists(allegati);
         }
+        Path copie = CARTELLA_DATI.resolve("copie"); // cartella predefinita delle copie
+        if (Files.isDirectory(copie)) {
+            try (var tutti = Files.walk(copie)) {
+                for (Path p : tutti.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                    Files.deleteIfExists(p);
+                }
+            }
+        }
         jdbc.update("DELETE FROM movimento");
         jdbc.update("DELETE FROM ricorrenza");
         jdbc.update("DELETE FROM categoria");

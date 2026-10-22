@@ -85,7 +85,7 @@ class RipristinoApiTest extends ProvaBase {
     // ---- elenco ----
 
     @Test
-    void senzaCartellaConfigurataLElencoEVuoto() throws Exception {
+    void conLaCartellaPredefinitaAppenaCreataLElencoEVuoto() throws Exception {
         JsonNode elenco = leggi("/api/programma/copie");
         assertThat(elenco.isArray()).isTrue();
         assertThat(elenco).isEmpty();
@@ -173,14 +173,23 @@ class RipristinoApiTest extends ProvaBase {
     }
 
     @Test
-    void senzaCartellaDiBackupOConUnRipristinoGiaInAttesaDa409() throws Exception {
-        errore(post("/api/programma/ripristina"), corpoRipristino("2026-01-05_030000"), 409);
-
+    void unRipristinoGiaInAttesaDa409() throws Exception {
         Path cartella = nuovaCartella();
         copiaVera(cartella, "2026-01-05_030000");
         Files.writeString(marcatore(), "{}");
         errore(post("/api/programma/ripristina"), corpoRipristino("2026-01-05_030000"), 409);
         assertThat(uscita.chiamate()).isEmpty();
+    }
+
+    @Test
+    void ilRipristinoDallaCartellaPredefinitaFunzionaEFaLaCopiaDiSicurezzaLi() throws Exception {
+        crea(movimento("2026-03-10", "RICAVO", "RICAVO_EXTRA", 100));
+        Path predefinita = CARTELLA_DATI.toAbsolutePath().resolve("copie");
+        copiaVera(predefinita, "2026-01-05_030000");
+        assertThat(leggi("/api/programma/copie")).hasSize(1);
+        JsonNode r = invia(post("/api/programma/ripristina"), corpoRipristino("2026-01-05_030000"), 202);
+        assertThat(predefinita.resolve(r.get("copiaDiSicurezza").asText()).resolve("contabilita.db")).exists();
+        assertThat(uscita.chiamate()).containsExactly(75);
     }
 
     // ---- il caso buono ----

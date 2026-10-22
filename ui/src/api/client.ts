@@ -85,6 +85,7 @@ export const api = {
   dipendenti: (q: string) => richiedi<Dipendente[]>(`/dipendenti${stringaQuery({ q })}`),
   rete: () => richiedi<Rete>("/rete"),
   programma: () => richiedi<Programma>("/programma"),
+  impostaCartellaBackup: (cartella: string | null) => richiedi<Programma>("/programma/backup", { method: "PUT", ...json({ cartella }) }),
   backupOra: () => richiedi<{ cartella: string }>("/programma/backup", { method: "POST" }),
   copie: () => richiedi<CopiaBackup[]>("/programma/copie"),
   ripristina: (copia: string) => richiedi<RispostaRipristino>("/programma/ripristina", { method: "POST", ...json({ copia }) }),
