@@ -43,7 +43,7 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
     setInCorso(true);
     try {
       const pronto = await preparaAllegato(scelto);
-      const problema = controllaAllegato(pronto);
+      const problema = await controllaAllegato(pronto);
       if (problema) setErrore(problema);
       else onCambia(pronto);
     } finally {

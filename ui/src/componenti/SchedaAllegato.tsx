@@ -53,7 +53,7 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
     setPreparo(true);
     try {
       const pronto = await preparaAllegato(file);
-      const problema = controllaAllegato(pronto);
+      const problema = await controllaAllegato(pronto);
       if (problema) avvisa(problema, { tipo: "errore" });
       else carica.mutate(pronto);
     } finally {

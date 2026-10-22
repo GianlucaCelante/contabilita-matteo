@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b",
-    "check": "tsc -b && eslint . --max-warnings=0"
+    "test": "vitest run",
+    "check": "tsc -b && eslint . --max-warnings=0 && vitest run"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
@@ -35,6 +36,7 @@
     "tailwindcss": "^4.1.16",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.21.0",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^3.2.7"
   }
 }
