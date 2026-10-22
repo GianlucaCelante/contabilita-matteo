@@ -6,13 +6,16 @@ import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
 import RipristinaDaCopia from "../componenti/RipristinaDaCopia";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
-import { dataOra } from "../util/formato";
+import { dataOraRelativa } from "../util/formato";
+
+// I pulsanti compatti delle righe di «Dati e copie» (44 px, angoli 10 px, testo 14 px).
+const CLASSE_BOTTONE = "btn !rounded-[10px] !px-4 !text-[14px]";
 
 const NOME_RETE: Record<IndirizzoRete["tipo"], string> = { WIFI: "Wi-Fi", CAVO: "Cavo", ALTRO: "Altra rete" };
 
 function Sezione({ titolo, children }: { titolo: string; children: ReactNode }) {
   return (
-    <section className="scheda min-w-0 flex-1 px-6 py-6" aria-label={titolo}>
+    <section className="scheda min-w-0 flex-1 px-6 py-[22px]" aria-label={titolo}>
       <h2 className="mb-3 text-[20px] font-bold">{titolo}</h2>
       {children}
     </section>
@@ -42,17 +45,17 @@ function DalTelefono() {
       )}
       {q.data && attuale && (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-5">
-            <div className="flex h-[200px] w-[200px] items-center justify-center rounded-xl border border-bordo bg-carta p-2">
+          <div className="flex flex-wrap items-center gap-[18px]">
+            <div className="flex h-[112px] w-[112px] shrink-0 items-center justify-center rounded-xl border border-bordo bg-carta p-1.5">
               {qrRotto ? (
-                <p className="m-0 text-center text-[14px] text-rosso">Non riesco a creare il codice QR.</p>
+                <p className="m-0 text-center text-[12px] text-rosso">Non riesco a creare il codice QR.</p>
               ) : (
-                <img src={urlQr(attuale.ip)} alt={`Codice QR per aprire l'app all'indirizzo http://${attuale.ip}:${q.data.porta}/`} width={184} height={184} onError={() => setQrRotto(true)} />
+                <img src={urlQr(attuale.ip)} alt={`Codice QR per aprire l'app all'indirizzo http://${attuale.ip}:${q.data.porta}/`} width={98} height={98} onError={() => setQrRotto(true)} />
               )}
             </div>
             <div className="min-w-0 flex-1 basis-[200px]">
-              <p className="m-0 text-[16px] leading-relaxed">Inquadra il codice o scrivi l&apos;indirizzo, con il telefono sulla stessa rete Wi-Fi.</p>
-              <p className="num m-0 mt-2 break-all font-titolo text-[20px] font-bold">
+              <p className="m-0 text-[15px]">Inquadra il codice o scrivi l&apos;indirizzo, con il telefono sulla stessa rete Wi-Fi.</p>
+              <p className="num m-0 mt-2 break-all font-titolo text-[18px] font-bold">
                 http://{attuale.ip}:{q.data.porta}/
               </p>
             </div>
@@ -79,10 +82,10 @@ function DalTelefono() {
 
 function Dato({ nome, valore, azione }: { nome: string; valore: ReactNode; azione?: ReactNode }) {
   return (
-    <div className="flex min-h-[64px] flex-wrap items-center justify-between gap-3 border-t border-riga py-2">
+    <div className="flex min-h-[40px] flex-wrap items-center justify-between gap-3 border-t border-riga py-1 first:border-t-0">
       <div className="min-w-0">
-        <div className="text-[16px] font-bold">{nome}</div>
-        <div className="break-words text-[14px] text-tenue">{valore}</div>
+        <div className="text-[15px]">{nome}</div>
+        <div className="break-words text-[13px] text-spento">{valore}</div>
       </div>
       {azione}
     </div>
@@ -113,24 +116,24 @@ function DatiECopie() {
         <div>
           <Dato
             nome="Ultima copia di sicurezza"
-            valore={p.ultimoBackup ? `${dataOra(p.ultimoBackup.quando)} · in ${p.ultimoBackup.cartella}` : "Ancora nessuna copia. Ne viene fatta una ogni notte alle 03:00."}
+            valore={p.ultimoBackup ? `${dataOraRelativa(p.ultimoBackup.quando)} · in ${p.ultimoBackup.cartella}` : "Ancora nessuna copia. Ne viene fatta una ogni notte alle 03:00."}
             azione={
-              <button type="button" className="btn" disabled={backup.isPending} onClick={() => backup.mutate()}>
+              <button type="button" className={CLASSE_BOTTONE} disabled={backup.isPending} onClick={() => backup.mutate()}>
                 {backup.isPending ? "Copio…" : "Fai ora"}
               </button>
             }
           />
-          <Dato nome="Dove vanno le copie" valore={p.cartellaBackup} />
+          <Dato nome="Dove sono i dati" valore="Solo su questo computer, mai online" />
           <Dato
             nome="Ripristina da una copia"
             valore="Sostituisce i dati attuali"
             azione={
-              <button type="button" className="btn" onClick={() => setRipristinoAperto(true)}>
+              <button type="button" className={CLASSE_BOTTONE} onClick={() => setRipristinoAperto(true)}>
                 Scegli copia
               </button>
             }
           />
-          <Dato nome="Dove sono i dati" valore="Solo su questo computer, mai online" />
+          <Dato nome="Dove vanno le copie" valore={p.cartellaBackup} />
           <Dato nome="Versione del programma" valore={p.versione} />
         </div>
       )}
@@ -143,7 +146,7 @@ export default function Impostazioni() {
   return (
     <>
       <Testata titolo="Impostazioni" />
-      <div className="flex flex-col gap-4 px-4 pb-24 md:px-8 md:pb-8 xl:flex-row">
+      <div className="flex flex-col gap-4 px-4 pb-24 md:px-8 md:pb-7 xl:flex-row xl:items-start">
         <DalTelefono />
         <DatiECopie />
       </div>

@@ -103,6 +103,17 @@ export function dataOra(testo: string): string {
   return `${due(d.getDate())}/${due(d.getMonth() + 1)}/${d.getFullYear()} alle ${due(d.getHours())}:${due(d.getMinutes())}`;
 }
 
+// Come dataOra, ma "Oggi alle 03:00" / "Ieri alle 03:00" per oggi e ieri.
+export function dataOraRelativa(testo: string): string {
+  const d = new Date(testo);
+  if (Number.isNaN(d.getTime())) return testo;
+  const giorno = isoDa(d);
+  const ora = `${due(d.getHours())}:${due(d.getMinutes())}`;
+  if (giorno === oggiIso()) return `Oggi alle ${ora}`;
+  if (giorno === aggiungiGiorni(oggiIso(), -1)) return `Ieri alle ${ora}`;
+  return dataOra(testo);
+}
+
 // 1234567 -> "1,2 MB"; 900 -> "900 byte"
 export function dimensioneLeggibile(byte: number): string {
   if (byte < 1024) return `${byte} byte`;
