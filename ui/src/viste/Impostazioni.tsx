@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, messaggioErrore, urlQr } from "../api/client";
-import type { IndirizzoRete } from "../api/tipi";
+import type { IndirizzoRete, Programma } from "../api/tipi";
 import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
+import Finestra from "../componenti/Finestra";
 import RipristinaDaCopia from "../componenti/RipristinaDaCopia";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
@@ -92,6 +93,88 @@ function Dato({ nome, valore, azione }: { nome: string; valore: ReactNode; azion
   );
 }
 
+// «Cambia» la cartella delle copie: un campo col percorso (o «Usa quella predefinita»); il servizio risponde 400 se non va bene.
+function CambiaCartella({ programma, onChiudi }: { programma: Programma; onChiudi: () => void }) {
+  const client = useQueryClient();
+  const avvisa = useAvviso();
+  const [percorso, setPercorso] = useState(programma.cartellaBackup);
+  const [errore, setErrore] = useState<string | null>(null);
+  const salva = useMutation({
+    mutationFn: (cartella: string | null) => api.impostaCartellaBackup(cartella),
+    onSuccess: (r) => {
+      void client.invalidateQueries({ queryKey: chiavi.programma });
+      avvisa(r.cartellaPredefinita ? "Le copie vanno nella cartella predefinita" : "Cartella delle copie cambiata");
+      onChiudi();
+    },
+    onError: (e) => setErrore(messaggioErrore(e)),
+  });
+  const invia = () => {
+    if (!percorso.trim()) {
+      setErrore("Scrivi il percorso della cartella, oppure usa quella predefinita.");
+      return;
+    }
+    setErrore(null);
+    salva.mutate(percorso.trim());
+  };
+
+  return (
+    <Finestra
+      titolo="Dove vanno le copie"
+      sottotitolo="Scrivi il percorso completo di una cartella. Se non esiste, viene creata."
+      onChiudi={salva.isPending ? undefined : onChiudi}
+      piede={
+        <>
+          <button type="button" className="btn" disabled={salva.isPending} onClick={onChiudi}>
+            Annulla
+          </button>
+          <button type="button" className="btn primario" disabled={salva.isPending} onClick={invia}>
+            {salva.isPending ? "Un momento…" : "Salva"}
+          </button>
+        </>
+      }
+    >
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          invia();
+        }}
+      >
+        <div>
+          <label htmlFor="cartella-copie" className="etichetta">
+            Cartella delle copie
+          </label>
+          <div className={errore ? "campo errore" : "campo"}>
+            <input
+              id="cartella-copie"
+              type="text"
+              data-focus-iniziale
+              autoComplete="off"
+              spellCheck={false}
+              value={percorso}
+              aria-invalid={errore ? true : undefined}
+              aria-describedby={errore ? "cartella-copie-e" : undefined}
+              onChange={(e) => setPercorso(e.target.value)}
+            />
+          </div>
+          {errore && (
+            <p id="cartella-copie-e" role="alert" className="m-0 mt-1.5 text-[14px] text-rosso">
+              {errore}
+            </p>
+          )}
+        </div>
+        {!programma.cartellaPredefinita && (
+          <div>
+            <button type="button" className={CLASSE_BOTTONE} disabled={salva.isPending} onClick={() => salva.mutate(null)}>
+              Usa quella predefinita
+            </button>
+          </div>
+        )}
+      </form>
+    </Finestra>
+  );
+}
+
 // «Dati e copie»: la copia di sicurezza (automatica alle 03:00) e quella fatta ora.
 function DatiECopie() {
   const avvisa = useAvviso();
@@ -106,6 +189,7 @@ function DatiECopie() {
     onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
   });
   const [ripristinoAperto, setRipristinoAperto] = useState(false);
+  const [cartellaAperta, setCartellaAperta] = useState(false);
   const p = q.data;
 
   return (
@@ -133,10 +217,19 @@ function DatiECopie() {
               </button>
             }
           />
-          <Dato nome="Dove vanno le copie" valore={p.cartellaBackup} />
+          <Dato
+            nome="Dove vanno le copie"
+            valore={p.cartellaPredefinita ? `${p.cartellaBackup} (predefinita)` : p.cartellaBackup}
+            azione={
+              <button type="button" className={CLASSE_BOTTONE} onClick={() => setCartellaAperta(true)}>
+                Cambia
+              </button>
+            }
+          />
           <Dato nome="Versione del programma" valore={p.versione} />
         </div>
       )}
+      {cartellaAperta && p && <CambiaCartella programma={p} onChiudi={() => setCartellaAperta(false)} />}
       {ripristinoAperto && <RipristinaDaCopia onChiudi={() => setRipristinoAperto(false)} />}
     </Sezione>
   );

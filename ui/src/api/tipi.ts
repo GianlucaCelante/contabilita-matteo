@@ -120,6 +120,7 @@ export interface Rete {
 export interface Programma {
   versione: string;
   cartellaBackup: string;
+  cartellaPredefinita: boolean;
   ultimoBackup: { quando: string; cartella: string } | null;
 }
 
