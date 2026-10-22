@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    Servizio "Contabilita" su macOS: il corrispondente di Contabilita.xml (WinSW) su Windows.
+    LaunchDaemon di sistema: parte all'avvio del Mac, prima di qualunque login, e launchd lo
+    riavvia se cade (KeepAlive). Gira come root, come LocalSystem su Windows: scrive in
+    /Library/Application Support/Contabilita senza complicazioni di permessi.
+
+    Niente -Dcontabilita.sorveglia-padre=true: su Windows serve perche' WinSW e' il processo
+    padre e la JVM deve spegnersi se WinSW muore. Su macOS il padre e' launchd (PID 1), che non
+    sparisce mai, e launchd ferma la JVM da solo con SIGTERM: la sorveglianza sarebbe inutile.
+    Niente -Djava.awt.headless: non c'e' grafica/stampa in questo progetto.
+    La classe principale e' quella del jar eseguibile Spring Boot (it.contabilita.ContabilitaApplication),
+    avviata con "-jar".
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>it.contabilita.servizio</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Applications/Contabilita.app/Contents/Resources/runtime/bin/java</string>
+        <string>-Xmx256m</string>
+        <string>-jar</string>
+        <string>/Applications/Contabilita.app/Contents/Resources/app/contabilita.jar</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>CONTABILITA_DATA_DIR</key>
+        <string>/Library/Application Support/Contabilita</string>
+        <key>TZ</key>
+        <string>Europe/Rome</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Library/Application Support/Contabilita</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Log di bootstrap (prima che Spring Boot inizializzi il proprio logging). -->
+    <key>StandardOutPath</key>
+    <string>/Library/Logs/Contabilita/launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Library/Logs/Contabilita/launchd.log</string>
+</dict>
+</plist>

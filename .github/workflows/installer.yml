@@ -1,0 +1,106 @@
+# Costruisce gli installer: MSI (Windows) e PKG (macOS).
+# Parte su tag v* e a mano (Actions > Installer > Run workflow). Nessun segreto
+# serve per la build NON firmata; la firma e' predisposta ma opzionale (vedi sotto).
+name: Installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-msi:
+    runs-on: windows-latest
+    env:
+      CERT_B64: ${{ secrets.SIGNING_CERT_PFX_BASE64 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # WiX 3.14: i runner Windows di GitHub di solito lo hanno gia' (C:\Program Files (x86)\WiX Toolset v3.14).
+      # Se manca lo si installa con Chocolatey. In entrambi i casi bin\ va sul PATH per jpackage.
+      - name: WiX Toolset 3.14
+        shell: pwsh
+        run: |
+          $wix = "C:\Program Files (x86)\WiX Toolset v3.14\bin"
+          if (-not (Test-Path (Join-Path $wix "candle.exe"))) {
+            choco install wixtoolset --version 3.14.0.20220601 -y --no-progress
+          }
+          if (-not (Test-Path (Join-Path $wix "candle.exe"))) { throw "WiX non trovato in $wix" }
+          Add-Content -Path $env:GITHUB_PATH -Value $wix
+
+      # Build-Setup.ps1 lancia Maven (con il profilo ui se previsto dal pom), jlink, jpackage.
+      # Scarica WinSW 2.12.0 verificando lo SHA-256 fissato nello script.
+      - name: Build MSI
+        shell: pwsh
+        run: ./installer/Build-Setup.ps1
+
+      # Firma opzionale: si attiva solo se nei secrets c'e' il certificato (.pfx in base64).
+      - name: Firma MSI (opzionale)
+        if: ${{ env.CERT_B64 != '' }}
+        shell: pwsh
+        env:
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_B64))
+          $env:SIGNING_CERT_PATH = $pfx
+          ./installer/Build-Setup.ps1 -SkipMaven -CodeSign
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Contabilita-msi
+          path: target/installer/*.msi
+          if-no-files-found: error
+
+  macos-pkg:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # Firma e notarizzazione: opzionali. Senza i secrets le variabili restano vuote
+      # e Build-Setup.sh produce un pacchetto non firmato.
+      # I certificati (.p12) vanno importati in un portachiavi temporaneo.
+      - name: Importa certificati Apple (opzionale)
+        env:
+          APPLE_CERT_P12_BASE64: ${{ secrets.APPLE_CERT_P12_BASE64 }}
+          APPLE_CERT_P12_PASSWORD: ${{ secrets.APPLE_CERT_P12_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_CERT_P12_BASE64" ]; then echo "Nessun certificato: build non firmata."; exit 0; fi
+          KC="$RUNNER_TEMP/build.keychain-db"
+          echo "$APPLE_CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p tmp "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p tmp "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KC" -P "$APPLE_CERT_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k tmp "$KC"
+          security list-keychains -d user -s "$KC" login.keychain-db
+
+      - name: Build PKG
+        env:
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+          APPLE_INSTALLER_IDENTITY: ${{ secrets.APPLE_INSTALLER_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash installer/mac/Build-Setup.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Contabilita-pkg
+          path: target/installer-mac/*.pkg
+          if-no-files-found: error

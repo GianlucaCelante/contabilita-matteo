@@ -5,6 +5,9 @@ allegati/
 *.db-journal
 *.sqlite
 *.xml
+!pom.xml
+!installer/**/*.xml
+!installer/**/*.wxs
 *.csv
 *.xlsx
 

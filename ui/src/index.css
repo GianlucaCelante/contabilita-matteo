@@ -1,0 +1,231 @@
+@import "tailwindcss";
+
+/* ============================================================
+   Font incorporati: Bricolage Grotesque (titoli) e Atkinson
+   Hyperlegible (testo), licenza SIL OFL, serviti dal servizio
+   stesso da ui/public/font/. Mai da Google: il servizio risponde
+   solo sulla rete locale. Licenze accanto ai file.
+   ============================================================ */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("/font/bricolage/BricolageGrotesque-Variabile.ttf") format("truetype-variations"),
+       url("/font/bricolage/BricolageGrotesque-Variabile.ttf") format("truetype");
+  font-weight: 200 800;
+  font-stretch: 75% 100%;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/font/atkinson/AtkinsonHyperlegible-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/font/atkinson/AtkinsonHyperlegible-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("/font/atkinson/AtkinsonHyperlegible-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Token di stile (docs/interfaccia.md, sezione 5), come utility Tailwind:
+   bg-carta, text-tenue, border-bordo, font-titolo... */
+@theme {
+  --color-fondo: #EADECE;
+  --color-testo: #58443C;
+  --color-tenue: #6B5B4F;
+  --color-spento: #6F5F53;
+  --color-carta: #ffffff;
+  --color-crema: #FBF5EC;
+  --color-sabbia: #F7F0E4;
+  --color-riga: #EDE3D5;
+  --color-bordo: #DCCFBB;
+  --color-bordo2: #CFC0AA;
+  --color-tratteggio: #C0AF9B;
+  --color-bordocampo: #887868;
+  --color-verde: #5E7B18;
+  --color-verdescuro: #4B6313;
+  --color-verdechiaro: #E3EAD1;
+  --color-verdebordo: #B9C89A;
+  --color-ambra: #845A08;
+  --color-ambrachiaro: #F7EBD3;
+  --color-ambrabordo: #E5CB93;
+  --color-rosso: #A3301A;
+  --color-rossochiaro: #FBE4E0;
+  --color-rossobordo: #E0B4A8;
+  --font-titolo: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-testo: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --shadow-ombra: 0 8px 24px rgba(88, 68, 60, 0.12);
+}
+
+:root {
+  --anello: var(--color-verde);
+}
+
+html {
+  background: var(--color-fondo);
+  color-scheme: light;
+  height: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--color-fondo);
+  color: var(--color-testo);
+  font-family: var(--font-testo);
+  -webkit-font-smoothing: antialiased;
+}
+#root { height: 100%; }
+h1, h2, h3 { font-family: var(--font-titolo); margin: 0; font-weight: 600; }
+button { cursor: pointer; text-align: left; }
+button:disabled { cursor: default; }
+svg { display: block; flex-shrink: 0; }
+input::placeholder, textarea::placeholder { color: var(--color-spento); opacity: 1; }
+
+/* L'anello del fuoco da tastiera, uno solo per tutta l'app. */
+:is(a, button, summary, input, select, textarea, [tabindex], [role="switch"]):focus-visible {
+  outline: 3px solid var(--anello);
+  outline-offset: 2px;
+}
+/* I campi stanno in una scatola col bordo: l'anello va sulla scatola. */
+.campo:has(input:focus-visible, select:focus-visible, textarea:focus-visible) {
+  outline: 3px solid var(--anello);
+  outline-offset: 1px;
+  border-color: var(--anello);
+}
+.campo :is(input, select, textarea):focus-visible { outline: none; }
+
+@layer components {
+  .num { font-variant-numeric: tabular-nums; }
+  .saltaAlContenuto {
+    position: fixed; left: 12px; top: 12px; z-index: 100; padding: 12px 18px; border-radius: 12px;
+    background: var(--color-testo); color: #fff; font-weight: 700; text-decoration: none;
+    transform: translateY(calc(-100% - 24px));
+  }
+  .saltaAlContenuto:focus { transform: none; }
+
+  /* Pulsanti: alti 48-52 px, angoli 12 px */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--color-bordo2);
+    background: var(--color-carta); color: var(--color-testo); font-size: 15px; font-weight: 700;
+    text-decoration: none; text-align: center; white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: var(--color-sabbia); }
+  .btn:disabled { opacity: 0.55; }
+  .btn.primario { background: var(--color-verde); border-color: var(--color-verde); color: #fff; }
+  .btn.primario:hover:not(:disabled) { background: var(--color-verdescuro); }
+  .btn.grande { min-height: 52px; font-size: 16px; padding: 0 24px; }
+  .btn.pericolo { color: var(--color-rosso); border-color: var(--color-rossobordo); }
+  .btn.pericolo:hover:not(:disabled) { background: var(--color-rossochiaro); }
+  .btn.pericolo.pieno { background: var(--color-rosso); border-color: var(--color-rosso); color: #fff; }
+  .btn.pericolo.pieno:hover:not(:disabled) { background: #8c2815; }
+  .btnIcona {
+    display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+    border-radius: 10px; border: 1px solid var(--color-bordo2); background: var(--color-carta); color: var(--color-testo);
+  }
+  .btnIcona:hover:not(:disabled) { background: var(--color-sabbia); }
+
+  /* Selettore a segmenti (Settimana, Mese, ...) */
+  .segmenti {
+    display: inline-flex; border: 1px solid var(--color-bordo2); border-radius: 10px; overflow: hidden;
+    background: var(--color-carta); min-height: 48px; flex-shrink: 0;
+  }
+  .segmenti > button, .segmenti > a {
+    padding: 0 16px; display: flex; align-items: center; font-size: 15px; font-weight: 700;
+    color: var(--color-spento); text-decoration: none; min-height: 44px; white-space: nowrap;
+  }
+  .segmenti > [aria-pressed="true"], .segmenti > [aria-current="page"] { background: var(--color-testo); color: #fff; }
+  .segmenti > :focus-visible { outline-offset: -3px; }
+
+  /* Scelte esclusive grandi (Cosa registri, Documento) */
+  .scelta {
+    flex: 1; min-height: 56px; border: 1px solid var(--color-bordo2); border-radius: 12px; background: var(--color-carta);
+    display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 700;
+    color: var(--color-testo); text-align: center; padding: 0 8px;
+  }
+  .scelta:hover:not(:disabled) { background: var(--color-sabbia); }
+  .scelta[aria-checked="true"] { background: var(--color-verdechiaro); border-color: var(--color-verde); color: var(--color-verdescuro); box-shadow: 0 0 0 1px var(--color-verde) inset; }
+  .scelta.ambra[aria-checked="true"] { background: var(--color-ambrachiaro); border-color: var(--color-ambra); color: var(--color-ambra); box-shadow: 0 0 0 1px var(--color-ambra) inset; }
+  .scelta:disabled { opacity: 0.6; }
+
+  .scheda { background: var(--color-carta); border: 1px solid var(--color-bordo); border-radius: 18px; }
+  .etichetta { font-size: 13px; font-weight: 700; color: var(--color-spento); display: block; margin-bottom: 6px; }
+  .etichettaMaiuscola { font-size: 12px; font-weight: 700; color: var(--color-spento); text-transform: uppercase; letter-spacing: 0.03em; }
+
+  /* Campi alti 52 px */
+  .campo {
+    display: flex; align-items: center; gap: 8px; min-height: 52px; border: 1px solid var(--color-bordocampo);
+    border-radius: 10px; background: var(--color-carta); padding: 0 14px; font-size: 17px;
+  }
+  .campo.errore { border-color: var(--color-rosso); }
+  .campo input, .campo select, .campo textarea {
+    font: inherit; color: inherit; background: none; border: 0; width: 100%; min-width: 0; min-height: 48px; padding: 0;
+  }
+  .campo textarea { padding: 12px 0; min-height: 52px; resize: vertical; }
+
+  /* Elenco movimenti */
+  .riga { border-top: 1px solid var(--color-riga); }
+  .rigaMov {
+    display: grid; align-items: center; gap: 12px; min-height: 64px; padding: 8px 20px; color: inherit; text-decoration: none;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .rigaMov:hover { background: var(--color-sabbia); }
+  @media (min-width: 768px) {
+    .rigaMov, .intestazioneTabella {
+      grid-template-columns: 86px 112px minmax(0, 1fr) 140px 130px 96px;
+    }
+  }
+
+  .etichettaTipo {
+    display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border-radius: 13px;
+    font-size: 12.5px; font-weight: 700; white-space: nowrap;
+  }
+  .etichettaTipo.ricavo { background: var(--color-verdechiaro); color: var(--color-verdescuro); }
+  .etichettaTipo.variabile { background: var(--color-ambrachiaro); color: var(--color-ambra); }
+  .etichettaTipo.fisso { background: var(--color-riga); color: var(--color-testo); }
+
+  .velo {
+    position: fixed; inset: 0; z-index: 50; background: rgba(88, 68, 60, 0.45);
+    display: flex; align-items: center; justify-content: center; padding: 12px;
+  }
+  .finestra {
+    background: var(--color-carta); border-radius: 18px; padding: 24px; width: 100%; max-width: 460px;
+    max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-ombra);
+  }
+  .finestra:focus-visible { outline: none; }
+
+  .avvisino {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+    background: var(--color-testo); color: #fff; font-size: 15px; box-shadow: var(--shadow-ombra); max-width: 520px;
+  }
+  .avvisino.errore { background: var(--color-rossochiaro); color: var(--color-rosso); border: 1px solid var(--color-rossobordo); }
+  .zonaAvvisi {
+    position: fixed; left: 12px; right: 12px; bottom: 84px; z-index: 60; display: flex; flex-direction: column;
+    align-items: center; gap: 8px; pointer-events: none;
+  }
+  .zonaAvvisi > * { pointer-events: auto; }
+  @media (min-width: 768px) { .zonaAvvisi { bottom: 24px; } }
+
+  .interruttore {
+    position: relative; width: 52px; height: 30px; border-radius: 15px; background: var(--color-verde); flex-shrink: 0;
+    display: inline-block; transition: background 0.15s;
+  }
+  .interruttore::after {
+    content: ""; position: absolute; top: 3px; left: 25px; width: 24px; height: 24px; border-radius: 50%; background: #fff;
+    transition: left 0.15s;
+  }
+  .interruttore.off { background: var(--color-bordocampo); }
+  .interruttore.off::after { left: 3px; }
+}

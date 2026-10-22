@@ -1,0 +1,325 @@
+databaseChangeLog:
+  # Versione 1: schema iniziale. Importi in centesimi interi (INTEGER), date come testo ISO
+  # (yyyy-MM-dd) e istanti come testo ISO (yyyy-MM-ddTHH:mm:ss), cosi' i confronti fra date
+  # sono confronti fra stringhe ordinate.
+  #
+  # I nomi delle anagrafiche sono unici "senza distinguere maiuscole": la colonna nome_chiave
+  # contiene il nome in minuscolo (calcolato dal servizio con le regole Unicode, non con il
+  # NOCASE di SQLite che conosce solo l'ASCII) e porta l'indice unico.
+
+  - changeSet:
+      id: 1-impostazione
+      author: contabilita
+      comment: "Impostazioni chiave/valore del servizio."
+      changes:
+        - createTable:
+            tableName: impostazione
+            columns:
+              - column:
+                  name: chiave
+                  type: TEXT
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: valore
+                  type: TEXT
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 2-categoria
+      author: contabilita
+      comment: "Categorie di movimento; ognuna ha un Tipo (RICAVO, COSTO_VARIABILE, COSTO_FISSO)."
+      changes:
+        - createTable:
+            tableName: categoria
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nome_chiave
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tipo
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_categoria_nome_tipo
+            tableName: categoria
+            unique: true
+            columns:
+              - column:
+                  name: nome_chiave
+              - column:
+                  name: tipo
+
+  - changeSet:
+      id: 3-fornitore
+      author: contabilita
+      changes:
+        - createTable:
+            tableName: fornitore
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nome_chiave
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: partita_iva
+                  type: TEXT
+        - createIndex:
+            indexName: ux_fornitore_nome
+            tableName: fornitore
+            unique: true
+            columns:
+              - column:
+                  name: nome_chiave
+
+  - changeSet:
+      id: 4-dipendente
+      author: contabilita
+      changes:
+        - createTable:
+            tableName: dipendente
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nome_chiave
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_dipendente_nome
+            tableName: dipendente
+            unique: true
+            columns:
+              - column:
+                  name: nome_chiave
+
+  - changeSet:
+      id: 5-ricorrenza
+      author: contabilita
+      comment: >
+        Ricorrenza mensile: il modello (tipo, documento, importo, categoria...) delle occorrenze
+        future. ultimo_mese (yyyy-MM) e' l'ultimo mese gia' trattato dal generatore: cosi' un'occorrenza
+        eliminata a mano non viene ricreata.
+      changes:
+        - createTable:
+            tableName: ricorrenza
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: giorno
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attiva
+                  type: INTEGER
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tipo
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: documento
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: importo_cent
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: categoria_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_ricorrenza_categoria
+                    references: categoria(id)
+              - column:
+                  name: fornitore_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_ricorrenza_fornitore
+                    references: fornitore(id)
+              - column:
+                  name: dipendente_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_ricorrenza_dipendente
+                    references: dipendente(id)
+              - column:
+                  name: descrizione
+                  type: TEXT
+              - column:
+                  name: note
+                  type: TEXT
+              - column:
+                  name: ultimo_mese
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: creata_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 6-movimento
+      author: contabilita
+      comment: "Il registro dei movimenti. (ricorrenza_id, anno_mese) e' unico: un'occorrenza per ricorrenza e per mese."
+      changes:
+        - createTable:
+            tableName: movimento
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: data
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tipo
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: documento
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: importo_cent
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: categoria_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_movimento_categoria
+                    references: categoria(id)
+              - column:
+                  name: fornitore_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_movimento_fornitore
+                    references: fornitore(id)
+              - column:
+                  name: dipendente_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_movimento_dipendente
+                    references: dipendente(id)
+              - column:
+                  name: descrizione
+                  type: TEXT
+              - column:
+                  name: numero_documento
+                  type: TEXT
+              - column:
+                  name: note
+                  type: TEXT
+              - column:
+                  name: origine
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ricorrenza_id
+                  type: INTEGER
+                  constraints:
+                    foreignKeyName: fk_movimento_ricorrenza
+                    references: ricorrenza(id)
+              - column:
+                  name: anno_mese
+                  type: TEXT
+              - column:
+                  name: allegato_nome
+                  type: TEXT
+              - column:
+                  name: creato_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modificato_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_movimento_ricorrenza_mese
+            tableName: movimento
+            unique: true
+            columns:
+              - column:
+                  name: ricorrenza_id
+              - column:
+                  name: anno_mese
+        - createIndex:
+            indexName: ix_movimento_data
+            tableName: movimento
+            columns:
+              - column:
+                  name: data
+        - createIndex:
+            indexName: ix_movimento_tipo
+            tableName: movimento
+            columns:
+              - column:
+                  name: tipo

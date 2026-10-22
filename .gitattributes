@@ -1,0 +1,6 @@
+# Gli script e i file dell'installer macOS devono restare con fine riga LF (bash non digerisce CRLF)
+installer/mac/** text eol=lf
+*.sh text eol=lf
+*.plist text eol=lf
+# Il resto lo normalizza git
+* text=auto

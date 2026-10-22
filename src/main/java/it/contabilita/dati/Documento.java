@@ -1,0 +1,5 @@
+package it.contabilita.dati;
+
+public enum Documento {
+    RICAVO_FATTURATO, RICAVO_EXTRA, FATTURA, SCONTRINO, RETRIBUZIONE_REGOLARE, RETRIBUZIONE_EXTRA, NESSUNO
+}

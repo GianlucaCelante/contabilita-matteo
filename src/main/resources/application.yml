@@ -1,0 +1,64 @@
+server:
+  port: 8766
+  # Risposte compresse (gzip) se il browser le accetta: JSON dei movimenti e JavaScript
+  # dell'interfaccia. Sotto i 2 KB non conviene.
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,text/javascript,application/javascript,text/plain,image/svg+xml
+    min-response-size: 2KB
+
+spring:
+  application:
+    name: contabilita
+  datasource:
+    # date_class=TEXT: sqlite-jdbc scriverebbe di default un LocalDateTime come intero
+    # (epoch millis), ma hibernate-community-dialects lo rilegge come stringa formattata:
+    # senza questo parametro la lettura di QUALSIASI colonna data scritta da Hibernate fallisce
+    # ("Error parsing time stamp"). Con date_class=TEXT scrittura e lettura usano lo stesso formato.
+    # busy_timeout=10000: se un'altra connessione sta scrivendo, aspetta fino a 10 s prima di
+    # rispondere SQLITE_BUSY invece di fallire subito.
+    url: jdbc:sqlite:${contabilita.dati}/contabilita.db?journal_mode=WAL&date_class=TEXT&date_string_format=yyyy-MM-dd HH:mm:ss.SSS&busy_timeout=10000
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      # SQLite ha un solo scrittore alla volta: con piu' connessioni nel pool ognuna crede di
+      # poter scrivere e si arriva comunque a SQLITE_BUSY. Con una sola connessione tutto
+      # l'accesso al database - letture comprese - passa da un'unica coda: per il carico di
+      # questo servizio (poche richieste al secondo da una rete locale) e' la scelta piu' robusta.
+      maximum-pool-size: 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.community.dialect.SQLiteDialect
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+  servlet:
+    multipart:
+      # Per gli allegati delle fasi successive (foto o PDF di fatture e scontrini).
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+contabilita:
+  # Cartella dati: creata all'avvio se manca (vedi ContabilitaApplication.main). Sovrascrivibile
+  # con la variabile d'ambiente CONTABILITA_DATA_DIR (l'installer usa ProgramData\Contabilita).
+  dati: ${CONTABILITA_DATA_DIR:./data}
+  cors:
+    origine-sviluppo: http://localhost:5173
+
+logging:
+  # Console e file in UTF-8 (la console di Windows usa una codepage che rovina le accentate).
+  charset:
+    console: UTF-8
+    file: UTF-8
+  file:
+    name: ${contabilita.dati}/log/contabilita.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 14
+      total-size-cap: 200MB
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

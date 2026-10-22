@@ -1,0 +1,91 @@
+<!--
+    Configurazione WinSW del servizio Windows "Contabilita".
+    Riferimento: https://github.com/winsw/winsw/blob/master/docs/xml-config-file.md
+
+    Adattata dal progetto gemello (riuso a pezzi, vedi docs/stack.md).
+    Le variabili sono fisse. Un solo cliente, un solo PC.
+
+    Struttura prodotta da jpackage con l'opzione "runtime-image" (come nel progetto gemello;
+    da riverificare con la prima build di questo progetto):
+        C:\Program Files\Contabilita\
+            Contabilita.exe          <- lanciatore nativo di jpackage
+            app\
+                Contabilita.exe      <- questo e' WinSW, rinominato da Build-Setup.ps1
+                Contabilita.xml      <- questo file
+                contabilita.jar
+                install_service.ps1, uninstall_service.ps1, update.ps1,
+                service_common.ps1
+            runtime\
+                bin\java.exe       <- JRE ridotta con jlink
+
+    WinSW espone %BASE% come variabile d'ambiente pari alla cartella di
+    questo file (qui: app\), sia nell'eseguibile sia negli argomenti.
+    "%BASE%\..\runtime\bin\java.exe" punta quindi a runtime\bin\java.exe;
+    "%BASE%\contabilita.jar" punta al jar accanto a questo XML, anche se la
+    working directory del processo e' la cartella dati (sotto).
+    DA VERIFICARE nella prova in Windows Sandbox (vedi README): se
+    l'espansione di %BASE% dentro <arguments> non dovesse funzionare come
+    negli altri esempi WinSW, sostituire con il percorso assoluto fisso
+    "C:\Program Files\Contabilita\app\contabilita.jar" (la cartella di
+    installazione e' decisa e fissa, quindi il percorso assoluto è comunque
+    stabile).
+
+-->
+<service>
+    <id>Contabilita</id>
+    <name>Contabilità Matteo</name>
+    <description>Contabilità della pizzeria: ricavi, costi e riepiloghi. Interfaccia web su http://localhost:8766/</description>
+
+    <executable>%BASE%\..\runtime\bin\java.exe</executable>
+    <arguments>-Dcontabilita.sorveglia-padre=true -Xmx256m -jar "%BASE%\contabilita.jar"</arguments>
+
+    <!--
+        CONTABILITA_DATA_DIR: cartella dati (database SQLite, log, backup).
+        Fissa per decisione di progetto (docs/stack.md).
+    -->
+    <env name="CONTABILITA_DATA_DIR" value="C:\ProgramData\Contabilita"/>
+
+    <!-- Orario italiano per lo storico e i timestamp mostrati in interfaccia. -->
+    <env name="TZ" value="Europe/Rome"/>
+
+    <!--
+        Working directory = cartella dati, non la cartella di installazione:
+        se qualche libreria scrivesse un percorso relativo (log, file
+        temporanei) finisce in ProgramData e non sotto Program Files, dove il
+        servizio potrebbe non avere permessi di scrittura una volta chiusa
+        l'installazione.
+    -->
+    <workingdirectory>C:\ProgramData\Contabilita</workingdirectory>
+
+    <!-- Log di bootstrap di WinSW (prima che Spring Boot inizializzi il proprio logging). -->
+    <log mode="roll-by-time">
+        <pattern>yyyyMMdd</pattern>
+    </log>
+    <logpath>C:\ProgramData\Contabilita\log</logpath>
+
+    <!-- Riavvio automatico se il servizio cade, con backoff. -->
+    <onfailure action="restart" delay="10 sec"/>
+    <onfailure action="restart" delay="30 sec"/>
+    <onfailure action="restart" delay="120 sec"/>
+    <resetfailure>1 hour</resetfailure>
+
+    <!--
+        Tempo per lo spegnimento pulito (Spring Boot, connessioni SSE aperte,
+        chiusura dei database SQLite) prima del kill forzato.
+    -->
+    <stoptimeout>30 sec</stoptimeout>
+
+    <!--
+        LocalSystem (stessa scelta del progetto gemello, nessun motivo per cambiare):
+        scrive in ProgramData senza complicazioni di permessi, parte all'avvio
+        del PC senza utente connesso e non ha bisogno di un profilo utente.
+        Non serve alcun dispositivo hardware (qui niente stampante/USB).
+    -->
+    <serviceaccount>
+        <username>LocalSystem</username>
+        <allowservicelogon>true</allowservicelogon>
+    </serviceaccount>
+
+    <startmode>Automatic</startmode>
+    <delayedAutoStart>true</delayedAutoStart>
+</service>

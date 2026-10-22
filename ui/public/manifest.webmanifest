@@ -1,0 +1,14 @@
+{
+  "name": "Contabilità",
+  "short_name": "Contabilità",
+  "description": "Ricavi, costi e risultato della pizzeria, dal computer o dal telefono.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EADECE",
+  "theme_color": "#5E7B18",
+  "lang": "it",
+  "icons": [
+    { "src": "/icona.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
