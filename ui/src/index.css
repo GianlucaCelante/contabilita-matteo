@@ -69,6 +69,29 @@
 
 :root {
   --anello: var(--color-verde);
+  /* Misure del telefono che seguono l'altezza visibile (docs/mobile.md).
+     --d-vh: «1% dell'altezza visibile»: dvh dove c'e' (la barra degli indirizzi
+     non lo falsa), altrimenti vh. --d-nav: altezza di una voce della barra in
+     basso; --d-barra: altezza dei pulsanti della barra fissa Annulla/Salva.
+     I valori base sono quelli del mockup (schermo alto, > 700 px). */
+  --d-vh: 1vh;
+  --d-nav: 62px;
+  --d-barra: 56px;
+  /* Quanto la tastiera virtuale copre in basso (la scrive useTastieraVirtuale
+     solo a tastiera aperta) e quanto occupano le barre fisse (useBarreFisse). */
+  --sotto-tastiera: 0px;
+  --h-barra-basso: 0px;
+}
+@supports (height: 1dvh) {
+  :root { --d-vh: 1dvh; }
+}
+/* Telefono con poca altezza (barre del browser, orizzontale): la barra in
+   basso e i pulsanti fissi si stringono ma restano >= 44 px. */
+@media (max-width: 767.98px) and (max-height: 700px) {
+  :root { --d-nav: 54px; --d-barra: 52px; }
+}
+@media (max-width: 767.98px) and (max-height: 600px) {
+  :root { --d-nav: 50px; --d-barra: 48px; }
 }
 
 html {
@@ -77,7 +100,61 @@ html {
   height: 100%;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* Il documento non scorre mai: scorre solo il contenuto interno (il <main>
+     del Guscio, le finestre, le liste). Lo sfondo sta su html E su body: quando
+     il browser nasconde la barra dell'indirizzo, o su iOS in overscroll, si
+     vede cio' che sta dietro l'app, e non deve mai essere nero. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
+/* PC con schermo piccolo o scala di Windows al 125-150%: lo spazio utile in px
+   CSS e' poco (1366x768 al 125% sono circa 1093x614). Invece di rifare ogni
+   misura, tutta l'interfaccia del computer si rimpicciolisce a scalini (come
+   nel progetto gemello «etichette»): 92%, 84%, 76%. Solo da 861 px in su: il
+   telefono (e il tablet in verticale) non si toccano. Sopra i 1366 px di
+   larghezza (e con almeno 760 px di altezza) l'app resta a dimensione piena:
+   il mockup approvato vale a schermo grande. Chrome ed Edge supportano «zoom». */
+@media (min-width: 861px) and (max-width: 1366px), (min-width: 861px) and (max-height: 760px) { html { zoom: 0.92; } }
+@media (min-width: 861px) and (max-width: 1180px), (min-width: 861px) and (max-height: 680px) { html { zoom: 0.84; } }
+@media (min-width: 861px) and (max-width: 1000px), (min-width: 861px) and (max-height: 600px) { html { zoom: 0.76; } }
+
+/* Barre di scorrimento: su PC sottili e discrete (colore del bordo del tema,
+   niente traccia); sul telefono nascoste (lo scorrimento col dito resta).
+   Valgono per ogni contenitore che scorre (il <main>, le finestre, le liste). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-bordo2) transparent;
+}
+@media (max-width: 767.98px) {
+  * { scrollbar-width: none; }
+  /* Tocco senza selezione ne' menu di sistema sui controlli (pulsanti, voci
+     della barra in basso): una pressione lunga non seleziona il testo. I campi
+     di testo restano selezionabili. */
+  button, a, [role="radio"], [role="switch"], summary {
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  /* Sopra i 16 px iOS non ingrandisce la pagina quando un campo prende il fuoco. */
+  input, select, textarea { font-size: max(16px, 1em); -webkit-user-select: auto; user-select: auto; }
+}
+/* I contenitori che scorrono per conto proprio non passano lo scorrimento alla
+   pagina (che comunque non scorre) quando arrivano in fondo. */
+main, .finestra, [role="listbox"] { overscroll-behavior: contain; }
+/* Un elemento che prende il fuoco non finisce sotto le barre fisse in basso
+   (Annulla/Salva, totali): l'altezza la misura useBarreFisse. */
+main { scroll-padding-bottom: calc(var(--h-barra-basso) + 8px); }
+:is(a, button, input, select, textarea, summary, [tabindex]) { scroll-margin-block: 8px; }
+
+/* Tastiera virtuale aperta (data-tastiera, scritto da useTastieraVirtuale):
+   l'app prende posizione e altezza dell'area visibile sopra la tastiera, cosi'
+   pagina e finestre finiscono sopra la tastiera e restano scorrevoli; la barra
+   in basso e il «+» tondo spariscono (la barra Annulla/Salva resta, sopra la
+   tastiera: vedi --sotto-tastiera). */
+html[data-tastiera] .guscio { bottom: auto; top: var(--vv-top, 0px); height: var(--vv-h, 100%); }
+html[data-tastiera] .barraNavigazione, html[data-tastiera] .pulsanteNuovo { display: none; }
+html[data-tastiera] .velo { inset: auto 0 auto 0; top: var(--vv-top, 0px); height: var(--vv-h, 100%); }
+html[data-tastiera] [data-barra-fissa] { padding-bottom: 12px; }
 body {
   height: 100%;
   margin: 0;
@@ -200,6 +277,13 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
   .velo {
     position: fixed; inset: 0; z-index: 50; background: rgba(88, 68, 60, 0.45);
     display: flex; align-items: center; justify-content: center; padding: 12px;
+  }
+  /* Telefono con incavo o barra dei gesti: le finestre non vanno sotto. */
+  @media (max-width: 767.98px) {
+    .velo {
+      padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+        max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+    }
   }
   .finestra {
     background: var(--color-carta); border-radius: 18px; padding: 24px; width: 100%; max-width: 460px;
