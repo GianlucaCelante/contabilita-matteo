@@ -106,8 +106,8 @@ cp "$QUI/launchd/it.contabilita.servizio.plist" "$STAGE/Library/LaunchDaemons/"
 cp "$QUI/launchd/it.contabilita.avvio.plist" "$STAGE/Library/LaunchAgents/"
 chmod 755 "$APP/Contents/MacOS/Contabilita" "$RISORSE/uninstall.sh"
 
-# Icona: da disegnare (segnaposto). Se manca installer/mac/contabilita-1024.png l'app usa
-# l'icona generica di macOS; con il PNG si costruisce l'iconset dalle dimensioni standard.
+# Icona: installer/mac/contabilita-1024.png (si rigenera da installer/icona-sorgente.svg).
+# Se manca, l'app usa l'icona generica di macOS; con il PNG si costruisce l'iconset standard.
 if [ -f "$QUI/contabilita-1024.png" ]; then
     ICONSET="$TARGET/contabilita.iconset"
     rm -rf "$ICONSET"; mkdir -p "$ICONSET"
@@ -117,7 +117,7 @@ if [ -f "$QUI/contabilita-1024.png" ]; then
     done
     iconutil -c icns "$ICONSET" -o "$RISORSE/contabilita.icns"
 else
-    echo "  ATTENZIONE: $QUI/contabilita-1024.png non trovato: icona generica (va disegnata)."
+    echo "  ATTENZIONE: $QUI/contabilita-1024.png non trovato: icona generica (rigenerala da installer/icona-sorgente.svg)."
 fi
 
 # Firma (facoltativa): ogni binario Mach-O del runtime con "hardened runtime", poi l'app.

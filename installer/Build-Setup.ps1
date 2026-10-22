@@ -109,11 +109,11 @@ $JlinkExe    = Join-Path $JdkHome "bin\jlink.exe"
 if (-not (Test-Path $JpackageExe)) { throw "jpackage non trovato in $JpackageExe" }
 if (-not (Test-Path $JlinkExe))    { throw "jlink non trovato in $JlinkExe" }
 
-# L'icona (installer\contabilita.ico) e' ancora da disegnare: se manca la build
-# prosegue con l'icona generica di Java/jpackage e di Windows (vedi README).
+# L'icona e' installer\contabilita.ico (si rigenera da installer\icona-sorgente.svg, vedi
+# README): se manca la build prosegue con l'icona generica di Java/jpackage e di Windows.
 $HasIcon = Test-Path $IconFile
 if (-not $HasIcon) {
-    Write-Warning "Icona non trovata in ${IconFile}: uso l'icona generica. Disegna contabilita.ico (multi-risoluzione 16-256 px) e mettila in installer\."
+    Write-Warning "Icona non trovata in ${IconFile}: uso l'icona generica. Rigenera contabilita.ico (multi-risoluzione 16-256 px) da installer\icona-sorgente.svg e mettila in installer\."
 }
 
 Write-Host "==============================================" -ForegroundColor Cyan

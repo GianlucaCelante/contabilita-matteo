@@ -52,13 +52,19 @@ In CI: `.github/workflows/installer.yml` costruisce entrambi su tag `v*` o a man
 Run workflow) e carica gli artefatti `Contabilita-msi` e `Contabilita-pkg`. Non servono segreti per la
 build non firmata.
 
-### Icona (da disegnare)
+### Icona
 
-L'icona non c'è ancora. Cosa serve:
+Il logo è quello della barra laterale dell'app (quadrato verde `#5E7B18` con l'euro bianco). Sorgente vettoriale:
+`installer/icona-sorgente.svg` (copia di `ui/public/icona.svg`). Da lì sono generati:
 
-- Windows: `installer/contabilita.ico` (multi-risoluzione 16-256 px). Se manca, la build avvisa e usa l'icona
-  generica; le scorciatoie restano senza icona propria.
-- macOS: `installer/mac/contabilita-1024.png` (1024x1024). Se manca, la build avvisa e l'app ha l'icona generica.
+- Windows: `installer/contabilita.ico`, sette immagini PNG incorporate (16, 24, 32, 48, 64, 128, 256 px). Se manca, la
+  build avvisa e usa l'icona generica; le scorciatoie restano senza icona propria.
+- macOS: `installer/mac/contabilita-1024.png` (1024x1024 RGBA, margine di circa il 10% e ombra leggera). Se manca, la
+  build avvisa e l'app ha l'icona generica.
+
+Lo script che le ha generate (Python con Pillow, supersampling e riduzione) non è nel repository: per rigenerarle basta
+ridisegnare lo stesso logo alle dimensioni indicate. Non provate in un MSI o in un pacchetto reale, e l'icona macOS non è
+stata provata su un Mac (`sips` e `iconutil` esistono solo lì).
 
 ### Moduli jlink
 
