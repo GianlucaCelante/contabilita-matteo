@@ -155,7 +155,7 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
     <li
       className={
         "grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-riga px-4 py-3 " +
-        "md:min-h-[72px] md:grid-cols-[44px_minmax(0,1fr)_100px_90px_100px_80px_108px_220px] md:gap-y-0 md:px-5 " +
+        "@min-[1000px]:min-h-[72px] @min-[1000px]:grid-cols-[44px_minmax(0,1.4fr)_minmax(0,0.8fr)_64px_minmax(0,96px)_minmax(0,80px)_minmax(0,104px)_minmax(0,1.2fr)] @min-[1000px]:gap-y-0 @min-[1000px]:px-5 " +
         (f.duplicata ? "bg-ambrachiaro" : "")
       }
     >
@@ -168,25 +168,25 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
         aria-label={`Importa la fattura ${f.numero} di ${f.fornitore.nome}`}
       />
       <div className="min-w-0">
-        <div className="truncate text-[15px] font-bold">{f.fornitore.nome}</div>
+        <div className="truncate text-[15px] font-bold" title={f.fornitore.nome}>{f.fornitore.nome}</div>
         {f.duplicata ? (
           <div className="text-[13px] font-bold text-ambra">{f.motivo ?? "Già registrata"}: non verrà aggiunta</div>
         ) : (
           f.fornitore.partitaIva && <div className="text-[13px] text-spento">P.IVA {f.fornitore.partitaIva}</div>
         )}
       </div>
-      <span className="num truncate text-[15px] max-md:hidden">{f.numero}</span>
-      <span className="num text-[15px] max-md:hidden">{dataBreve(f.data).slice(0, 5)}</span>
-      <span className="num text-right text-[15px] max-md:hidden">{euro(f.imponibileCent)}</span>
-      <span className="num text-right text-[15px] max-md:hidden">{euro(f.ivaCent)}</span>
+      <span className="num truncate text-[15px] @max-[999px]:hidden" title={f.numero}>{f.numero}</span>
+      <span className="num text-[15px] @max-[999px]:hidden">{dataBreve(f.data).slice(0, 5)}</span>
+      <span className="num text-right text-[15px] @max-[999px]:hidden">{euro(f.imponibileCent)}</span>
+      <span className="num text-right text-[15px] @max-[999px]:hidden">{euro(f.ivaCent)}</span>
       <b className="num whitespace-nowrap text-right text-[15px]">{euro(f.totaleCent)}</b>
 
-      <p className="num col-span-2 col-start-2 m-0 text-[13px] text-spento md:hidden">
+      <p className="num col-span-2 col-start-2 m-0 text-[13px] text-spento @min-[1000px]:hidden">
         N. {f.numero} · {dataBreve(f.data)} · imponibile {euro(f.imponibileCent)} · IVA {euro(f.ivaCent)}
       </p>
 
-      <div className="col-span-3 min-w-0 md:col-span-1">
-        <span className="etichettaMaiuscola md:hidden">Categoria</span>
+      <div className="col-span-3 min-w-0 @min-[1000px]:col-span-1">
+        <span className="etichettaMaiuscola @min-[1000px]:hidden">Categoria</span>
         {f.duplicata ? (
           <span className="text-[14px] text-spento">{f.categoriaSuggerita ?? "–"}</span>
         ) : (
@@ -294,8 +294,8 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               {n === 1 ? "1 fattura letta" : `${n} fatture lette`} da {fonte} · controlla e conferma
             </h2>
           </div>
-          <div role="table" aria-label="Fatture lette">
-            <div role="row" className="hidden h-[42px] grid-cols-[44px_minmax(0,1fr)_100px_90px_100px_80px_108px_220px] items-center gap-x-3 px-5 md:grid">
+          <div role="table" aria-label="Fatture lette" className="@container">
+            <div role="row" className="hidden h-[42px] grid-cols-[44px_minmax(0,1.4fr)_minmax(0,0.8fr)_64px_minmax(0,96px)_minmax(0,80px)_minmax(0,104px)_minmax(0,1.2fr)] items-center gap-x-3 px-5 @min-[1000px]:grid">
               {["Importa", "Fornitore", "N. fattura", "Data", "Imponibile", "IVA", "Totale", "Categoria"].map((t, i) => (
                 <span key={t} role="columnheader" className={"etichettaMaiuscola" + (i >= 4 && i <= 6 ? " text-right" : "")}>
                   {i === 0 ? <span className="sr-only">{t}</span> : t}
