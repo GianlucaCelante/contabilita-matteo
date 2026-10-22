@@ -103,7 +103,7 @@ export default function Movimenti() {
         </div>
       </div>
 
-      <div className="flex-1 px-4 pb-24 md:px-8 md:pb-0">
+      <div className="flex-1 px-4 pb-4 md:px-8 md:pb-0">
         <div className="scheda overflow-hidden">
           {richiesta.isPending && <Caricamento />}
           {richiesta.isError && <ErroreCaricamento errore={richiesta.error} onRiprova={() => void richiesta.refetch()} />}
@@ -145,11 +145,14 @@ export default function Movimenti() {
       </div>
 
       {elenco && elenco.elementi.length > 0 && (
-        <footer className="sticky bottom-0 z-10 hidden items-center justify-between gap-6 border-t border-bordo bg-crema px-8 py-3 md:flex">
-          <span className="text-[14px] text-spento">
+        <footer
+          aria-label="Totali del periodo"
+          className="sticky bottom-0 z-10 flex flex-col gap-1 border-t border-bordo bg-crema px-4 py-2.5 md:flex-row md:items-center md:justify-between md:gap-6 md:px-8 md:py-3"
+        >
+          <span className="text-[13px] text-spento md:text-[14px]">
             {elenco.elementi.length} {elenco.elementi.length === 1 ? "movimento" : "movimenti"} · {periodo.etichetta}
           </span>
-          <dl className="m-0 flex gap-8">
+          <dl className="m-0 flex justify-between gap-3 md:justify-start md:gap-8">
             <div className="flex items-baseline gap-2">
               <dt className="etichettaMaiuscola">Ricavi</dt>
               <dd className="num m-0 font-titolo text-[18px] font-bold text-verdescuro">{euro(elenco.totali.ricaviCent)}</dd>

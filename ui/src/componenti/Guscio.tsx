@@ -104,7 +104,11 @@ export default function Guscio() {
         <Link
           to="/movimenti/nuovo"
           aria-label="Nuovo movimento"
-          className="fixed bottom-[calc(76px+env(safe-area-inset-bottom))] right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
+          className={
+            // In Movimenti sul telefono sopra la barra c'e' quella dei totali: il pulsante sale per non coprirla.
+            (posizione.pathname === "/movimenti" ? "bottom-[calc(140px+env(safe-area-inset-bottom))] " : "bottom-[calc(76px+env(safe-area-inset-bottom))] ") +
+            "fixed right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
+          }
         >
           <IconaPiu larghezza={26} spessoreTratto={2.25} />
         </Link>
