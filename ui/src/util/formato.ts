@@ -90,6 +90,10 @@ export function dataRiga(iso: string, conAnno: boolean): string {
   const [a, m, g] = iso.split("-");
   return conAnno ? `${g}/${m}/${(a ?? "").slice(2)}` : `${g}/${m}`;
 }
+// "2026-10-21" -> "ottobre"
+export function nomeMese(iso: string): string {
+  return MESI[daIso(iso).getMonth()] ?? "";
+}
 // "2026-10-21" -> "Mercoledì 21 ottobre"
 export function dataGiorno(iso: string): string {
   const d = daIso(iso);

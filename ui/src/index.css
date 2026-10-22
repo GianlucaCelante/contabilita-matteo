@@ -230,3 +230,20 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
   .interruttore.off { background: var(--color-bordocampo); }
   .interruttore.off::after { left: 3px; }
 }
+
+/* Allineamento al mockup: Nuovo movimento e Dettaglio */
+@layer components {
+  /* «Costo fisso» selezionato: sabbia scura con bordo testo (non verde) */
+  .scelta.bruno[aria-checked="true"] { background: var(--color-riga); border-color: var(--color-testo); color: var(--color-testo); box-shadow: 0 0 0 1px var(--color-testo) inset; }
+  /* Interruttore compatto della riga «Ripeti ogni mese» (48 x 28) */
+  .interruttoreCompatto {
+    position: relative; width: 48px; height: 28px; border-radius: 14px; background: var(--color-verde); flex-shrink: 0; display: inline-block;
+  }
+  .interruttoreCompatto::after { content: ""; position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; }
+  .interruttoreCompatto.off { background: var(--color-bordocampo); }
+  .interruttoreCompatto.off::after { right: auto; left: 3px; }
+  /* Pallino dei radio verticali dell'ambito */
+  .pallino { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--color-bordocampo); box-sizing: border-box; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  .pallino.on { border-color: var(--color-verde); }
+  .pallino.on::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--color-verde); }
+}

@@ -48,6 +48,20 @@ class MovimentiApiTest extends ProvaBase {
     }
 
     @Test
+    void ilMovimentoDiceQuandoESstatoCreatoEModificato() throws Exception {
+        JsonNode creato = crea(movimento("2026-03-10", "RICAVO", "RICAVO_EXTRA", 500));
+        long id = creato.get("id").asLong();
+        assertThat(creato.get("creatoIl").asText()).isEqualTo("2026-01-01T10:00:00");
+        assertThat(creato.get("modificatoIl").isNull()).isTrue(); // mai modificato
+
+        orologio.avanza(3600);
+        JsonNode modificato = modifica(id, "SOLO_QUESTO", movimento("2026-03-10", "RICAVO", "RICAVO_EXTRA", 600));
+        assertThat(modificato.get("creatoIl").asText()).isEqualTo("2026-01-01T10:00:00");
+        assertThat(modificato.get("modificatoIl").asText()).isEqualTo("2026-01-01T11:00:00");
+        assertThat(leggi("/api/movimenti/" + id)).isEqualTo(modificato);
+    }
+
+    @Test
     void combinazioniTipoDocumentoNonValideDanno400() throws Exception {
         String[][] ammesse = {
                 {"RICAVO", "RICAVO_FATTURATO"}, {"RICAVO", "RICAVO_EXTRA"},

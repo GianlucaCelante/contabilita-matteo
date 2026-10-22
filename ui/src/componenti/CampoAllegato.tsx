@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { controllaAllegato, preparaAllegato, tipoDi } from "../util/immagini";
+import { IconaFotocamera, IconaGraffetta } from "./IconeMovimento";
 
 interface ProprietaCampoAllegato {
   file: File | null;
@@ -49,12 +51,15 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
     }
   }
 
-  const testoPulsante = suTelefono() ? "Scatta o scegli" : "Scegli un file";
+  // Computer: «Foto o PDF» con la graffetta. Telefono: la fotocamera e «Scatta» (o «Scegli un file» senza tocco).
+  const grande = useSchermoGrande();
+  const icona = grande ? <IconaGraffetta /> : <IconaFotocamera />;
+  const testoPulsante = grande ? "Foto o PDF" : suTelefono() ? "Scatta" : "Scegli un file";
 
   return (
     <div>
       <div id={idEtichetta} className="etichetta">
-        Allegato <span className="font-normal text-tenue">(facoltativo) Foto o PDF</span>
+        {grande ? "Allegato" : "Foto"} <span className="font-normal">{grande ? "(facoltativo)" : "(facoltativa)"}</span>
       </div>
       <input
         ref={rifInput}
@@ -96,12 +101,19 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
       ) : (
         <button
           type="button"
-          className="btn w-full border-dashed"
+          className="flex min-h-[52px] w-full items-center gap-2 rounded-[10px] border border-dashed border-tratteggio bg-carta px-3.5 text-left text-[15px] text-spento hover:bg-sabbia disabled:opacity-60 md:gap-2.5"
           disabled={disabilitato || inCorso}
           aria-describedby={errore ? idErrore : undefined}
           onClick={() => rifInput.current?.click()}
         >
-          {inCorso ? "Preparo il file…" : testoPulsante}
+          {inCorso ? (
+            "Preparo il file…"
+          ) : (
+            <>
+              {icona}
+              <span>{testoPulsante}</span>
+            </>
+          )}
         </button>
       )}
       <div aria-live="polite">

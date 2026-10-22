@@ -250,6 +250,8 @@ public class MovimentiService {
                 m.getDipendente() == null ? null : new Rif(m.getDipendente().getId(), m.getDipendente().getNome()),
                 m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(),
                 r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva()),
-                m.getAllegatoNome());
+                m.getAllegatoNome(), m.getCreatoIl(),
+                // la colonna e' sempre valorizzata (uguale a creato_il alla nascita): "mai modificato" = null
+                m.getModificatoIl() == null || m.getModificatoIl().equals(m.getCreatoIl()) ? null : m.getModificatoIl());
     }
 }

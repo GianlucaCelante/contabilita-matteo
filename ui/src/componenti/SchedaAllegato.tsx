@@ -66,8 +66,8 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
   const indirizzo = `${urlAllegato(movimento.id)}?v=${encodeURIComponent(nome ?? "")}`;
 
   return (
-    <section className="scheda px-5 py-5" aria-label="Allegato" aria-busy={occupato}>
-      <h2 className="mb-2 text-[20px] font-bold">Allegato</h2>
+    <section className="scheda px-[22px] py-5" aria-label="Allegato" aria-busy={occupato}>
+      <h2 className="pb-2.5 text-[18px] font-bold leading-[22px]">Allegato</h2>
       <input ref={rifInput} type="file" accept="image/*,application/pdf" hidden tabIndex={-1} aria-label="Scegli il file da allegare" onChange={(e) => void scelto(e.target.files?.[0])} />
       {nome ? (
         <div className="border-t border-riga pt-3">
