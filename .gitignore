@@ -1,0 +1,18 @@
+# Dati dell'attivita': mai nel repository (il repo e' pubblico)
+data/
+allegati/
+*.db
+*.db-journal
+*.sqlite
+*.xml
+*.csv
+*.xlsx
+
+# Build e strumenti
+target/
+node_modules/
+ui/dist/
+.vite/
+.playwright-mcp/
+.idea/
+*.log
