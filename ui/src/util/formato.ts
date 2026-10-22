@@ -85,6 +85,10 @@ export function dataBreve(iso: string): string {
   const [a, m, g] = iso.split("-");
   return `${g}/${m}/${a}`;
 }
+// "2026-10-21" -> "ottobre"
+export function nomeMese(iso: string): string {
+  return MESI[daIso(iso).getMonth()] ?? "";
+}
 // "2026-10-21" -> "Mercoledì 21 ottobre"
 export function dataGiorno(iso: string): string {
   const d = daIso(iso);

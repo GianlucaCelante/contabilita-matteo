@@ -57,6 +57,9 @@ export interface Movimento {
   origine: Origine;
   ricorrenza: RicorrenzaMovimento | null;
   allegatoNome: string | null;
+  // ISO AAAA-MM-GGTHH:MM:SS; modificatoIl e' null se il movimento non e' mai stato modificato.
+  creatoIl: string;
+  modificatoIl: string | null;
 }
 
 export interface MovimentoInput {

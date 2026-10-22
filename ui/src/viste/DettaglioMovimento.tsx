@@ -3,7 +3,9 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, ErroreRichiesta, messaggioErrore } from "../api/client";
 import type { Ambito, Movimento } from "../api/tipi";
+import { IconaDocumento } from "../componenti/IconeMovimento";
 import SchedaAllegato from "../componenti/SchedaAllegato";
+import SchedaLaterale, { Riga } from "../componenti/SchedaLaterale";
 import ConfermaUscita from "../componenti/ConfermaUscita";
 import Finestra from "../componenti/Finestra";
 import FormMovimento from "../componenti/FormMovimento";
@@ -12,7 +14,8 @@ import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { useBloccoUscita } from "../hooks/useBloccoUscita";
-import { CLASSE_TIPO, NOME_ORIGINE, NOME_TIPO } from "../util/etichette";
+import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { CLASSE_TIPO, NOME_ORIGINE, TIPO_BREVE } from "../util/etichette";
 import { aggiungiMesi, dataBreve, euro, ultimoGiornoMese, daIso, isoDa } from "../util/formato";
 import { daMovimento, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
 
@@ -28,6 +31,7 @@ const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie
 
 function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   const navigate = useNavigate();
+  const grande = useSchermoGrande();
   const avvisa = useAvviso();
   const client = useQueryClient();
   const iniziali = useRef<CampiForm>(daMovimento(movimento));
@@ -113,21 +117,24 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   const ritardo = salva.isPending || elimina.isPending || ferma.isPending;
 
   return (
-    <>
+    <div className="flex min-h-full flex-col">
       <Testata
+        compatta
         titolo="Movimento"
         indietro="/movimenti"
+        etichetta={
+          <span className={"etichettaTipo " + CLASSE_TIPO[movimento.tipo]}>
+            {TIPO_BREVE[movimento.tipo]}
+            {ricorrente ? " · ricorrente" : ""}
+          </span>
+        }
         azioni={
-          <div className="flex flex-wrap items-center gap-3">
-            <span className={"etichettaTipo " + CLASSE_TIPO[movimento.tipo]}>
-              {NOME_TIPO[movimento.tipo]}
-              {ricorrente ? " · ricorrente" : ""}
-            </span>
-            <button type="button" className="btn pericolo" onClick={() => setChiedeElimina(true)} disabled={ritardo}>
+          grande ? (
+            <button type="button" className="btn pericolo gap-2" onClick={() => setChiedeElimina(true)} disabled={ritardo}>
               <IconaCestino larghezza={20} spessoreTratto={2} />
               <span>Elimina</span>
             </button>
-          </div>
+          ) : undefined
         }
       />
       <form
@@ -136,98 +143,132 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
           e.preventDefault();
           invia();
         }}
-        className="flex flex-col gap-4 px-4 pb-28 md:px-8 md:pb-8 lg:flex-row"
+        className="flex flex-1 flex-col gap-4 px-3 pb-28 pt-4 md:px-8 md:pt-0 md:pb-7 lg:flex-row lg:gap-5"
       >
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="scheda px-5 py-6 md:px-7">
-            <FormMovimento campi={campi} onCambia={cambia} errori={errori} modifica />
-          </div>
+        {/* Sul telefono i campi stanno sullo sfondo, senza scheda bianca. */}
+        <div className="scheda flex min-w-0 flex-1 flex-col gap-[18px] max-md:gap-3.5 max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0 md:px-7 md:py-6">
+          <FormMovimento campi={campi} onCambia={cambia} errori={errori} modifica />
 
           {ricorrente && (
-            <section className="scheda px-5 py-5 md:px-7" aria-label="Ripetizione">
+            <section className="rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione">
               {attiva ? (
-                <div className="flex flex-wrap items-end justify-between gap-4">
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div>
-                      <label htmlFor="giorno-ricorrente" className="etichetta">
-                        Si ripete ogni mese, il giorno
-                      </label>
-                      <div className={"campo w-[110px]" + (errori.giorno ? " errore" : "")}>
+                <>
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                    <div className="flex items-center gap-2.5 text-[16px] font-bold">
+                      <label htmlFor="giorno-ricorrente">Si ripete ogni mese, il giorno</label>
+                      <div className={"campo min-h-11 w-[72px] justify-center px-0" + (errori.giorno ? " errore" : "")}>
                         <input
                           id="giorno-ricorrente"
                           type="number"
                           min={1}
                           max={31}
                           inputMode="numeric"
-                          className="num"
+                          className="num h-10 min-h-0 text-center font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
                           value={campi.giorno}
                           disabled={ambito !== "QUESTO_E_PROSSIMI"}
                           aria-describedby="nota-giorno"
+                          title={ambito === "QUESTO_E_PROSSIMI" ? undefined : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
                           onChange={(e) => cambia({ giorno: e.target.value })}
                         />
                       </div>
                     </div>
-                    <p id="nota-giorno" className="m-0 max-w-xs pb-2 text-[13px] text-tenue">
-                      {ambito === "QUESTO_E_PROSSIMI" ? "Vale dal prossimo mese." : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
-                    </p>
+                    <button type="button" className="min-h-11 text-[14px] font-bold text-rosso underline" onClick={() => setChiedeFerma(true)} disabled={ritardo}>
+                      Ferma la ripetizione
+                    </button>
                   </div>
-                  <button type="button" className="btn pericolo" onClick={() => setChiedeFerma(true)} disabled={ritardo}>
-                    Ferma la ripetizione
-                  </button>
-                </div>
+                  <p id="nota-giorno" className="sr-only">
+                    {ambito === "QUESTO_E_PROSSIMI" ? "Vale dal prossimo mese." : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
+                  </p>
+                  {errori.giorno && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errori.giorno}</p>}
+                  <div id="ambito-etichetta" className="mb-1 mt-2 text-[13px] text-spento">
+                    Se cambi qualcosa o elimini, vale:
+                  </div>
+                  <div role="radiogroup" aria-labelledby="ambito-etichetta">
+                    {(
+                      [
+                        ["SOLO_QUESTO", "Solo per questo movimento"],
+                        ["QUESTO_E_PROSSIMI", "Per questo e per i prossimi"],
+                      ] as const
+                    ).map(([valore, testo]) => (
+                      <button key={valore} type="button" role="radio" aria-checked={ambito === valore} className="flex h-10 w-full items-center gap-3 text-[16px]" onClick={() => setAmbito(valore)}>
+                        <span className={"pallino" + (ambito === valore ? " on" : "")} aria-hidden="true" />
+                        <span>{testo}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
               ) : (
                 <p className="m-0 text-[16px] font-bold">La ripetizione è ferma: i movimenti già registrati restano.</p>
               )}
-              {errori.giorno && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errori.giorno}</p>}
-
-              {attiva && (
-                <div className="mt-5 border-t border-riga pt-4">
-                  <div id="ambito-etichetta" className="etichetta">
-                    Se cambi qualcosa o elimini, vale:
-                  </div>
-                  <div role="radiogroup" aria-labelledby="ambito-etichetta" className="flex flex-wrap gap-2.5">
-                    <button type="button" role="radio" aria-checked={ambito === "SOLO_QUESTO"} className="scelta" onClick={() => setAmbito("SOLO_QUESTO")}>
-                      Solo per questo movimento
-                    </button>
-                    <button type="button" role="radio" aria-checked={ambito === "QUESTO_E_PROSSIMI"} className="scelta" onClick={() => setAmbito("QUESTO_E_PROSSIMI")}>
-                      Per questo e per i prossimi
-                    </button>
-                  </div>
-                </div>
-              )}
             </section>
           )}
 
-          <div className="flex flex-wrap justify-end gap-3">
-            <Link to="/movimenti" className="btn grande">
-              Annulla
-            </Link>
-            <button type="submit" className="btn primario grande" disabled={ritardo || (!modificato && !giornoCambiato)}>
-              {salva.isPending ? "Salvo…" : "Salva modifiche"}
-            </button>
-          </div>
+          {movimento.origine === "XML" && (
+            <div className="flex items-center gap-3 rounded-xl border border-bordo bg-carta px-3.5 py-3 md:hidden">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] bg-verdechiaro text-verdescuro">
+                <IconaDocumento />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[15px] font-bold">Fattura importata da XML</div>
+                <div className="text-[13px] text-spento">Il {dataBreve(movimento.creatoIl.slice(0, 10)).slice(0, 5)} · il file resta allegato</div>
+              </div>
+            </div>
+          )}
+
+          {grande && (
+            <div className="mt-auto flex flex-wrap justify-end gap-3 pt-2">
+              <Link to="/movimenti" className="btn grande">
+                Annulla
+              </Link>
+              <button type="submit" className="btn primario grande w-[200px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+                {salva.isPending ? "Salvo…" : "Salva modifiche"}
+              </button>
+            </div>
+          )}
         </div>
 
-        <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-[300px]" aria-label="Informazioni">
+        <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-[320px] lg:self-start" aria-label="Informazioni">
           {prossima && (
-            <section className="scheda px-5 py-5">
-              <h2 className="mb-2 text-[20px] font-bold">Prossima volta</h2>
-              <p className="num m-0 text-[16px]">
-                {dataBreve(prossima)} · <strong>{euro(movimento.importoCent)}</strong>
-              </p>
-            </section>
+            <SchedaLaterale titolo="Prossima volta" etichetta="Prossima volta">
+              <Riga nome="Data" primo>
+                <b>{dataBreve(prossima)}</b>
+              </Riga>
+              <Riga nome="Importo">
+                <b className="num">{euro(movimento.importoCent)}</b>
+              </Riga>
+            </SchedaLaterale>
           )}
-          <section className="scheda px-5 py-5">
-            <h2 className="mb-2 text-[20px] font-bold">Registrato</h2>
-            <dl className="m-0">
-              <div className="flex min-h-[38px] items-center justify-between border-t border-riga text-[15px]">
-                <dt className="text-spento">Origine</dt>
-                <dd className="m-0 font-bold">{movimento.origine === "RICORRENZA" ? "Ripetizione" : NOME_ORIGINE[movimento.origine]}</dd>
-              </div>
-            </dl>
-          </section>
+          <SchedaLaterale titolo="Registrato" etichetta="Registrato" className="max-md:hidden">
+            <Riga nome="Creato" primo>
+              <span>{dataBreve(movimento.creatoIl.slice(0, 10))}</span>
+            </Riga>
+            <Riga nome="Origine">
+              <span>{movimento.origine === "RICORRENZA" ? "Ripetizione" : NOME_ORIGINE[movimento.origine]}</span>
+            </Riga>
+            <Riga nome="Ultima modifica">
+              <span>{movimento.modificatoIl ? dataBreve(movimento.modificatoIl.slice(0, 10)) : "Mai"}</span>
+            </Riga>
+          </SchedaLaterale>
           <SchedaAllegato movimento={movimento} />
         </aside>
+
+        {!grande && (
+          <>
+            <button type="button" className="btn pericolo w-full gap-2" onClick={() => setChiedeElimina(true)} disabled={ritardo}>
+              <IconaCestino larghezza={20} spessoreTratto={2} />
+              <span>Elimina movimento</span>
+            </button>
+            {/* Sul telefono la barra fissa copre quella di navigazione finche' si modifica. */}
+            <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2.5 border-t border-bordo bg-crema p-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
+              <Link to="/movimenti" className="btn min-h-14 px-5 text-[16px]">
+                Annulla
+              </Link>
+              <button type="submit" className="btn primario min-h-14 flex-1 text-[17px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+                {salva.isPending ? "Salvo…" : "Salva modifiche"}
+              </button>
+            </div>
+          </>
+        )}
       </form>
 
       {chiedeElimina && (
@@ -271,7 +312,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
         />
       )}
       <ConfermaUscita blocker={blocker} />
-    </>
+    </div>
   );
 }
 
