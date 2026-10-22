@@ -8,12 +8,14 @@ interface ProprietaFinestra {
   onChiudi?: () => void;
   piede?: ReactNode;
   children?: ReactNode;
+  // A tutto schermo (la lente delle foto): ".finestra.intera" in index.css.
+  intera?: boolean;
 }
 
 // Il velo e la finestra modale (conferme di eliminazione e simili). Sta in un
 // portale su document.body; la gestione del fuoco (dentro all'apertura, Tab
 // che gira, Esc, pagina dietro inerte, fuoco restituito) e' in useModale.
-export default function Finestra({ titolo, sottotitolo, onChiudi, piede, children }: ProprietaFinestra) {
+export default function Finestra({ titolo, sottotitolo, onChiudi, piede, children, intera }: ProprietaFinestra) {
   const rifVelo = useRef<HTMLDivElement>(null);
   const rifFinestra = useRef<HTMLDivElement>(null);
   const idTitolo = useId();
@@ -32,7 +34,7 @@ export default function Finestra({ titolo, sottotitolo, onChiudi, piede, childre
     <div ref={rifVelo} className="velo" onClick={suClicVelo} role="presentation">
       <div
         ref={rifFinestra}
-        className="finestra"
+        className={"finestra" + (intera ? " intera" : "")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={idTitolo}

@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { controllaAllegato, preparaAllegato, tipoDi } from "../util/immagini";
+import LenteImmagine from "./LenteImmagine";
 import { IconaFotocamera, IconaGraffetta } from "./IconeMovimento";
 
 interface ProprietaCampoAllegato {
@@ -24,6 +25,7 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
   const [miniatura, setMiniatura] = useState<string | null>(null);
+  const [lente, setLente] = useState(false);
 
   const eImmagine = file !== null && tipoDi(file).startsWith("image/");
   useEffect(() => {
@@ -73,7 +75,10 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
       {file ? (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-dashed border-bordo2 p-3">
           {miniatura ? (
-            <img src={miniatura} alt={`Anteprima di ${file.name}`} className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+            // Un tocco sulla miniatura apre la foto a tutto schermo (prima di salvare).
+            <button type="button" className="shrink-0 cursor-zoom-in rounded-lg" aria-label={`Ingrandisci la foto ${file.name}`} onClick={() => setLente(true)}>
+              <img src={miniatura} alt={`Anteprima di ${file.name}`} className="h-16 w-16 rounded-lg object-cover" />
+            </button>
           ) : (
             <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-sabbia text-[15px] font-bold" aria-hidden="true">
               PDF
@@ -116,6 +121,7 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
           )}
         </button>
       )}
+      {lente && file && miniatura && <LenteImmagine titolo={file.name} src={miniatura} onChiudi={() => setLente(false)} />}
       <div aria-live="polite">
         {inCorso && file && <p className="m-0 mt-1 text-[13px] text-tenue">Preparo il file…</p>}
         {errore && (

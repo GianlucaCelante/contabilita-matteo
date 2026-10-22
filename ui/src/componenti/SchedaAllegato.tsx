@@ -7,6 +7,7 @@ import type { Movimento } from "../api/tipi";
 import { useAvviso } from "../hooks/useAvviso";
 import { controllaAllegato, preparaAllegato } from "../util/immagini";
 import Finestra from "./Finestra";
+import LenteImmagine from "./LenteImmagine";
 
 const INVALIDA = ["movimenti", "movimento"];
 
@@ -18,6 +19,7 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
   const [chiedeRimuovi, setChiedeRimuovi] = useState(false);
   const [preparo, setPreparo] = useState(false);
   const [immagineKo, setImmagineKo] = useState(false);
+  const [lente, setLente] = useState(false);
   const nome = movimento.allegatoNome;
   const eImmagine = nome !== null && /\.(jpe?g|png)$/i.test(nome);
 
@@ -72,9 +74,10 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
       {nome ? (
         <div className="border-t border-riga pt-3">
           {eImmagine && !immagineKo && (
-            <a href={urlAllegato(movimento.id)} target="_blank" rel="noreferrer" aria-label={`Apri l'allegato ${nome}`}>
+            // Un tocco sulla miniatura apre la foto a tutto schermo (pizzico, scorrimento, + e −).
+            <button type="button" className="block w-full cursor-zoom-in" aria-label={`Ingrandisci la foto ${nome}`} onClick={() => setLente(true)}>
               <img src={indirizzo} alt={`Anteprima di ${nome}`} className="mb-3 max-h-48 w-full rounded-lg border border-riga object-contain" onError={() => setImmagineKo(true)} />
-            </a>
+            </button>
           )}
           <p className="m-0 mb-3 truncate text-[15px] font-bold" title={nome}>
             {nome}
@@ -99,6 +102,7 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
           </button>
         </div>
       )}
+      {lente && nome && <LenteImmagine titolo={nome} src={indirizzo} onChiudi={() => setLente(false)} />}
       {chiedeRimuovi && (
         <Finestra
           titolo="Rimuovere l'allegato?"
