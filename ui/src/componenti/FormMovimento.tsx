@@ -208,7 +208,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
     <Campo key="fattura" etichetta="N. fattura" type="text" value={campi.numeroDocumento} onChange={(e) => onCambia({ numeroDocumento: e.target.value })} />
   ) : null;
   const campoDipendente = retribuzione ? (
-    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo {...dipendenti} />
+    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} {...dipendenti} />
   ) : null;
   const campoNote = (
     <Campo

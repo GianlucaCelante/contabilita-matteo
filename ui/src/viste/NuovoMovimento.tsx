@@ -102,13 +102,13 @@ export default function NuovoMovimento() {
           />
           {grande && (
             <div className="mt-auto flex flex-wrap justify-end gap-3 pt-5">
-              <button type="button" className="btn grande" onClick={() => void navigate("/movimenti")}>
+              <button type="button" className="btn grande px-[22px]" onClick={() => void navigate("/movimenti")}>
                 Annulla
               </button>
-              <button type="button" className="btn grande" disabled={salva.isPending} onClick={() => void invia(true)}>
+              <button type="button" className="btn grande px-[22px]" disabled={salva.isPending} onClick={() => void invia(true)}>
                 Salva e aggiungine un altro
               </button>
-              <button type="submit" className="btn primario grande w-[180px]" disabled={salva.isPending}>
+              <button type="submit" className="btn primario grande w-[228px] px-[22px]" disabled={salva.isPending}>
                 {salva.isPending ? "Salvo…" : "Salva"}
               </button>
             </div>

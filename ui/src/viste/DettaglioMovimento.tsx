@@ -180,7 +180,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
                     {ambito === "QUESTO_E_PROSSIMI" ? "Vale dal prossimo mese." : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
                   </p>
                   {errori.giorno && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errori.giorno}</p>}
-                  <div id="ambito-etichetta" className="mb-1 mt-2 text-[13px] text-spento">
+                  <div id="ambito-etichetta" className="mb-1 mt-2 text-[13px] leading-4 text-spento">
                     Se cambi qualcosa o elimini, vale:
                   </div>
                   <div role="radiogroup" aria-labelledby="ambito-etichetta">
@@ -217,10 +217,10 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
 
           {grande && (
             <div className="mt-auto flex flex-wrap justify-end gap-3 pt-2">
-              <Link to="/movimenti" className="btn grande">
+              <Link to="/movimenti" className="btn grande px-[22px]">
                 Annulla
               </Link>
-              <button type="submit" className="btn primario grande w-[200px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+              <button type="submit" className="btn primario grande w-[248px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
                 {salva.isPending ? "Salvo…" : "Salva modifiche"}
               </button>
             </div>
