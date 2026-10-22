@@ -27,7 +27,7 @@ class ContabilitaApplicationTests extends ProvaBase {
         List<String> indici = jdbc.queryForList("SELECT name FROM sqlite_master WHERE type='index'", String.class);
         assertThat(indici).contains("ix_movimento_data", "ix_movimento_tipo", "ux_movimento_ricorrenza_mese",
                 "ux_categoria_nome_tipo", "ux_fornitore_nome", "ux_dipendente_nome");
-        assertThat(jdbc.queryForList("SELECT id FROM databasechangelog", String.class)).hasSize(6);
+        assertThat(jdbc.queryForList("SELECT id FROM databasechangelog", String.class)).hasSize(7); // 6 della versione 1 + allegato_file (fase 4)
     }
 
     @Test

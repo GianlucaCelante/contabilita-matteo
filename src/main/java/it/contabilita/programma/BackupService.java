@@ -37,7 +37,8 @@ import java.util.stream.Stream;
  * (una normale istruzione SQL su una connessione del pool: snapshot coerente anche in WAL, senza
  * bloccare gli scrittori), stesso nome datato con progressivo se due copie cadono nello stesso
  * secondo, stessa pulizia (si tengono le ultime 10), stesso recupero all'avvio se il PC era spento
- * alle 03:00. Tolta la cartella delle foto (gli allegati arrivano nelle fasi successive).
+ * alle 03:00. Fase 4: la copia datata include anche la cartella {@code allegati/} (se esiste), accanto a
+ * {@code contabilita.db}; se la sua copia fallisce, fallisce l'intera copia e la cartella parziale si elimina.
  *
  * <p>Lo stato vive nella tabella {@code impostazione}: {@code backup.cartella} (dove copiare),
  * {@code backup.ultimo.quando} e {@code backup.ultimo.cartella} (ultima copia RIUSCITA; un
@@ -57,6 +58,8 @@ public class BackupService {
     private static final Pattern NOME_CARTELLA_COPIA = Pattern.compile("\\d{4}-\\d{2}-\\d{2}_\\d{6}(-\\d+)?");
     private static final int COPIE_DA_TENERE = 10;
     static final String NOME_FILE_DATABASE = "contabilita.db";
+    /** Cartella dei file allegati, sia nella cartella dati sia dentro una copia datata (fase 4). */
+    static final String NOME_CARTELLA_ALLEGATI = "allegati";
     static final String PREFISSO_PRIMA_DEL_RIPRISTINO = "prima-del-ripristino-";
 
     public record UltimoBackup(String quando, String cartella) {
@@ -71,14 +74,17 @@ public class BackupService {
     private final ImpostazioneRepository impostazioni;
     private final DataSource dataSource;
     private final Clock clock;
+    private final Path cartellaAllegati;
 
     /** Una sola copia alla volta (409 se una copia e' gia' in corso). */
     private final AtomicBoolean inCorso = new AtomicBoolean(false);
 
-    public BackupService(ImpostazioneRepository impostazioni, DataSource dataSource, Clock clock) {
+    public BackupService(ImpostazioneRepository impostazioni, DataSource dataSource, Clock clock,
+                         @org.springframework.beans.factory.annotation.Value("${contabilita.dati}") String cartellaDati) {
         this.impostazioni = impostazioni;
         this.dataSource = dataSource;
         this.clock = clock;
+        this.cartellaAllegati = Path.of(cartellaDati).toAbsolutePath().resolve(NOME_CARTELLA_ALLEGATI);
     }
 
     /** SOLO per i test: simula una copia gia' in corso. */
@@ -223,7 +229,12 @@ public class BackupService {
         Files.createDirectories(destinazione);
         try {
             copiaDatabase(destinazione.resolve(NOME_FILE_DATABASE));
-        } catch (SQLException | RuntimeException e) {
+            // Gli allegati hanno nomi univoci e non cambiano mai una volta scritti: copiarli dopo il database
+            // al piu' ne porta qualcuno in piu' di quelli che il database conosce, mai uno in meno.
+            if (Files.isDirectory(cartellaAllegati)) {
+                CopiaCartelle.copia(cartellaAllegati, destinazione.resolve(NOME_CARTELLA_ALLEGATI));
+            }
+        } catch (IOException | SQLException | RuntimeException e) {
             eliminaSilenziosamente(destinazione);
             throw e;
         }

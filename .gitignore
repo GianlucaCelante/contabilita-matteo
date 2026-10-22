@@ -1,6 +1,6 @@
 # Dati dell'attivita': mai nel repository (il repo e' pubblico)
 data/
-allegati/
+/allegati/
 *.db
 *.db-journal
 *.sqlite

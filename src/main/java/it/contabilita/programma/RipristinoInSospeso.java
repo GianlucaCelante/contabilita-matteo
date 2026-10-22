@@ -32,6 +32,7 @@ public final class RipristinoInSospeso {
 
     public static final String MARCATORE = "ripristino-in-attesa.json";
     public static final String MARCATORE_FALLITO = "ripristino-fallito.json";
+    public static final String MARCATORE_ALLEGATI_FALLITI = "ripristino-allegati-falliti.json";
 
     public enum Esito { NESSUNO, APPLICATO, FALLITO }
 
@@ -65,6 +66,7 @@ public final class RipristinoInSospeso {
             sostituisci(temporaneo, database);
             Files.deleteIfExists(cartellaDati.resolve(BackupService.NOME_FILE_DATABASE + "-wal"));
             Files.deleteIfExists(cartellaDati.resolve(BackupService.NOME_FILE_DATABASE + "-shm"));
+            ripristinaAllegati(cartellaDati, richiesta);
             Files.deleteIfExists(marcatore);
             log.info("Ripristino applicato: il database è ora la copia {} (copia di sicurezza dei dati precedenti: {}).",
                     copia, richiesta.path("copiaDiSicurezza").asText("?"));
@@ -79,6 +81,64 @@ public final class RipristinoInSospeso {
             }
             segnalaFallimento(cartellaDati, marcatore, richiesta, motivo);
             return Esito.FALLITO;
+        }
+    }
+
+    /**
+     * Rimette a posto gli allegati SOLO se il marcatore ha il campo {@code allegati} (cioe' se la copia li
+     * conteneva): la cartella della copia va in {@code allegati.ripristino.tmp}, quella attuale in
+     * {@code allegati.vecchi.tmp}, poi la copia prende il nome {@code allegati} e la vecchia si cancella. Se il
+     * processo muore a meta' il marcatore c'e' ancora e il ripristino si ripete da capo (i residui si ripuliscono).
+     *
+     * <p>Viene DOPO la sostituzione del database e non lancia mai: se gli allegati falliscono il database
+     * ripristinato resta valido (l'app parte; gli allegati attuali tornano al loro posto), il problema e'
+     * scritto in {@code ripristino-allegati-falliti.json} e i movimenti che puntano a file mancanti rispondono
+     * 404 sull'allegato senza altri danni.
+     */
+    private static void ripristinaAllegati(Path cartellaDati, JsonNode richiesta) {
+        if (richiesta == null || !richiesta.hasNonNull("allegati")) {
+            return;
+        }
+        Path attuale = cartellaDati.resolve(BackupService.NOME_CARTELLA_ALLEGATI);
+        Path temporanea = cartellaDati.resolve(BackupService.NOME_CARTELLA_ALLEGATI + ".ripristino.tmp");
+        Path vecchia = cartellaDati.resolve(BackupService.NOME_CARTELLA_ALLEGATI + ".vecchi.tmp");
+        try {
+            Path sorgente = Path.of(richiesta.get("allegati").asText());
+            if (!Files.isDirectory(sorgente)) {
+                throw new IOException("la cartella degli allegati della copia non esiste più: " + sorgente);
+            }
+            CopiaCartelle.elimina(temporanea);
+            CopiaCartelle.elimina(vecchia);
+            CopiaCartelle.copia(sorgente, temporanea);
+            if (Files.exists(attuale)) {
+                Files.move(attuale, vecchia);
+            }
+            Files.move(temporanea, attuale);
+            try {
+                CopiaCartelle.elimina(vecchia);
+            } catch (IOException e) {
+                log.warn("Impossibile eliminare {}: {}", vecchia, e.toString());
+            }
+            log.info("Allegati ripristinati dalla copia {}.", sorgente);
+        } catch (Exception e) {
+            log.error("Allegati NON ripristinati (il database sì): {}", e.toString(), e);
+            try {
+                CopiaCartelle.elimina(temporanea);
+                if (!Files.exists(attuale) && Files.exists(vecchia)) {
+                    Files.move(vecchia, attuale); // rimette quelli di prima
+                }
+            } catch (IOException ignorato) {
+                log.error("Impossibile rimettere a posto gli allegati precedenti: {}", ignorato.toString());
+            }
+            try {
+                ObjectNode n = JSON.createObjectNode();
+                n.put("allegati", richiesta.get("allegati").asText());
+                n.put("motivo", e.toString());
+                n.put("fallitoIl", LocalDateTime.now().withNano(0).toString());
+                JSON.writerWithDefaultPrettyPrinter().writeValue(cartellaDati.resolve(MARCATORE_ALLEGATI_FALLITI).toFile(), n);
+            } catch (IOException scrittura) {
+                log.error("Impossibile scrivere {}: {}", MARCATORE_ALLEGATI_FALLITI, scrittura.toString());
+            }
         }
     }
 

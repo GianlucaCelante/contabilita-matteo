@@ -61,6 +61,10 @@ public class Movimento {
     @Column(name = "allegato_nome")
     private String allegatoNome;
 
+    /** Nome interno (UUID + estensione) del file in {@code <cartella dati>/allegati/}; mai dedotto dall'input. */
+    @Column(name = "allegato_file")
+    private String allegatoFile;
+
     @Convert(converter = ConvertitoreIstante.class)
     @Column(name = "creato_il", nullable = false)
     private LocalDateTime creatoIl;
@@ -98,6 +102,8 @@ public class Movimento {
     public void setAnnoMese(String annoMese) { this.annoMese = annoMese; }
     public String getAllegatoNome() { return allegatoNome; }
     public void setAllegatoNome(String allegatoNome) { this.allegatoNome = allegatoNome; }
+    public String getAllegatoFile() { return allegatoFile; }
+    public void setAllegatoFile(String allegatoFile) { this.allegatoFile = allegatoFile; }
     public LocalDateTime getCreatoIl() { return creatoIl; }
     public void setCreatoIl(LocalDateTime creatoIl) { this.creatoIl = creatoIl; }
     public LocalDateTime getModificatoIl() { return modificatoIl; }
