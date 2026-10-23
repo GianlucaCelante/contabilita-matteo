@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   dataValida,
@@ -9,6 +9,7 @@ import {
   type Intervallo,
   type TipoPeriodo,
 } from "../util/formato";
+import { leggiFiltri, magazzinoBrowser, salvaFiltri } from "../util/filtriSalvati";
 
 export interface StatoPeriodo {
   tipo: TipoPeriodo;
@@ -23,15 +24,19 @@ const TIPI: TipoPeriodo[] = ["settimana", "mese", "anno", "periodo"];
 
 // Il periodo scelto vive nell'indirizzo (?p=mese&r=2026-10-21, oppure
 // ?p=periodo&da=...&a=...): sopravvive al ricaricamento e al tasto indietro.
-// Senza indirizzo vale `predefinito` attorno a oggi.
+// Si ricorda anche nel browser (util/filtriSalvati): se l'indirizzo non dice nulla, per esempio perche' si arriva
+// da un'altra pagina o si riapre l'applicazione, si riparte dall'ultimo periodo scelto, uguale in tutte le pagine.
+// Senza niente di salvato vale `predefinito` attorno a oggi.
 export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
   const [params, setParams] = useSearchParams();
-  const grezzo = params.get("p");
+  const salvati = leggiFiltri();
+  const grezzo = params.get("p") ?? salvati.p;
   const tipo = TIPI.find((t) => t === grezzo) ?? predefinito;
-  const rifGrezzo = params.get("r");
+  const rifGrezzo = params.get("r") ?? salvati.r;
   const riferimento = rifGrezzo && dataValida(rifGrezzo) ? rifGrezzo : oggiIso();
-  const daLibero = params.get("da");
-  const aLibero = params.get("a");
+  const daLibero = params.get("da") ?? salvati.da ?? null;
+  const aLibero = params.get("a") ?? salvati.a ?? null;
+  const nellIndirizzo = params.has("p");
 
   const intervallo = useMemo<Intervallo>(() => {
     if (tipo === "periodo") {
@@ -43,8 +48,18 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     return intervalloDi(tipo, riferimento);
   }, [tipo, riferimento, daLibero, aLibero]);
 
+  // Un indirizzo che dice il periodo (link, tasto indietro) diventa l'ultimo periodo scelto.
+  useEffect(() => {
+    if (!nellIndirizzo) return;
+    salvaFiltri(magazzinoBrowser(), tipo === "periodo" ? { p: tipo, da: intervallo.da, a: intervallo.a } : { p: tipo, r: riferimento });
+  }, [nellIndirizzo, tipo, riferimento, intervallo]);
+
   const imposta = useCallback(
     (nuovo: TipoPeriodo) => {
+      salvaFiltri(
+        magazzinoBrowser(),
+        nuovo === "periodo" ? { p: nuovo, da: intervallo.da, a: intervallo.a } : { p: nuovo, r: tipo === "periodo" ? oggiIso() : riferimento },
+      );
       setParams(
         (prec) => {
           const p = new URLSearchParams(prec);
@@ -69,6 +84,7 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
   const sposta = useCallback(
     (verso: 1 | -1) => {
       if (tipo === "periodo") return;
+      salvaFiltri(magazzinoBrowser(), { p: tipo, r: spostaRiferimento(tipo, riferimento, verso) });
       setParams(
         (prec) => {
           const p = new URLSearchParams(prec);
@@ -84,6 +100,7 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
 
   const impostaLibero = useCallback(
     (da: string, a: string) => {
+      salvaFiltri(magazzinoBrowser(), { p: "periodo", da, a });
       setParams(
         (prec) => {
           const p = new URLSearchParams(prec);

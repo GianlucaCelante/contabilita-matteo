@@ -8,6 +8,7 @@ import SelettorePeriodo, { NavigatorePeriodo } from "../componenti/SelettorePeri
 import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { useDebounced } from "../hooks/useDebounced";
+import { leggiFiltri, magazzinoBrowser, salvaFiltri } from "../util/filtriSalvati";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { aumentaIlSaldo, CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, sottotitoloTelefono, TIPO_BREVE } from "../util/etichette";
 import { dataBreve, dataGiorno, dataRiga, euro, euroConSegno } from "../util/formato";
@@ -55,7 +56,8 @@ function RigaMovimento({ m, conAnno }: { m: Movimento; conAnno: boolean }) {
 export default function Movimenti() {
   const periodo = usePeriodo("mese");
   const [params, setParams] = useSearchParams();
-  const tipoGrezzo = params.get("tipo");
+  // Il tipo scelto (Ricavi, Variabili…) si ricorda come il periodo: l'indirizzo vince, altrimenti l'ultima scelta.
+  const tipoGrezzo = params.get("tipo") ?? leggiFiltri().tipo ?? "";
   const tipo = FILTRI_TIPO.find((f) => f.valore === tipoGrezzo)?.valore ?? "";
   const [ricerca, setRicerca] = useState("");
   const q = useDebounced(ricerca.trim(), 300);
@@ -76,6 +78,7 @@ export default function Movimenti() {
   }, [elenco]);
 
   function scegliTipo(valore: Tipo | "") {
+    salvaFiltri(magazzinoBrowser(), { tipo: valore });
     setParams(
       (prec) => {
         const p = new URLSearchParams(prec);
