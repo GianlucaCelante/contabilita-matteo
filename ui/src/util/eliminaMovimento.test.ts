@@ -14,11 +14,8 @@ describe("eliminare un movimento", () => {
     ]);
   });
 
-  it("i testi spiegano le due strade", () => {
+  it("niente sottotesto esplicativo per i movimenti ripetuti: i due pulsanti si spiegano da soli", () => {
     expect(sottotitoloElimina(false)).toBe("Non si può annullare.");
-    const t = sottotitoloElimina(true);
-    expect(t).toContain("ripete ogni mese");
-    expect(t).toContain("solo questo");
-    expect(t).toContain("ferma la ripetizione");
+    expect(sottotitoloElimina(true)).toBe("");
   });
 });

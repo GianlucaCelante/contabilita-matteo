@@ -17,9 +17,7 @@ export function sceltePerEliminare(ripetizioneAttiva: boolean): SceltaElimina[] 
   ];
 }
 
+// Con la ripetizione attiva i due pulsanti si spiegano da soli: nessun sottotesto.
 export function sottotitoloElimina(ripetizioneAttiva: boolean): string {
-  return ripetizioneAttiva
-    ? "Questo movimento si ripete ogni mese. Elimina solo questo: la ripetizione continua e il prossimo mese ne crea uno nuovo. " +
-        "Elimina e ferma la ripetizione: sparisce questo e non ne vengono creati altri."
-    : "Non si può annullare.";
+  return ripetizioneAttiva ? "" : "Non si può annullare.";
 }

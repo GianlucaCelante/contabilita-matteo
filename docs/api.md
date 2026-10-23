@@ -43,7 +43,7 @@ Oggetto `Movimento` (risposta):
   dipendente: {id, nome} | null,
   descrizione, numeroDocumento, note,
   origine,
-  ricorrenza: {id, giorno, attiva, unita, intervallo} | null,
+  ricorrenza: {id, giorno, attiva, unita, intervallo, prossimaData} | null,
   allegatoNome | null }
 ```
 
@@ -69,7 +69,7 @@ Corpo di creazione/modifica (`MovimentoInput`):
 - Un movimento creato con `ricorrenza: {...}` genera una ripetizione: il movimento è la prima occorrenza, i suoi campi sono il modello. La frequenza è «ogni `intervallo` `unita`» con `unita` = `GIORNI`, `SETTIMANE`, `MESI` o `ANNI`; senza `unita` e `intervallo` vale **ogni mese** (`{giorno}` come prima). `intervallo` va da 1 a 365 (giorni), 104 (settimane), 60 (mesi), 10 (anni): 400 con «Ogni quanto: da 1 a N …».
 - `giorno` (1..31) è obbligatorio per mesi e anni (nei mesi più corti diventa l'ultimo giorno del mese; per gli anni il mese è quello della data del movimento) e si ignora per giorni e settimane, che contano dalla data del movimento.
 - Le occorrenze successive si registrano da sole come movimenti con `origine = RICORRENZA`, senza conferma, a ogni scadenza. Un controllo giornaliero (03:05) e uno all'avvio recuperano anche le scadenze saltate, solo fino a oggi. Idempotente: il generatore non crea un'occorrenza se per quella ripetizione e quella data ce n'è già una; una occorrenza eliminata a mano non si ricrea.
-- Con `PUT ...?ambito=QUESTO_E_PROSSIMI` si cambiano anche frequenza e giorno: valgono dalla prossima scadenza ancora da registrare (per mesi e anni resta lo stesso mese col nuovo giorno).
+- **Frequenza e dati sono separati.** `ambito` decide solo se i dati di questo movimento (importo, voce, fornitore…) diventano il modello dei prossimi (`QUESTO_E_PROSSIMI`) o no (`SOLO_QUESTO`). La `ricorrenza` nel corpo di un `PUT` (frequenza, giorno) cambia **sempre** la ripetizione, con qualunque ambito: vale dalla prossima scadenza ancora da registrare (per mesi e anni resta lo stesso mese col nuovo giorno). `prossimaData` nella risposta è quella scadenza.
 - Fermare (`ferma` o `DELETE` con `QUESTO_E_PROSSIMI`) e riattivare (`riattiva`) sono separati; la riattivazione non recupera i periodi in cui era ferma.
 - `RETRIBUZIONE_EXTRA` non può essere ricorrente: 400.
 
@@ -98,7 +98,7 @@ Corpo di creazione/modifica (`MovimentoInput`):
 ## Precisazioni emerse in implementazione
 
 - `importoCent` deve essere > 0. Limiti: nome 120 caratteri, descrizione 500, numero documento 100, note 2000.
-- `PUT ...?ambito=QUESTO_E_PROSSIMI` aggiorna nel modello della ricorrenza anche `tipo` e `documento`, oltre ai campi elencati. Con `SOLO_QUESTO` su un movimento già ricorrente il campo `ricorrenza` del corpo è ignorato. Un `PUT` su un movimento singolo con `ricorrenza: {giorno}` lo rende ricorrente. Un movimento già ricorrente non può diventare `RETRIBUZIONE_EXTRA` (400).
+- `PUT ...?ambito=QUESTO_E_PROSSIMI` aggiorna nel modello della ricorrenza anche `tipo` e `documento`, oltre ai campi elencati. Con `SOLO_QUESTO` su un movimento già ricorrente il campo `ricorrenza` del corpo (frequenza, giorno) si applica comunque alla ripetizione; i dati del movimento no. Un `PUT` su un movimento singolo con `ricorrenza: {giorno}` lo rende ricorrente. Un movimento già ricorrente non può diventare `RETRIBUZIONE_EXTRA` (400).
 - Dopo un `POST` o `PUT` che crea o modifica una ricorrenza, le occorrenze arretrate fino a oggi si registrano subito (oltre che all'avvio e alle 03:05).
 - `GET /api/movimenti`: nessuna paginazione; i totali riguardano tutto l'elenco filtrato.
 - `altreVoci` è ordinato per importo decrescente, poi per nome; «Altre voci fisse» raccoglie le voci senza categoria.

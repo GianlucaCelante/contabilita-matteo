@@ -206,6 +206,25 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   return { errori, input };
 }
 
+// Sono cambiati dati che finirebbero nei prossimi movimenti (importo, voce, fornitore...)? Allora al salvataggio si chiede
+// «solo questo o anche i prossimi». Data e numero del documento sono di questo movimento soltanto; la frequenza e' della ripetizione.
+const CAMPI_DEL_MODELLO: (keyof CampiForm)[] = ["importo", "voceFissa", "categoria", "retribuzione", "fornitore", "dipendente", "descrizione", "note"];
+
+export function modificheDelModello(prima: CampiForm, dopo: CampiForm): boolean {
+  return CAMPI_DEL_MODELLO.some((k) => prima[k] !== dopo[k]);
+}
+
+// La frequenza e' cambiata davvero? Si confrontano i valori effettivi: il giorno conta solo per mesi e anni, «Ogni mese» e' sempre ogni 1 mese.
+export function frequenzaCambiata(prima: CampiForm, dopo: CampiForm): boolean {
+  const effettiva = (c: CampiForm) => {
+    const unita = unitaDi(c);
+    return { unita, intervallo: c.frequenza === "MESE" ? 1 : Number(c.intervallo), giorno: usaIlGiornoDelMese(unita) ? Number(c.giorno) : 0 };
+  };
+  const a = effettiva(prima);
+  const b = effettiva(dopo);
+  return a.unita !== b.unita || a.intervallo !== b.intervallo || a.giorno !== b.giorno;
+}
+
 // L'unita' effettiva: «Ogni mese» e' sempre in mesi.
 export function unitaDi(c: Pick<CampiForm, "frequenza" | "unita">): UnitaRipetizione {
   return c.frequenza === "MESE" ? "MESI" : c.unita;

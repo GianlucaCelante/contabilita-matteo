@@ -19,16 +19,8 @@ import { useAvviso } from "../hooks/useAvviso";
 import { useBloccoUscita } from "../hooks/useBloccoUscita";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { CLASSE_TIPO, NOME_ORIGINE, TIPO_BREVE } from "../util/etichette";
-import { aggiungiMesi, dataBreve, euro, ultimoGiornoMese, daIso, isoDa } from "../util/formato";
-import { daMovimento, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
-
-// La data della prossima occorrenza: il mese dopo, nel giorno della ricorrenza
-// (o l'ultimo giorno se il mese e' piu' corto).
-function prossimaOccorrenza(dataMovimento: string, giorno: number): string {
-  const inizio = aggiungiMesi(`${dataMovimento.slice(0, 8)}01`, 1);
-  const d = daIso(inizio);
-  return isoDa(new Date(d.getFullYear(), d.getMonth(), Math.min(giorno, ultimoGiornoMese(d.getFullYear(), d.getMonth()))));
-}
+import { dataBreve, euro } from "../util/formato";
+import { daMovimento, frequenzaCambiata, modificheDelModello, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
 
 const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "dipendenti"];
 
@@ -40,7 +32,8 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   const iniziali = useRef<CampiForm>(daMovimento(movimento));
   const [campi, setCampi] = useState<CampiForm>(iniziali.current);
   const [errori, setErrori] = useState<Errori>({});
-  const [ambito, setAmbito] = useState<Ambito>("SOLO_QUESTO");
+  // Con una ripetizione attiva e dati del modello cambiati (importo, voce...) il salvataggio chiede «solo questo o anche i prossimi».
+  const [daSalvare, setDaSalvare] = useState<NonNullable<ReturnType<typeof preparaInput>["input"]> | null>(null);
   const [chiedeElimina, setChiedeElimina] = useState(false);
   const [chiedeFerma, setChiedeFerma] = useState(false);
 
@@ -112,20 +105,23 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   }
 
   function invia() {
-    // Il giorno si controlla solo se la ripetizione e' attiva e si cambia solo con «questo e prossimi».
-    const conGiorno = attiva && ambito === "QUESTO_E_PROSSIMI";
-    const { errori: nuovi, input } = preparaInput({ ...campi, ripeti: conGiorno }, true);
+    // La frequenza e' della ripetizione: si manda solo se e' cambiata davvero (e la ripetizione e' attiva).
+    const frequenza = attiva && frequenzaCambiata(iniziali.current, campi);
+    const { errori: nuovi, input } = preparaInput({ ...campi, ripeti: frequenza }, true);
     setErrori(nuovi);
     if (!input) {
       avvisa("Controlla i campi segnati in rosso.", { tipo: "errore" });
       return;
     }
-    if (!conGiorno) delete input.ricorrenza;
-    salva.mutate({ corpo: input, ambito });
+    if (!frequenza) delete input.ricorrenza;
+    if (attiva && modificheDelModello(iniziali.current, campi)) {
+      setDaSalvare(input);
+      return;
+    }
+    salva.mutate({ corpo: input, ambito: "SOLO_QUESTO" });
   }
 
-  const giornoCambiato = attiva && ambito === "QUESTO_E_PROSSIMI" && (campi.giorno !== String(ricorrenza?.giorno) || campi.frequenza !== iniziali.current.frequenza || campi.unita !== iniziali.current.unita || campi.intervallo !== iniziali.current.intervallo);
-  const prossima = ricorrenza && attiva ? prossimaOccorrenza(movimento.data, Number(campi.giorno) || ricorrenza.giorno) : null;
+  const prossima = ricorrenza && attiva ? ricorrenza.prossimaData : null;
   const ritardo = salva.isPending || elimina.isPending || ferma.isPending || riattiva.isPending;
 
   return (
@@ -168,8 +164,6 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
               campi={campi}
               errori={errori}
               onCambia={cambia}
-              estendi={ambito === "QUESTO_E_PROSSIMI"}
-              onEstendi={() => setAmbito((a) => (a === "QUESTO_E_PROSSIMI" ? "SOLO_QUESTO" : "QUESTO_E_PROSSIMI"))}
               onFerma={() => setChiedeFerma(true)}
               onRiattiva={() => riattiva.mutate()}
               disabled={ritardo}
@@ -193,7 +187,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
               <Link to="/movimenti" className="btn grande px-[22px]">
                 Annulla
               </Link>
-              <button type="submit" className="btn primario grande w-[248px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+              <button type="submit" className="btn primario grande w-[248px]" disabled={ritardo || !modificato}>
                 {salva.isPending ? "Salvo…" : "Salva modifiche"}
               </button>
             </div>
@@ -236,7 +230,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
               <Link to="/movimenti" className="btn min-h-[var(--d-barra)] px-5 text-[16px]">
                 Annulla
               </Link>
-              <button type="submit" className="btn primario min-h-[var(--d-barra)] flex-1 text-[17px]" disabled={ritardo || (!modificato && !giornoCambiato)}>
+              <button type="submit" className="btn primario min-h-[var(--d-barra)] flex-1 text-[17px]" disabled={ritardo || !modificato}>
                 {salva.isPending ? "Salvo…" : "Salva modifiche"}
               </button>
             </div>
@@ -269,10 +263,28 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
           }
         />
       )}
+      {daSalvare && (
+        <Finestra
+          titolo="Salvare le modifiche per:"
+          onChiudi={() => setDaSalvare(null)}
+          piede={
+            <>
+              <button type="button" className="btn" onClick={() => setDaSalvare(null)}>
+                Annulla
+              </button>
+              <button type="button" className="btn" disabled={salva.isPending} onClick={() => salva.mutate({ corpo: daSalvare, ambito: "SOLO_QUESTO" })}>
+                Solo questo movimento
+              </button>
+              <button type="button" className="btn primario" disabled={salva.isPending} onClick={() => salva.mutate({ corpo: daSalvare, ambito: "QUESTO_E_PROSSIMI" })}>
+                Questo e i prossimi
+              </button>
+            </>
+          }
+        />
+      )}
       {chiedeFerma && (
         <Finestra
           titolo="Fermare la ripetizione?"
-          sottotitolo="Da ora il movimento non si registra più da solo ogni mese. Quelli già registrati restano dove sono."
           onChiudi={() => setChiedeFerma(false)}
           piede={
             <>

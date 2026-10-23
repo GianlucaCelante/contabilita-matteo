@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Movimento } from "../api/tipi";
 import { descriviFrequenza, MASSIMO_INTERVALLO, usaIlGiornoDelMese } from "./ripetizione";
-import { campiVuoti, daMovimento, preparaInput, testoRipetizione, type CampiForm } from "./modelloMovimento";
+import { campiVuoti, daMovimento, frequenzaCambiata, modificheDelModello, preparaInput, testoRipetizione, type CampiForm } from "./modelloMovimento";
 
 describe("descriviFrequenza", () => {
   it("ogni mese: il giorno scelto", () => {
@@ -107,5 +107,40 @@ describe("testoRipetizione (riquadro «Dove finisce»)", () => {
   });
   it("non c'è senza ripetizione", () => {
     expect(testoRipetizione(fisso({ ripeti: false }))).toBeNull();
+  });
+});
+
+describe("modificheDelModello: serve chiedere «solo questo o anche i prossimi»?", () => {
+  const base = fisso();
+  it("sì se cambiano importo, voce, categoria, fornitore, dipendente, descrizione o note", () => {
+    for (const cambio of [{ importo: "1000" }, { voceFissa: "UTENZE" as const }, { categoria: "Altro" }, { fornitore: "Rossi" }, { dipendente: "Mario" }, { descrizione: "Nuovo contratto" }, { note: "x" }, { retribuzione: "EXTRA" as const }]) {
+      expect(modificheDelModello(base, { ...base, ...cambio })).toBe(true);
+    }
+  });
+  it("no se cambiano solo la data, il numero del documento o la frequenza", () => {
+    expect(modificheDelModello(base, { ...base, data: "2026-10-06" })).toBe(false);
+    expect(modificheDelModello(base, { ...base, numeroDocumento: "12" })).toBe(false);
+    expect(modificheDelModello(base, { ...base, frequenza: "PERSONALIZZATA", unita: "SETTIMANE", intervallo: "2", giorno: "9" })).toBe(false);
+  });
+});
+
+describe("frequenzaCambiata", () => {
+  const mensile = fisso({ giorno: "10" });
+  it("cambia passando da «Ogni mese» a personalizzata, o cambiando unità, intervallo o giorno che contano", () => {
+    expect(frequenzaCambiata(mensile, { ...mensile, frequenza: "PERSONALIZZATA", unita: "SETTIMANE" })).toBe(true);
+    expect(frequenzaCambiata(mensile, { ...mensile, giorno: "15" })).toBe(true);
+    const tre = fisso({ frequenza: "PERSONALIZZATA", unita: "MESI", intervallo: "3", giorno: "31" });
+    expect(frequenzaCambiata(tre, { ...tre, intervallo: "4" })).toBe(true);
+    expect(frequenzaCambiata(tre, { ...tre, unita: "ANNI" })).toBe(true);
+    expect(frequenzaCambiata(tre, { ...tre, giorno: "30" })).toBe(true);
+  });
+  it("non cambia se il giorno non conta (giorni e settimane) o se si riscrive lo stesso numero", () => {
+    const sett = fisso({ frequenza: "PERSONALIZZATA", unita: "SETTIMANE", intervallo: "2", giorno: "5" });
+    expect(frequenzaCambiata(sett, { ...sett, giorno: "20" })).toBe(false);
+    expect(frequenzaCambiata(sett, { ...sett, intervallo: "02" })).toBe(false);
+    expect(frequenzaCambiata(mensile, { ...mensile })).toBe(false);
+  });
+  it("«Ogni mese» con unità rimasta diversa nei campi non conta: l'unità effettiva è sempre MESI", () => {
+    expect(frequenzaCambiata(mensile, { ...mensile, unita: "GIORNI", intervallo: "9" })).toBe(false);
   });
 });

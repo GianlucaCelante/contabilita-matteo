@@ -30,7 +30,8 @@ public final class Dto {
     public record Rif(Long id, String nome) {
     }
 
-    public record RicorrenzaRif(Long id, int giorno, boolean attiva, UnitaRipetizione unita, int intervallo) {
+    /** {@code prossimaData}: la prossima scadenza ancora da registrare. */
+    public record RicorrenzaRif(Long id, int giorno, boolean attiva, UnitaRipetizione unita, int intervallo, LocalDate prossimaData) {
     }
 
     /** Senza unita e intervallo vale «ogni mese»; il giorno serve per mesi e anni. */

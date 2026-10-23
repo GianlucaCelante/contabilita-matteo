@@ -44,6 +44,8 @@ export interface RicorrenzaMovimento {
   attiva: boolean;
   unita: UnitaRipetizione;
   intervallo: number;
+  // La prossima scadenza ancora da registrare (yyyy-MM-dd).
+  prossimaData: string;
 }
 
 export interface Movimento {

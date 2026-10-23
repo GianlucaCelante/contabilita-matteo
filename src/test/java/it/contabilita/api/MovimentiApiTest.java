@@ -211,7 +211,7 @@ class MovimentiApiTest extends ProvaBase {
     }
 
     @Test
-    void laModificaSoloQuestoNonToccaLaRicorrenzaEQuestoEProssimiSi() throws Exception {
+    void laModificaSoloQuestoNonToccaIlModelloDellaRicorrenzaEQuestoEProssimiSi() throws Exception {
         ObjectNode in = movimento("2026-01-10", "COSTO_FISSO", "NESSUNO", 50000);
         in.put("categoria", "Affitto").putObject("ricorrenza").put("giorno", 10);
         JsonNode m = crea(in);
@@ -224,16 +224,17 @@ class MovimentiApiTest extends ProvaBase {
         ObjectNode solo = movimento("2026-01-10", "COSTO_FISSO", "NESSUNO", 51000);
         solo.put("categoria", "Affitto").putObject("ricorrenza").put("giorno", 20);
         modifica(id, "SOLO_QUESTO", solo);
+        // i dati (importo...) restano quelli della ripetizione; il giorno e' della ripetizione e cambia comunque
         assertThat(jdbc.queryForObject("SELECT importo_cent FROM ricorrenza WHERE id=?", Long.class, idRic)).isEqualTo(50000);
-        assertThat(jdbc.queryForObject("SELECT giorno FROM ricorrenza WHERE id=?", Integer.class, idRic)).isEqualTo(10);
+        assertThat(jdbc.queryForObject("SELECT giorno FROM ricorrenza WHERE id=?", Integer.class, idRic)).isEqualTo(20);
 
         ObjectNode prossimi = movimento("2026-01-10", "COSTO_FISSO", "NESSUNO", 52000);
-        prossimi.put("categoria", "Affitto").put("descrizione", "Nuovo contratto").putObject("ricorrenza").put("giorno", 20);
+        prossimi.put("categoria", "Affitto").put("descrizione", "Nuovo contratto").putObject("ricorrenza").put("giorno", 25);
         JsonNode r = modifica(id, "QUESTO_E_PROSSIMI", prossimi);
-        assertThat(r.get("ricorrenza").get("giorno").asInt()).isEqualTo(20);
+        assertThat(r.get("ricorrenza").get("giorno").asInt()).isEqualTo(25);
         assertThat(jdbc.queryForObject("SELECT importo_cent FROM ricorrenza WHERE id=?", Long.class, idRic)).isEqualTo(52000);
         assertThat(jdbc.queryForObject("SELECT descrizione FROM ricorrenza WHERE id=?", String.class, idRic)).isEqualTo("Nuovo contratto");
-        assertThat(jdbc.queryForObject("SELECT giorno FROM ricorrenza WHERE id=?", Integer.class, idRic)).isEqualTo(20);
+        assertThat(jdbc.queryForObject("SELECT giorno FROM ricorrenza WHERE id=?", Integer.class, idRic)).isEqualTo(25);
     }
 
     @Test

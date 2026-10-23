@@ -355,4 +355,35 @@ class RicorrenzeTest extends ProvaBase {
         servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 24));
         assertThat(date()).contains("2026-02-16", "2026-02-23").doesNotContain("2026-02-02", "2026-02-09");
     }
+
+    // ------------------------------------------------------------ frequenza e modello sono cose separate
+
+    @Test
+    void laFrequenzaSiCambiaAncheSalvandoSoloQuestoSenzaToccareIlModelloDelleOccorrenzeFuture() throws Exception {
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 50000);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10)); // la prossima era il 5 marzo
+        ObjectNode mod = movimento("2026-01-05", "COSTO_FISSO", "NESSUNO", 70000); // importo cambiato solo per questo movimento
+        mod.put("categoria", "Affitto").put("descrizione", "Canone");
+        mod.putObject("ricorrenza").put("unita", "SETTIMANE").put("intervallo", 2);
+        JsonNode r = modifica(prima.get("id").asLong(), "SOLO_QUESTO", mod);
+        assertThat(r.get("importoCent").asLong()).isEqualTo(70000);
+        assertThat(r.get("ricorrenza").get("unita").asText()).isEqualTo("SETTIMANE");
+        assertThat(r.get("ricorrenza").get("intervallo").asInt()).isEqualTo(2);
+
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 4, 10));
+        assertThat(date()).containsExactly("2026-01-05", "2026-02-05", "2026-03-05", "2026-03-19", "2026-04-02");
+        JsonNode marzo = leggi("/api/movimenti?da=2026-03-05&a=2026-03-05").get("elementi").get(0);
+        assertThat(marzo.get("importoCent").asLong()).isEqualTo(50000); // il modello e' rimasto quello di prima
+    }
+
+    @Test
+    void laRispostaDiceLaProssimaScadenza() throws Exception {
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 100);
+        assertThat(prima.get("ricorrenza").get("prossimaData").asText()).isEqualTo("2026-02-05");
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10));
+        JsonNode dopo = leggi("/api/movimenti/" + prima.get("id").asLong());
+        assertThat(dopo.get("ricorrenza").get("prossimaData").asText()).isEqualTo("2026-03-05");
+        JsonNode sett = primaCon("2026-01-05", "SETTIMANE", 2, null);
+        assertThat(sett.get("ricorrenza").get("prossimaData").asText()).isEqualTo("2026-01-19");
+    }
 }

@@ -148,8 +148,13 @@ public class MovimentiService {
         boolean generare = false;
         if (r != null) {
             RicorrenzeService.validaDocumentoRicorrente(m.getDocumento());
+            // L'ambito decide solo se i dati di questo movimento (importo, voce...) diventano quelli dei prossimi;
+            // la frequenza e' della ripetizione, non di un movimento: se il corpo la porta, cambia sempre.
             if (ambito == Ambito.QUESTO_E_PROSSIMI) {
                 ricorrenze.copiaModello(m, r);
+                generare = true;
+            }
+            if (input.ricorrenza() != null) {
                 ricorrenze.aggiornaFrequenza(r, input.ricorrenza());
                 generare = true;
             }
@@ -242,7 +247,7 @@ public class MovimentiService {
                 m.getFornitore() == null ? null : new Rif(m.getFornitore().getId(), m.getFornitore().getNome()),
                 m.getDipendente() == null ? null : new Rif(m.getDipendente().getId(), m.getDipendente().getNome()),
                 m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(),
-                r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo()),
+                r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo(), r.getProssimaData()),
                 m.getAllegatoNome(), m.getCreatoIl(),
                 // la colonna e' sempre valorizzata (uguale a creato_il alla nascita): "mai modificato" = null
                 m.getModificatoIl() == null || m.getModificatoIl().equals(m.getCreatoIl()) ? null : m.getModificatoIl());
