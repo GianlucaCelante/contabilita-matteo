@@ -58,7 +58,7 @@ public class ImportazioneService {
 
     static final Duration DURATA = Duration.ofMinutes(30);
     private static final int IMPORTAZIONI_MASSIME = 20;
-    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD24", "TD25");
+    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD06", "TD24", "TD25");
     private static final DateTimeFormatter GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM");
 
     /** Una fattura letta, con quello che serve alla conferma (non esce mai dal servizio). */
@@ -149,7 +149,7 @@ public class ImportazioneService {
         }
         if (!TIPI_AMMESSI.contains(tipo == null ? "" : tipo)) {
             return prefisso + "Tipo di documento " + (tipo == null ? "mancante" : tipo)
-                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD24 e TD25).";
+                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD06, TD24 e TD25).";
         }
         if (d.totaleCent() <= 0) {
             return prefisso + "Importo totale non valido: fattura non importata.";

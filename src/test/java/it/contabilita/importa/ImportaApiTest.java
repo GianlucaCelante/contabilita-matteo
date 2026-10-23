@@ -111,6 +111,23 @@ class ImportaApiTest extends ProvaBase {
     }
 
     @Test
+    void laParcellaTD06DiUnProfessionistaSiImportaComeUnaFattura() throws Exception {
+        String parcella = fattura(denominazione("Studio Bianchi", "09876543210"), body("TD06", "P-9", "2026-10-09", "244.00", "200.00", "44.00"));
+        JsonNode a = anteprima(f("parcella.xml", parcella));
+        assertThat(a.get("errori")).isEmpty();
+        assertThat(a.get("fatture")).singleElement().satisfies(x -> {
+            assertThat(x.get("numero").asText()).isEqualTo("P-9");
+            assertThat(x.get("totaleCent").asLong()).isEqualTo(24400);
+        });
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Consulenze"), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(1);
+        assertThat(leggi("/api/movimenti").get("elementi")).singleElement().satisfies(m -> {
+            assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+            assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+        });
+    }
+
+    @Test
     void anteprimaSenzaFile400() throws Exception {
         errore(multipart("/api/importa/anteprima"), null, 400);
     }
