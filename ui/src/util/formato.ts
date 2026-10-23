@@ -162,6 +162,11 @@ export function intervalloDi(tipo: Exclude<TipoPeriodo, "periodo">, riferimento:
   return { da: `${d.getFullYear()}-01-01`, a: `${d.getFullYear()}-12-31` };
 }
 
+// Il giorno `iso` cade dentro l'intervallo (estremi compresi)?
+export function intervalloContiene(intervallo: Intervallo, iso: string): boolean {
+  return intervallo.da <= iso && iso <= intervallo.a;
+}
+
 // Sposta il giorno di riferimento di un periodo avanti (+1) o indietro (-1).
 export function spostaRiferimento(tipo: Exclude<TipoPeriodo, "periodo">, riferimento: string, verso: 1 | -1): string {
   if (tipo === "settimana") return aggiungiGiorni(riferimento, 7 * verso);

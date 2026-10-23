@@ -88,15 +88,22 @@ export default function SelettorePeriodo({
 // Le frecce con l'etichetta del periodo, oppure i due campi data per il periodo
 // libero. Sul telefono le frecce stanno ai lati e l'etichetta al centro.
 export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoPeriodo; className?: string }) {
-  const { tipo, intervallo, etichetta, sposta, impostaLibero } = periodo;
+  const { tipo, intervallo, etichetta, sposta, vaiAOggi, contieneOggi, impostaLibero } = periodo;
   if (tipo === "periodo") return <PeriodoLibero da={intervallo.da} a={intervallo.a} imposta={impostaLibero} />;
   return (
     <div className={"flex items-center gap-1 max-md:w-full max-md:justify-between " + className}>
       <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
         <IconaSinistra larghezza={20} spessoreTratto={2} />
       </button>
-      <span className="px-3 text-center font-titolo text-[17px] font-semibold md:text-[18px]" aria-live="polite">
-        {etichetta}
+      <span className="flex flex-col items-center px-3 text-center">
+        <span className="font-titolo text-[17px] font-semibold md:text-[18px]" aria-live="polite">
+          {etichetta}
+        </span>
+        {!contieneOggi && (
+          <button type="button" className="-my-1 min-h-[36px] px-4 text-[13px] font-bold text-verde underline" aria-label="Torna al periodo di oggi" onClick={vaiAOggi}>
+            Oggi
+          </button>
+        )}
       </span>
       <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
         <IconaDestra larghezza={20} spessoreTratto={2} />

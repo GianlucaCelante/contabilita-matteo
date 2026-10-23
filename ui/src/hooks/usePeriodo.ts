@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import {
   dataValida,
   etichettaIntervallo,
+  intervalloContiene,
   intervalloDi,
   oggiIso,
   spostaRiferimento,
@@ -17,6 +18,10 @@ export interface StatoPeriodo {
   etichetta: string;
   imposta: (tipo: TipoPeriodo) => void;
   sposta: (verso: 1 | -1) => void;
+  // Torna al periodo di oggi (stesso tipo: la settimana, il mese o l'anno che contiene oggi).
+  vaiAOggi: () => void;
+  // Il periodo mostrato contiene gia' oggi (nel periodo libero non si naviga: vale sempre «si»).
+  contieneOggi: boolean;
   impostaLibero: (da: string, a: string) => void;
 }
 
@@ -98,6 +103,21 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     [setParams, tipo, riferimento],
   );
 
+  const vaiAOggi = useCallback(() => {
+    if (tipo === "periodo") return;
+    const oggi = oggiIso();
+    salvaFiltri(magazzinoBrowser(), { p: tipo, r: oggi });
+    setParams(
+      (prec) => {
+        const p = new URLSearchParams(prec);
+        p.set("p", tipo);
+        p.set("r", oggi);
+        return p;
+      },
+      { replace: true },
+    );
+  }, [setParams, tipo]);
+
   const impostaLibero = useCallback(
     (da: string, a: string) => {
       salvaFiltri(magazzinoBrowser(), { p: "periodo", da, a });
@@ -116,5 +136,7 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     [setParams],
   );
 
-  return { tipo, intervallo, etichetta: etichettaIntervallo(tipo, intervallo), imposta, sposta, impostaLibero };
+  const contieneOggi = tipo === "periodo" || intervalloContiene(intervallo, oggiIso());
+
+  return { tipo, intervallo, etichetta: etichettaIntervallo(tipo, intervallo), imposta, sposta, vaiAOggi, contieneOggi, impostaLibero };
 }
