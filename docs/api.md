@@ -26,7 +26,7 @@ Combinazioni valide `Tipo` → `Documento`: `RICAVO` → `RICAVO_FATTURATO` o `R
 ## Anagrafiche (creazione al volo)
 
 - `GET /api/categorie?tipo=COSTO_VARIABILE` → `[{id, nome, tipo}]` (`tipo` facoltativo; la categoria ha un `Tipo`).
-- `GET /api/fornitori?q=` → `[{id, nome, partitaIva}]` (`q` filtra per nome, senza distinguere maiuscole).
+- `GET /api/fornitori?q=` → `[{id, nome, partitaIva}]` (`q` filtra per nome, senza distinguere maiuscole). Ordine: con `q` prima chi inizia col testo, poi chi lo contiene; dentro ogni gruppo i più usati (numero di movimenti), a parità alfabetico. Senza `q`: i più usati.
 - `GET /api/dipendenti?q=` → `[{id, nome}]`.
 - `POST /api/categorie` `{nome, tipo}`, `POST /api/fornitori` `{nome, partitaIva?}`, `POST /api/dipendenti` `{nome}` → 201 con l'oggetto creato; se esiste già (stesso nome senza distinguere maiuscole, e per le categorie stesso `tipo`) → 200 con quello esistente.
 
@@ -153,7 +153,7 @@ I file allegati ai movimenti stanno in `<cartella dati>/allegati/` (mai nel data
 - `GET /api/movimenti/{id}/allegato` → il file con il suo tipo (`application/xml`, `application/pdf`, `image/jpeg`, `image/png`), `Content-Disposition: inline; filename=<nome originale>`; 404 se non c'è.
 - `POST /api/movimenti/{id}/allegato` (multipart, campo `file`; solo `image/jpeg`, `image/png`, `application/pdf`; max 8 MB; tipo verificato sui byte iniziali, non sull'estensione) → `Movimento` aggiornato; sostituisce un eventuale allegato precedente.
 - `DELETE /api/movimenti/{id}/allegato` → 204.
-- Eliminando un movimento si elimina anche il suo file. Il backup (`BackupService`) copia anche la cartella `allegati/` nella copia datata, e il ripristino la rimette a posto (se la copia la contiene).
+- Eliminando un movimento si elimina anche il suo file. Il backup (`BackupService`) copia anche la cartella `allegati/` nella copia datata (incrementale: un allegato già presente con la stessa dimensione nella copia precedente diventa un collegamento fisso a quel file, senza ricopiarlo; ogni copia resta completa e cancellare la vecchia non toglie nulla; se i collegamenti non sono possibili si copia), e il ripristino la rimette a posto (se la copia la contiene).
 
 ## Fasi successive
 

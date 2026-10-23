@@ -158,6 +158,32 @@ class MovimentiApiTest extends ProvaBase {
     }
 
     @Test
+    void iFornitoriSuggeritiPrimaChiIniziaColTestoPoiIPiuUsati() throws Exception {
+        for (String nome : new String[]{"Alfa Bar", "Bar Zeta", "Barile", "Bar Beta"}) {
+            invia(post("/api/fornitori"), json.createObjectNode().put("nome", nome), 201);
+        }
+        int[] usi = {1, 0, 1, 3};
+        String[] nomi = {"Alfa Bar", "Bar Zeta", "Barile", "Bar Beta"};
+        for (int i = 0; i < nomi.length; i++) {
+            for (int k = 0; k < usi[i]; k++) {
+                ObjectNode m = movimento("2026-03-0" + (k + 1), "COSTO_VARIABILE", "FATTURA", 1000);
+                m.put("fornitore", nomi[i]);
+                crea(m);
+            }
+        }
+        // con testo: prima chi inizia col testo (i piu' usati per primi), poi chi lo contiene soltanto
+        assertThat(nomiFornitori("/api/fornitori?q=bar")).containsExactly("Bar Beta", "Barile", "Bar Zeta", "Alfa Bar");
+        // senza testo: i piu' usati, a parita' in ordine alfabetico
+        assertThat(nomiFornitori("/api/fornitori")).containsExactly("Bar Beta", "Alfa Bar", "Barile", "Bar Zeta");
+    }
+
+    private java.util.List<String> nomiFornitori(String percorso) throws Exception {
+        java.util.List<String> nomi = new java.util.ArrayList<>();
+        leggi(percorso).forEach(f -> nomi.add(f.get("nome").asText()));
+        return nomi;
+    }
+
+    @Test
     void elencoConFiltriTotaliEOrdinamento() throws Exception {
         crea(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 100000));
         ObjectNode fa = movimento("2026-03-05", "COSTO_VARIABILE", "FATTURA", 30000);

@@ -10,6 +10,7 @@ import it.contabilita.dati.Dipendente;
 import it.contabilita.dati.DipendenteRepository;
 import it.contabilita.dati.Fornitore;
 import it.contabilita.dati.FornitoreRepository;
+import it.contabilita.dati.MovimentoRepository;
 import it.contabilita.dati.Tipo;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,11 @@ public class AnagraficheService {
     private final FornitoreRepository fornitori;
     private final DipendenteRepository dipendenti;
 
-    public AnagraficheService(CategoriaRepository categorie, FornitoreRepository fornitori, DipendenteRepository dipendenti) {
+    private final MovimentoRepository movimenti;
+
+    public AnagraficheService(CategoriaRepository categorie, FornitoreRepository fornitori, DipendenteRepository dipendenti,
+                              MovimentoRepository movimenti) {
+        this.movimenti = movimenti;
         this.categorie = categorie;
         this.fornitori = fornitori;
         this.dipendenti = dipendenti;
@@ -73,11 +78,22 @@ public class AnagraficheService {
         return righe.stream().map(AnagraficheService::dto).toList();
     }
 
+    /**
+     * Con un testo: prima chi inizia col testo, poi chi lo contiene soltanto; dentro ogni gruppo i piu' usati
+     * (per numero di movimenti), a parita' in ordine alfabetico. Senza testo: i piu' usati.
+     */
     @Transactional(readOnly = true)
     public List<FornitoreDto> elencoFornitori(String q) {
         String filtro = pulisci(q) == null ? null : chiave(pulisci(q));
-        return fornitori.findAllByOrderByNomeChiave().stream()
+        java.util.Map<Long, Long> usi = new java.util.HashMap<>();
+        for (Object[] riga : movimenti.contaPerFornitore()) {
+            usi.put((Long) riga[0], (Long) riga[1]);
+        }
+        return fornitori.findAllByOrderByNomeChiave().stream() // gia' alfabetico: il sort e' stabile
                 .filter(f -> filtro == null || f.getNomeChiave().contains(filtro))
+                .sorted(java.util.Comparator
+                        .comparing((Fornitore f) -> filtro != null && f.getNomeChiave().startsWith(filtro) ? 0 : 1)
+                        .thenComparing(f -> -usi.getOrDefault(f.getId(), 0L)))
                 .map(AnagraficheService::dto).toList();
     }
 

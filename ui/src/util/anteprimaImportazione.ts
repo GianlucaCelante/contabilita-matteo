@@ -97,3 +97,30 @@ export function testoRiassunto(r: RiassuntoSelezione): string {
   if (r.note > 0) parti.push(`${r.note === 1 ? "1 nota di credito" : `${r.note} note di credito`} · ${euro(-r.noteCent)}`);
   return parti.length > 0 ? parti.join(" · ") : "Niente da importare";
 }
+
+// ---- categoria uguale per tutte le fatture di un fornitore ----
+
+const chiaveNome = (nome: string) => nome.trim().replace(/\s+/g, " ").toLowerCase();
+
+// Stesso fornitore: stessa partita IVA, oppure (se manca) lo stesso nome scritto in modo diverso.
+export function stessoFornitore(a: FatturaLetta, b: FatturaLetta): boolean {
+  const ivaA = a.fornitore.partitaIva?.trim();
+  const ivaB = b.fornitore.partitaIva?.trim();
+  if (ivaA && ivaB) return ivaA === ivaB;
+  return chiaveNome(a.fornitore.nome) === chiaveNome(b.fornitore.nome);
+}
+
+// Le altre fatture da importare dello stesso fornitore che oggi hanno una categoria diversa da quella della riga.
+export function altreDelFornitore(fatture: FatturaLetta[], riga: FatturaLetta, categorie: Readonly<Record<number, string>>): FatturaLetta[] {
+  const categoria = (categorie[riga.indice] ?? "").trim();
+  if (!categoria) return [];
+  return fatture.filter((f) => f.indice !== riga.indice && !f.duplicata && stessoFornitore(f, riga) && (categorie[f.indice] ?? "").trim() !== categoria);
+}
+
+// Copia delle categorie con quella della riga applicata a tutte le altre del fornitore.
+export function applicaCategoriaAlFornitore(fatture: FatturaLetta[], riga: FatturaLetta, categorie: Readonly<Record<number, string>>): Record<number, string> {
+  const dopo = { ...categorie };
+  const categoria = (categorie[riga.indice] ?? "").trim();
+  for (const f of altreDelFornitore(fatture, riga, categorie)) dopo[f.indice] = categoria;
+  return dopo;
+}

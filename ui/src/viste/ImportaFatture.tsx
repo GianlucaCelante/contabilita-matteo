@@ -10,7 +10,7 @@ import { Caricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSuggerimentiCategorie } from "../hooks/useSuggerimenti";
-import { conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, type Filtro } from "../util/anteprimaImportazione";
+import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, type Filtro } from "../util/anteprimaImportazione";
 import { dataBreve, euro } from "../util/formato";
 
 const PAGINA = 50; // quante righe dell'anteprima si disegnano alla volta: con centinaia di fatture la pagina sarebbe lentissima
@@ -157,9 +157,12 @@ interface ProprietaRiga {
   categoria: string;
   onSeleziona: (valore: boolean) => void;
   onCategoria: (valore: string) => void;
+  // Quante altre fatture dello stesso fornitore hanno una categoria diversa da questa (0: niente da proporre).
+  altre: number;
+  onApplicaAlFornitore: () => void;
 }
 
-function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: ProprietaRiga) {
+function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria, altre, onApplicaAlFornitore }: ProprietaRiga) {
   const sugg = useSuggerimentiCategorie("COSTO_VARIABILE", categoria);
   const nota = f.notaDiCredito;
   const etichetta = `Categoria della fattura ${f.numero} di ${f.fornitore.nome}`;
@@ -217,6 +220,11 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
               errore={sugg.errore}
               facoltativo
             />
+            {altre > 0 && (
+              <button type="button" onClick={onApplicaAlFornitore} className="mt-1 min-h-[44px] text-left text-[13px] font-bold text-verde underline @min-[1000px]:min-h-0">
+                {altre === 1 ? "Usala anche per l'altra fattura di questo fornitore" : `Usala anche per le altre ${altre} fatture di questo fornitore`}
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -412,6 +420,8 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
                   categoria={categorie[f.indice] ?? ""}
                   onSeleziona={(v) => imposta(f.indice, v)}
                   onCategoria={(v) => setCategorie((c) => ({ ...c, [f.indice]: v }))}
+                  altre={altreDelFornitore(dati.fatture, f, categorie).length}
+                  onApplicaAlFornitore={() => setCategorie((c) => applicaCategoriaAlFornitore(dati.fatture, f, c))}
                 />
               ))}
             </ul>

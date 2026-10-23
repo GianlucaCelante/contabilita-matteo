@@ -172,6 +172,34 @@ class BackupServiceTest extends ProvaBase {
     }
 
     @Test
+    void laSecondaCopiaNonRicopiaGliAllegatiGiaCopiatiMaRestaCompleta() throws Exception {
+        Path allegati = CARTELLA_DATI.toAbsolutePath().resolve("allegati");
+        Files.createDirectories(allegati);
+        Path vecchio = Files.writeString(allegati.resolve("prova-incrementale-1.jpg"), "uno");
+        Path cartella = nuovaCartella();
+        try {
+            invia(put("/api/programma/backup"), json(cartella), 200);
+            Path prima = Path.of(invia(post("/api/programma/backup"), null, 200).get("cartella").asText());
+            Thread.sleep(1100); // il nome della copia ha la precisione del secondo
+            Path nuovo = Files.writeString(allegati.resolve("prova-incrementale-2.jpg"), "due");
+            Path seconda = Path.of(invia(post("/api/programma/backup"), null, 200).get("cartella").asText());
+
+            assertThat(seconda.resolve("allegati/prova-incrementale-1.jpg")).hasContent("uno");
+            assertThat(seconda.resolve("allegati/prova-incrementale-2.jpg")).hasContent("due");
+            assertThat(prima.resolve("allegati/prova-incrementale-2.jpg")).doesNotExist();
+            assertThat(Files.isSameFile(seconda.resolve("allegati/prova-incrementale-1.jpg"),
+                    prima.resolve("allegati/prova-incrementale-1.jpg"))).isTrue();
+            assertThat(Files.isSameFile(seconda.resolve("allegati/prova-incrementale-2.jpg"), nuovo)).isFalse();
+
+            CopiaCartelle.elimina(prima);
+            assertThat(seconda.resolve("allegati/prova-incrementale-1.jpg")).hasContent("uno");
+        } finally {
+            Files.deleteIfExists(vecchio);
+            Files.deleteIfExists(allegati.resolve("prova-incrementale-2.jpg"));
+        }
+    }
+
+    @Test
     void siTengonoSoloLeUltimeDieciCopieESiLasciaStareLAltro() throws Exception {
         Path cartella = nuovaCartella();
         for (int i = 1; i <= 12; i++) {

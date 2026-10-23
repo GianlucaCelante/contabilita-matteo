@@ -251,13 +251,15 @@ public class BackupService {
     private Path copia(Path cartella, String prefisso, boolean registra) throws IOException, SQLException {
         LocalDateTime quando = LocalDateTime.now(clock).withNano(0);
         Path destinazione = sottocartellaLibera(cartella, prefisso, quando);
+        Path allegatiPrecedenti = allegatiDellaCopiaPrecedente(cartella);
         Files.createDirectories(destinazione);
         try {
             copiaDatabase(destinazione.resolve(NOME_FILE_DATABASE));
             // Gli allegati hanno nomi univoci e non cambiano mai una volta scritti: copiarli dopo il database
             // al piu' ne porta qualcuno in piu' di quelli che il database conosce, mai uno in meno.
             if (Files.isDirectory(cartellaAllegati)) {
-                CopiaCartelle.copia(cartellaAllegati, destinazione.resolve(NOME_CARTELLA_ALLEGATI));
+                // Copia incrementale: quelli gia' presenti nella copia precedente non si ricopiano (collegamento fisso).
+                CopiaCartelle.copia(cartellaAllegati, destinazione.resolve(NOME_CARTELLA_ALLEGATI), allegatiPrecedenti);
             }
         } catch (IOException | SQLException | RuntimeException e) {
             eliminaSilenziosamente(destinazione);
@@ -270,6 +272,24 @@ public class BackupService {
             pulisciCopieVecchie(cartella);
         }
         return destinazione;
+    }
+
+    /** Gli allegati dell'ultima copia datata che ne ha (la piu' recente per nome), o null. */
+    private static Path allegatiDellaCopiaPrecedente(Path cartella) {
+        if (!Files.isDirectory(cartella)) {
+            return null;
+        }
+        try (Stream<Path> elenco = Files.list(cartella)) {
+            return elenco
+                    .filter(Files::isDirectory)
+                    .filter(p -> NOME_CARTELLA_COPIA.matcher(p.getFileName().toString()).matches())
+                    .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                    .map(p -> p.resolve(NOME_CARTELLA_ALLEGATI))
+                    .filter(Files::isDirectory)
+                    .findFirst().orElse(null);
+        } catch (IOException e) {
+            return null; // senza riferimento si copia tutto: piu' lento, non sbagliato
+        }
     }
 
     /** Nome datato; se esiste gia' (due copie nello stesso secondo) un progressivo -2, -3, ... */

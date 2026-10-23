@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ErroreFileImportato, FatturaLetta } from "../api/importa";
-import { conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto } from "./anteprimaImportazione";
+import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, stessoFornitore, testoRiassunto } from "./anteprimaImportazione";
 
 const err = (nomeFile: string, messaggio: string): ErroreFileImportato => ({ nomeFile, messaggio });
 
@@ -96,5 +96,42 @@ describe("riassuntoSelezione", () => {
   });
   it("niente selezionato: tutto a zero", () => {
     expect(riassuntoSelezione([])).toEqual({ fatture: 0, fattureCent: 0, note: 0, noteCent: 0 });
+  });
+});
+
+describe("stessoFornitore / altreDelFornitore / applicaCategoriaAlFornitore", () => {
+  const forno = (indice: number, extra: Partial<FatturaLetta> = {}) => fatt(indice, "Forno Rossi Srl", `FT-${indice}`, extra);
+  const tutte = [
+    forno(0),
+    forno(1),
+    forno(2, { duplicata: true }),
+    fatt(3, "Cartiera Verdi", "FT-9"),
+    fatt(4, "FORNO  rossi srl", "FT-10"), // stesso nome scritto in modo diverso, senza partita IVA
+    fatt(5, "Altro Nome", "FT-11", { fornitore: { nome: "Altro Nome", partitaIva: "01234567890" } }),
+    fatt(6, "Nome Diverso", "FT-12", { fornitore: { nome: "Nome Diverso", partitaIva: "01234567890" } }), // stessa P.IVA di 5
+  ];
+
+  it("stesso fornitore: stessa partita IVA, altrimenti stesso nome senza badare a maiuscole e spazi", () => {
+    expect(stessoFornitore(tutte[0]!, tutte[4]!)).toBe(true);
+    expect(stessoFornitore(tutte[0]!, tutte[3]!)).toBe(false);
+    expect(stessoFornitore(tutte[5]!, tutte[6]!)).toBe(true);
+  });
+
+  it("le altre da aggiornare: stesso fornitore, non già registrate, non la riga stessa, con categoria diversa", () => {
+    const categorie = { 0: "Farine", 1: "Farine", 2: "", 3: "", 4: "Altro" };
+    expect(altreDelFornitore(tutte, tutte[0]!, categorie).map((f) => f.indice)).toEqual([4]);
+  });
+
+  it("applica la categoria a tutte le altre del fornitore e lascia stare il resto", () => {
+    const categorie = { 0: "Farine", 1: "", 2: "", 3: "Carta", 4: "Altro", 5: "", 6: "" };
+    const dopo = applicaCategoriaAlFornitore(tutte, tutte[0]!, categorie);
+    expect(dopo).toEqual({ 0: "Farine", 1: "Farine", 2: "", 3: "Carta", 4: "Farine", 5: "", 6: "" });
+    expect(categorie[1]).toBe(""); // l'originale non cambia
+  });
+
+  it("senza categoria sulla riga non si applica nulla", () => {
+    const categorie = { 0: "  ", 1: "X" };
+    expect(altreDelFornitore(tutte, tutte[0]!, categorie)).toEqual([]);
+    expect(applicaCategoriaAlFornitore(tutte, tutte[0]!, categorie)).toEqual(categorie);
   });
 });

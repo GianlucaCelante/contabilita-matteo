@@ -183,7 +183,7 @@ File: `ImportaFattura.dc.html`
 4. Anteprima con conferma: titolo tipo "3 fatture lette da fatture-ottobre.zip · controlla e conferma", e tabella.
 5. Barra in fondo: "2 da importare · totale €…", pulsanti **Annulla** e **Importa 2 fatture** (il numero segue le righe selezionate); entrambi portano a Movimenti.
 
-**Tabella di anteprima.** Colonne: casella di selezione, Fornitore (con partita IVA sotto), N. fattura, Data, Imponibile, IVA, Totale, Categoria (menu a tendina, modificabile). Le righe selezionate sono importate.
+**Tabella di anteprima.** Colonne: casella di selezione, Fornitore (con partita IVA sotto), N. fattura, Data, Imponibile, IVA, Totale, Categoria (menu a tendina, modificabile; se altre fatture dello stesso fornitore hanno una categoria diversa compare «Usala anche per le altre N fatture di questo fornitore»). Le righe selezionate sono importate.
 
 **Stati.**
 

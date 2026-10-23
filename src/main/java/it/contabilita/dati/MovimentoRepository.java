@@ -27,5 +27,9 @@ public interface MovimentoRepository extends JpaRepository<Movimento, Long>, Jpa
     @EntityGraph(attributePaths = {"categoria"})
     Optional<Movimento> findFirstByFornitoreIdAndTipoAndCategoriaIsNotNullOrderByIdDesc(Long fornitoreId, Tipo tipo);
 
+    /** Quanti movimenti ha ogni fornitore: {@code [id del fornitore, numero]} (per ordinare i suggerimenti). */
+    @org.springframework.data.jpa.repository.Query("select m.fornitore.id, count(m) from Movimento m where m.fornitore is not null group by m.fornitore.id")
+    List<Object[]> contaPerFornitore();
+
     boolean existsByRicorrenzaIdAndData(Long ricorrenzaId, LocalDate data);
 }
