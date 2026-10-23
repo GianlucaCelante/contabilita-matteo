@@ -128,7 +128,7 @@ Struttura come 2.3 (intestazione, selettore A mano / Importa, modulo, riquadro l
 | Campo | Controllo | Obbligatorio | Note |
 |---|---|---|---|
 | Cosa registri | Ricavo / Costo variabile / Costo fisso | sì | Qui è "Costo fisso" |
-| Voce fissa | menu a tendina (qui: Retribuzione) | sì | |
+| Voce fissa | menu a tendina: Retribuzione, Affitto, Utenze, poi le voci create da chi usa l'app (le categorie dei costi fissi), infine «Nuova voce…» che apre il campo «Nome della voce» (si scrive e si crea al volo) | sì | Le voci proprie compaiono una per una nel Riepilogo |
 | Tipo di retribuzione | due scelte esclusive: **Regolare**, **Extra** | sì | Regolare = in busta; Extra = fuori busta |
 | Dipendente | campo con ricerca, "(facoltativo)" | facoltativo | Se vuoto il costo conta nel totale ma non nel dettaglio per persona |
 | Data | campo data | sì | |

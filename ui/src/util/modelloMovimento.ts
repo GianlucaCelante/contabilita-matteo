@@ -40,6 +40,41 @@ const CATEGORIA_DI_VOCE: Partial<Record<VoceFissa, string>> = {
   UTENZE: "Utenze",
 };
 
+// Il menu «Voce fissa»: dopo le voci standard ci sono quelle create da chi usa l'app (le categorie dei costi fissi),
+// poi «Nuova voce…». Le categorie standard e i doppioni (senza badare alle maiuscole) non si ripetono.
+export const VALORE_NUOVA_VOCE = "nuova";
+const PREFISSO_VOCE = "voce:";
+
+export function vociPersonalizzate(nomiCategorie: string[]): string[] {
+  const standard = new Set(Object.values(CATEGORIA_DI_VOCE).map((n) => (n ?? "").toLowerCase()));
+  const viste = new Set<string>();
+  const risultato: string[] = [];
+  for (const grezzo of nomiCategorie) {
+    const nome = grezzo.trim();
+    const chiave = nome.toLowerCase();
+    if (!nome || standard.has(chiave) || viste.has(chiave)) continue;
+    viste.add(chiave);
+    risultato.push(nome);
+  }
+  return risultato.sort((a, b) => a.localeCompare(b, "it"));
+}
+
+export function valoreVocePropria(nome: string): string {
+  return PREFISSO_VOCE + nome;
+}
+export function nomeDaValoreVoce(valore: string): string | null {
+  return valore.startsWith(PREFISSO_VOCE) ? valore.slice(PREFISSO_VOCE.length) : null;
+}
+
+// Il valore che il menu mostra per i campi attuali. `nuova`: chi usa l'app ha scelto «Nuova voce…» (anche se poi scrive un nome già esistente).
+export function valoreMenuVoce(voce: VoceFissa, categoria: string, proprie: string[], nuova: boolean): string {
+  if (voce !== "ALTRA") return voce;
+  if (nuova) return VALORE_NUOVA_VOCE;
+  const nome = categoria.trim().toLowerCase();
+  const trovata = proprie.find((p) => p.toLowerCase() === nome);
+  return trovata ? valoreVocePropria(trovata) : VALORE_NUOVA_VOCE;
+}
+
 export function campiVuoti(): CampiForm {
   return {
     tipo: "COSTO_VARIABILE",
