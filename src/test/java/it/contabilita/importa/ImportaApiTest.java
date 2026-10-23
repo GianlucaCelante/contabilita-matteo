@@ -128,6 +128,18 @@ class ImportaApiTest extends ProvaBase {
     }
 
     @Test
+    void lFatturaDaZeroEuroSiScartaConUnMessaggioChiaro() throws Exception {
+        String zero = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "Z-1", "2026-10-09", "0.00", "0.00", "0.00"));
+        String negativa = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "N-1", "2026-10-09", "-5.00", "-4.10", "-0.90"));
+        JsonNode a = anteprima(f("zero.xml", zero), f("negativa.xml", negativa));
+        assertThat(a.get("fatture")).isEmpty();
+        java.util.Map<String, String> perFile = new java.util.HashMap<>();
+        a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
+        assertThat(perFile.get("zero.xml")).isEqualTo("Importo zero: non c'è nessun costo da registrare.");
+        assertThat(perFile.get("negativa.xml")).isEqualTo("Importo negativo: fattura non importata.");
+    }
+
+    @Test
     void anteprimaSenzaFile400() throws Exception {
         errore(multipart("/api/importa/anteprima"), null, 400);
     }

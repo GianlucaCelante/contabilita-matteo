@@ -151,8 +151,11 @@ public class ImportazioneService {
             return prefisso + "Tipo di documento " + (tipo == null ? "mancante" : tipo)
                     + " non ammesso: fattura non importata (si importano TD01, TD02, TD06, TD24 e TD25).";
         }
-        if (d.totaleCent() <= 0) {
-            return prefisso + "Importo totale non valido: fattura non importata.";
+        if (d.totaleCent() == 0) {
+            return prefisso + "Importo zero: non c'è nessun costo da registrare.";
+        }
+        if (d.totaleCent() < 0) {
+            return prefisso + "Importo negativo: fattura non importata.";
         }
         if (d.totaleCent() > 1_000_000_000_000L) {
             return prefisso + "Importo troppo grande: fattura non importata.";
