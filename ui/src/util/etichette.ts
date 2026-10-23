@@ -65,3 +65,8 @@ export function documentoConNumero(m: Movimento): string {
   const base = NOME_DOCUMENTO[m.documento];
   return m.numeroDocumento ? `${base} ${m.numeroDocumento}` : base;
 }
+
+// Il sottotitolo di riga sul telefono: il documento si accorcia con i puntini se e' troppo lungo, il tipo resta sempre intero.
+export function sottotitoloTelefono(m: Movimento): { documento: string; tipo: string } {
+  return { documento: documentoConNumero(m), tipo: TIPO_BREVE[m.tipo] };
+}

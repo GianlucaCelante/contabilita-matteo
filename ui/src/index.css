@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Telefono con poca altezza (barre del browser, orizzontale): stesse soglie dei token --d-*. */
+@custom-variant corto (@media (max-width: 767.98px) and (max-height: 700px));
+
 /* ============================================================
    Font incorporati: Bricolage Grotesque (titoli) e Atkinson
    Hyperlegible (testo), licenza SIL OFL, serviti dal servizio

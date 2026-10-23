@@ -9,7 +9,7 @@ import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { useDebounced } from "../hooks/useDebounced";
 import { usePeriodo } from "../hooks/usePeriodo";
-import { CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, TIPO_BREVE } from "../util/etichette";
+import { CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, sottotitoloTelefono, TIPO_BREVE } from "../util/etichette";
 import { dataBreve, dataGiorno, dataRiga, euro, euroConSegno } from "../util/formato";
 
 const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
@@ -23,6 +23,7 @@ const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
 function RigaMovimento({ m, conAnno }: { m: Movimento; conAnno: boolean }) {
   const ricavo = m.tipo === "RICAVO";
   const sotto = sottotitoloMovimento(m);
+  const sottoTelefono = sottotitoloTelefono(m);
   return (
     <li className="riga">
       <Link to={`/movimenti/${m.id}`} className="rigaMov" aria-label={`${nomeMovimento(m)}, ${dataBreve(m.data)}, ${euroConSegno(m.importoCent, ricavo)}. Apri il dettaglio`}>
@@ -33,8 +34,14 @@ function RigaMovimento({ m, conAnno }: { m: Movimento; conAnno: boolean }) {
         <span className="min-w-0">
           <span className="block truncate text-[16px] font-bold md:text-[15px]">{nomeMovimento(m)}</span>
           {sotto && <span className="block truncate text-[13px] text-spento max-md:hidden">{sotto}</span>}
-          <span className="block truncate text-[13px] text-spento md:hidden">
-            {[documentoConNumero(m), TIPO_BREVE[m.tipo]].filter(Boolean).join(" · ")}
+          <span className="flex gap-1 text-[13px] text-spento md:hidden">
+            {sottoTelefono.documento && (
+              <>
+                <span className="min-w-0 truncate">{sottoTelefono.documento}</span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+            <span className="shrink-0">{sottoTelefono.tipo}</span>
           </span>
         </span>
         <span className="truncate text-[15px] max-md:hidden">{documentoConNumero(m)}</span>
@@ -98,15 +105,15 @@ export default function Movimenti() {
           </div>
         }
       />
-      <div className="flex flex-col gap-3 px-4 pb-3 md:flex-row md:gap-3 md:px-8 md:pb-4">
+      <div className="flex flex-col gap-3 px-4 pb-3 corto:gap-2 corto:pb-2 md:flex-row md:gap-3 md:px-8 md:pb-4">
         {/* Telefono: prima il tipo a tutta larghezza, poi la ricerca, poi il periodo. */}
-        <div className="flex flex-col gap-3 max-md:order-3">
+        <div className="flex flex-col gap-3 corto:gap-2 max-md:order-3">
           <SelettorePeriodo periodo={periodo} senzaNavigatore />
           <div className="md:hidden">
             <NavigatorePeriodo periodo={periodo} />
           </div>
         </div>
-        <div className="segmenti max-md:order-1 max-md:flex max-md:h-11 max-md:min-h-0" role="group" aria-label="Tipo di movimento">
+        <div className="segmenti max-md:order-1 max-md:flex max-md:h-11 max-md:min-h-0 corto:!h-10" role="group" aria-label="Tipo di movimento">
           {FILTRI_TIPO.map((f) => (
             <button
               key={f.valore}
@@ -120,14 +127,14 @@ export default function Movimenti() {
             </button>
           ))}
         </div>
-        <label className="campo min-w-0 flex-1 !min-h-[48px] !rounded-xl !border-bordo2 !px-4 max-md:order-2 md:basis-0">
+        <label className="campo min-w-0 flex-1 !min-h-[48px] corto:!min-h-[42px] !rounded-xl !border-bordo2 !px-4 max-md:order-2 md:basis-0">
           <IconaCerca larghezza={20} spessoreTratto={2} className="text-spento" />
           <span className="sr-only">Cerca fornitore o nota</span>
           <input type="search" value={ricerca} onChange={(e) => setRicerca(e.target.value)} placeholder="Cerca fornitore o nota…" className="!text-[16px]" />
         </label>
       </div>
 
-      <div className="flex flex-1 flex-col px-4 pb-4 md:px-8 md:pb-0">
+      <div className={"flex flex-1 flex-col px-4 md:px-8 md:pb-0 " + (conTotali ? "pb-[84px]" : "pb-4")}>
         <div className={"scheda flex-1 overflow-hidden max-md:rounded-2xl" + (conTotali ? " md:rounded-b-none md:border-b-0" : "")}>
           {richiesta.isPending && <Caricamento />}
           {richiesta.isError && <ErroreCaricamento errore={richiesta.error} onRiprova={() => void richiesta.refetch()} />}
@@ -177,7 +184,7 @@ export default function Movimenti() {
             aria-label="Totali del periodo"
             className="flex flex-col gap-1 border-t border-bordo bg-crema px-4 py-2.5 md:h-16 md:flex-row md:items-center md:justify-between md:gap-6 md:rounded-b-[18px] md:border-t-0 md:bg-testo md:px-6 md:py-0 md:text-white"
           >
-            <span className="text-[13px] text-spento md:hidden">
+            <span className="text-[13px] text-spento corto:hidden md:hidden">
               {elenco.elementi.length} {elenco.elementi.length === 1 ? "movimento" : "movimenti"} · {periodo.etichetta}
             </span>
             <span className="text-[14px] max-md:hidden">
