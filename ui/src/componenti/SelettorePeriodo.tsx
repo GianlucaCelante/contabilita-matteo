@@ -85,6 +85,13 @@ export default function SelettorePeriodo({
   );
 }
 
+// Larghezza dell'etichetta sul computer, la piu' lunga che il tipo puo' avere («29 dicembre 2025 – 4 gennaio 2026», «Settembre 2026»).
+const LARGHEZZA_ETICHETTA: Record<"settimana" | "mese" | "anno", string> = {
+  settimana: "md:w-[22rem]",
+  mese: "md:w-[11rem]",
+  anno: "md:w-[7rem]",
+};
+
 // Le frecce con l'etichetta del periodo, oppure i due campi data per il periodo
 // libero. Sul telefono le frecce stanno ai lati e l'etichetta al centro.
 export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoPeriodo; className?: string }) {
@@ -95,15 +102,22 @@ export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoP
       <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
         <IconaSinistra larghezza={20} spessoreTratto={2} />
       </button>
-      <span className="flex flex-col items-center px-3 text-center">
-        <span className="font-titolo text-[17px] font-semibold md:text-[18px]" aria-live="polite">
+      {/* Le frecce stanno sempre nello stesso punto: sul computer l'etichetta ha una larghezza fissa per tipo di periodo,
+          sul telefono occupa lo spazio fra le frecce e ha l'altezza di due righe; il posto di «Oggi» c'e' sempre. */}
+      <span className={"flex flex-col items-center justify-center px-1 text-center max-md:min-w-0 max-md:flex-1 " + LARGHEZZA_ETICHETTA[tipo]}>
+        <span className="flex items-center font-titolo text-[16px] font-semibold leading-tight max-md:min-h-[2.5em] md:text-[18px]" aria-live="polite">
           {etichetta}
         </span>
-        {!contieneOggi && (
-          <button type="button" className="-my-1 min-h-[36px] px-4 text-[13px] font-bold text-verde underline" aria-label="Torna al periodo di oggi" onClick={vaiAOggi}>
-            Oggi
-          </button>
-        )}
+        <button
+          type="button"
+          className={"-my-1 min-h-[32px] px-4 text-[13px] font-bold text-verde underline" + (contieneOggi ? " invisible" : "")}
+          aria-label="Torna al periodo di oggi"
+          aria-hidden={contieneOggi || undefined}
+          tabIndex={contieneOggi ? -1 : undefined}
+          onClick={vaiAOggi}
+        >
+          Oggi
+        </button>
       </span>
       <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
         <IconaDestra larghezza={20} spessoreTratto={2} />
