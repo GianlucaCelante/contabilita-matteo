@@ -24,7 +24,7 @@ export interface StatoDemo {
   dipendenti: Dipendente[];
 }
 
-const CHIAVE = "contabilita-demo-v1";
+const CHIAVE = "contabilita-demo-v2";
 
 // Generatore pseudo-casuale con seme fisso: la demo e' sempre uguale.
 function casuale(seme: number): () => number {
@@ -167,7 +167,7 @@ function generaDaZero(oggi: string): StatoDemo {
     if (rnd() < 0.42) {
       const f = FORNITORI[Math.floor(rnd() * FORNITORI.length)]!;
       numero += 1 + Math.floor(rnd() * 4);
-      mov(stato, d, { data: d, tipo: "COSTO_VARIABILE", documento: "FATTURA", importoCent: tra(f.da, f.a), fornitore: f.nome, categoria: f.categoria, numeroDocumento: `FT-${numero}` }, rnd() < 0.5 ? "XML" : "MANO");
+      mov(stato, d, { data: d, tipo: "COSTO_VARIABILE", documento: "FATTURA", importoCent: tra(f.da, f.a), fornitore: f.nome, categoria: f.categoria, numeroDocumento: `FT-${numero}` }, "MANO");
     }
     if (giornoSett === 6) {
       mov(stato, d, { data: d, tipo: "COSTO_VARIABILE", documento: "SCONTRINO", importoCent: tra(15000, 60000), descrizione: "Spesa del sabato" }, "MANO");
@@ -178,7 +178,7 @@ function generaDaZero(oggi: string): StatoDemo {
     if (d <= oggi) mov(stato, d, { data: d, tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_EXTRA", importoCent: tra(6000, 22000), dipendente: dip, descrizione: "Serata extra" }, "MANO");
   }
   const f = FORNITORI[0]!;
-  mov(stato, aggiungiGiorni(inizio, 40), { data: aggiungiGiorni(inizio, 40), tipo: "COSTO_VARIABILE", documento: "NOTA_DI_CREDITO", importoCent: 12400, fornitore: f.nome, categoria: f.categoria, numeroDocumento: "NC-12" }, "XML");
+  mov(stato, aggiungiGiorni(inizio, 40), { data: aggiungiGiorni(inizio, 40), tipo: "COSTO_VARIABILE", documento: "NOTA_DI_CREDITO", importoCent: 12400, fornitore: f.nome, categoria: f.categoria, numeroDocumento: "NC-12" }, "MANO");
 
   // Le ripetizioni: la prima occorrenza cade il giorno scelto dentro il periodo, le altre le registra il generatore.
   const primoGiorno = (g: number): string => {

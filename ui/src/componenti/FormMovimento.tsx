@@ -174,7 +174,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
     onCambia({ ripeti: acceso, giorno: acceso && !campi.giorno ? String(Number(campi.data.slice(8, 10)) || 1) : campi.giorno });
   }
 
-  const campoData = <Campo key="data" etichetta="Data" type="date" value={campi.data} onChange={(e) => onCambia({ data: e.target.value })} errore={errori.data} className="num" />;
+  const campoData = <Campo key="data" etichetta="Data" type="date" value={campi.data} onChange={(e) => onCambia({ data: e.target.value })} errore={errori.data} className="num max-[359px]:!text-[15px]" />;
   const campoImporto = (
     <Campo
       key="importo"

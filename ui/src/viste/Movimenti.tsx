@@ -197,15 +197,15 @@ export default function Movimenti() {
             <dl className="m-0 flex justify-between gap-3 md:justify-start md:gap-9 md:text-[15px]">
               <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-1.5">
                 <dt className="etichettaMaiuscola md:text-[15px] md:font-normal md:normal-case md:tracking-normal md:text-white">Ricavi</dt>
-                <dd className="num m-0 font-titolo text-[16px] font-bold text-verdescuro md:font-testo md:text-[15px] md:text-white">{euro(elenco.totali.ricaviCent)}</dd>
+                <dd className="num m-0 whitespace-nowrap font-titolo text-[16px] font-bold max-[359px]:text-[14px] text-verdescuro md:font-testo md:text-[15px] md:text-white">{euro(elenco.totali.ricaviCent)}</dd>
               </div>
               <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-1.5">
                 <dt className="etichettaMaiuscola md:text-[15px] md:font-normal md:normal-case md:tracking-normal md:text-white">Costi</dt>
-                <dd className="num m-0 font-titolo text-[16px] font-bold md:font-testo md:text-[15px]">{euro(elenco.totali.costiCent)}</dd>
+                <dd className="num m-0 whitespace-nowrap font-titolo text-[16px] font-bold max-[359px]:text-[14px] md:font-testo md:text-[15px]">{euro(elenco.totali.costiCent)}</dd>
               </div>
               <div className="flex min-w-0 flex-col md:flex-row md:items-baseline md:gap-1.5">
                 <dt className="etichettaMaiuscola md:text-[15px] md:font-normal md:normal-case md:tracking-normal md:text-white">Saldo</dt>
-                <dd className={"num m-0 font-titolo text-[16px] font-bold md:font-testo md:text-[15px] md:text-white " + (elenco.totali.saldoCent < 0 ? "text-rosso" : "text-verdescuro")}>{euro(elenco.totali.saldoCent)}</dd>
+                <dd className={"num m-0 whitespace-nowrap font-titolo text-[16px] font-bold max-[359px]:text-[14px] md:font-testo md:text-[15px] md:text-white " + (elenco.totali.saldoCent < 0 ? "text-rosso" : "text-verdescuro")}>{euro(elenco.totali.saldoCent)}</dd>
               </div>
             </dl>
           </footer>

@@ -231,10 +231,12 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
 
   /* Scelte esclusive grandi (Cosa registri, Documento) */
   .scelta {
-    flex: 1; min-height: 56px; border: 1px solid var(--color-bordo2); border-radius: 12px; background: var(--color-carta);
+    flex: 1 1 0; min-width: max-content; white-space: nowrap; min-height: 56px; border: 1px solid var(--color-bordo2); border-radius: 12px; background: var(--color-carta);
     display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 700;
     color: var(--color-testo); text-align: center; padding: 0 8px;
   }
+  /* Telefoni stretti (320 px): «Costo variabile» non deve andare a capo. */
+  @media (max-width: 339px) { .scelta { font-size: 14px; padding: 0 4px; } }
   .scelta:hover:not(:disabled) { background: var(--color-sabbia); }
   .scelta[aria-checked="true"] { background: var(--color-verdechiaro); border-color: var(--color-verde); color: var(--color-verdescuro); box-shadow: 0 0 0 1px var(--color-verde) inset; }
   .scelta.ambra[aria-checked="true"] { background: var(--color-ambrachiaro); border-color: var(--color-ambra); color: var(--color-ambra); box-shadow: 0 0 0 1px var(--color-ambra) inset; }
