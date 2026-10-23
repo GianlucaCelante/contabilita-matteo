@@ -8,7 +8,7 @@ export type VoceFissa = "RETRIBUZIONE" | "AFFITTO" | "UTENZE" | "ALTRA";
 
 export interface CampiForm {
   tipo: Tipo;
-  documentoVariabile: "FATTURA" | "SCONTRINO";
+  documentoVariabile: "FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO";
   tipoRicavo: "RICAVO_FATTURATO" | "RICAVO_EXTRA";
   voceFissa: VoceFissa;
   retribuzione: "REGOLARE" | "EXTRA";
@@ -107,7 +107,7 @@ export function daMovimento(m: Movimento): CampiForm {
   return {
     ...base,
     tipo: m.tipo,
-    documentoVariabile: m.documento === "SCONTRINO" ? "SCONTRINO" : "FATTURA",
+    documentoVariabile: m.documento === "SCONTRINO" ? "SCONTRINO" : m.documento === "NOTA_DI_CREDITO" ? "NOTA_DI_CREDITO" : "FATTURA",
     tipoRicavo: m.documento === "RICAVO_EXTRA" ? "RICAVO_EXTRA" : "RICAVO_FATTURATO",
     voceFissa: voce,
     retribuzione: m.documento === "RETRIBUZIONE_EXTRA" ? "EXTRA" : "REGOLARE",
@@ -144,7 +144,7 @@ export function categoriaDi(c: CampiForm): string {
 }
 
 export function chiedeFornitore(c: CampiForm): "si" | "facoltativo" | "no" {
-  if (c.tipo === "COSTO_VARIABILE") return c.documentoVariabile === "FATTURA" ? "si" : "facoltativo";
+  if (c.tipo === "COSTO_VARIABILE") return c.documentoVariabile === "SCONTRINO" ? "facoltativo" : "si";
   if (c.tipo === "COSTO_FISSO" && c.voceFissa !== "RETRIBUZIONE") return "facoltativo";
   return "no";
 }
@@ -178,7 +178,7 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   if (categoria) input.categoria = categoria;
   if (chiedeFornitore(c) !== "no" && c.fornitore.trim()) input.fornitore = c.fornitore.trim();
   if (c.tipo === "COSTO_FISSO" && c.voceFissa === "RETRIBUZIONE" && c.dipendente.trim()) input.dipendente = c.dipendente.trim();
-  if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile === "FATTURA" && c.numeroDocumento.trim()) input.numeroDocumento = c.numeroDocumento.trim();
+  if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile !== "SCONTRINO" && c.numeroDocumento.trim()) input.numeroDocumento = c.numeroDocumento.trim();
   if (chiedeDescrizione(c) && c.descrizione.trim()) input.descrizione = c.descrizione.trim();
   if (c.note.trim()) input.note = c.note.trim();
   if (giorno !== null) input.ricorrenza = { giorno };

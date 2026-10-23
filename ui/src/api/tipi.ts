@@ -6,6 +6,7 @@ export type Documento =
   | "RICAVO_FATTURATO"
   | "RICAVO_EXTRA"
   | "FATTURA"
+  | "NOTA_DI_CREDITO"
   | "SCONTRINO"
   | "RETRIBUZIONE_REGOLARE"
   | "RETRIBUZIONE_EXTRA"

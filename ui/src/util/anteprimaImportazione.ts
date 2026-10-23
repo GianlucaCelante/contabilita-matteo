@@ -26,7 +26,7 @@ export function raggruppaErrori(errori: ErroreFileImportato[]): GruppoErrori[] {
   return [...gruppi.entries()].map(([messaggio, file]) => ({ messaggio, file })).sort((a, b) => b.file.length - a.file.length);
 }
 
-export type Filtro = "tutte" | "daImportare" | "giaPresenti" | "noteDiCredito" | "escluse";
+export type Filtro = "tutte" | "daImportare" | "giaPresenti" | "noteDiCredito" | "integrazioni" | "escluse";
 
 export interface CriteriFiltro {
   testo: string;
@@ -43,6 +43,8 @@ function inFiltro(f: FatturaLetta, filtro: Filtro, escluse: ReadonlySet<number>)
       return f.duplicata;
     case "noteDiCredito":
       return f.notaDiCredito;
+    case "integrazioni":
+      return f.integrazione;
     case "escluse":
       return !f.duplicata && escluse.has(f.indice);
   }
@@ -62,6 +64,7 @@ export function conteggiFiltri(fatture: FatturaLetta[], escluse: ReadonlySet<num
     daImportare: conta("daImportare"),
     giaPresenti: conta("giaPresenti"),
     noteDiCredito: conta("noteDiCredito"),
+    integrazioni: conta("integrazioni"),
     escluse: conta("escluse"),
   };
 }
@@ -91,6 +94,6 @@ export function riassuntoSelezione(selezionate: FatturaLetta[]): RiassuntoSelezi
 export function testoRiassunto(r: RiassuntoSelezione): string {
   const parti: string[] = [];
   if (r.fatture > 0) parti.push(`${r.fatture === 1 ? "1 fattura" : `${r.fatture} fatture`} · ${euro(r.fattureCent)}`);
-  if (r.note > 0) parti.push(`${r.note === 1 ? "1 nota di credito" : `${r.note} note di credito`} · ${euro(r.noteCent)}`);
+  if (r.note > 0) parti.push(`${r.note === 1 ? "1 nota di credito" : `${r.note} note di credito`} · ${euro(-r.noteCent)}`);
   return parti.length > 0 ? parti.join(" · ") : "Niente da importare";
 }

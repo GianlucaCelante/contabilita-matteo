@@ -97,7 +97,7 @@ class ImportaApiTest extends ProvaBase {
     @Test
     void erroriPerFileNonLettiETipiNonAmmessi() throws Exception {
         String nc = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD04", "NC-1", "2026-10-09", "10.00", "8.20", "1.80"));
-        String autofattura = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD17", "AF-1", "2026-10-09", "10.00", "8.20", "1.80"));
+        String autofattura = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD16", "AF-1", "2026-10-09", "10.00", "8.20", "1.80"));
         String xxe = "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><x>&e;</x>";
         JsonNode a = anteprima(f("ok.xml", forno), f("nc.xml", nc), f("af.xml", autofattura), f("rotto.xml", "non xml"),
                 f("xxe.xml", xxe), f("immagine.png", "x"));
@@ -105,7 +105,7 @@ class ImportaApiTest extends ProvaBase {
         assertThat(a.get("errori")).hasSize(4);
         java.util.Map<String, String> perFile = new java.util.HashMap<>();
         a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
-        assertThat(perFile.get("af.xml")).contains("TD17").contains("non importata");
+        assertThat(perFile.get("af.xml")).contains("TD16").contains("già una fattura a parte");
         assertThat(perFile.keySet()).containsExactlyInAnyOrder("af.xml", "rotto.xml", "xxe.xml", "immagine.png");
     }
 
@@ -142,26 +142,37 @@ class ImportaApiTest extends ProvaBase {
             body("TD04", "NC-1", "2026-10-09", "24.40", "20.00", "4.40"));
 
     @Test
-    void laNotaDiCreditoSiImportaComeRicavoExtra() throws Exception {
+    void laNotaDiCreditoSiImportaComeCostoCheRiduceLeSpese() throws Exception {
         JsonNode a = anteprima(f("nc.xml", notaDiCredito), f("ok.xml", forno));
         assertThat(a.get("errori")).isEmpty();
         assertThat(a.get("fatture")).hasSize(2);
         JsonNode nc = a.get("fatture").get(0);
         assertThat(nc.get("notaDiCredito").asBoolean()).isTrue();
         assertThat(a.get("fatture").get(1).get("notaDiCredito").asBoolean()).isFalse();
-        assertThat(nc.get("categoriaSuggerita").isNull()).isTrue();
+        assertThat(nc.get("integrazione").asBoolean()).isFalse();
 
         JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Farine", 1, "Pane e farine"), 200);
         assertThat(esito.get("importati").asInt()).isEqualTo(2);
-        JsonNode m = leggi("/api/movimenti?tipo=RICAVO").get("elementi").get(0);
-        assertThat(m.get("tipo").asText()).isEqualTo("RICAVO");
-        assertThat(m.get("documento").asText()).isEqualTo("RICAVO_EXTRA");
+        JsonNode elenco = leggi("/api/movimenti");
+        assertThat(elenco.get("elementi")).hasSize(2);
+        JsonNode m = null;
+        for (JsonNode e : elenco.get("elementi")) {
+            if ("NOTA_DI_CREDITO".equals(e.get("documento").asText())) {
+                m = e;
+            }
+        }
+        assertThat(m).isNotNull();
+        assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
         assertThat(m.get("importoCent").asLong()).isEqualTo(2440);
         assertThat(m.get("data").asText()).isEqualTo("2026-10-09");
-        assertThat(m.get("descrizione").asText()).isEqualTo("Nota di credito NC-1 · Forno Rossi Srl");
+        assertThat(m.get("numeroDocumento").asText()).isEqualTo("NC-1");
+        assertThat(m.get("fornitore").get("nome").asText()).isEqualTo("Forno Rossi Srl");
+        assertThat(m.get("categoria").get("nome").asText()).isEqualTo("Farine");
         assertThat(m.get("origine").asText()).isEqualTo("XML");
-        assertThat(m.get("categoria").isNull()).isTrue(); // un ricavo non ha categoria, anche se la riga ne aveva una
         assertThat(m.get("allegatoNome").asText()).isEqualTo("nc.xml");
+        // fattura da 122,00 e nota da 24,40: i costi sono 97,60
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(12200 - 2440);
+        assertThat(elenco.get("totali").get("ricaviCent").asLong()).isZero();
     }
 
     @Test
@@ -171,7 +182,47 @@ class ImportaApiTest extends ProvaBase {
         JsonNode di_nuovo = anteprima(f("nc.xml", notaDiCredito));
         assertThat(di_nuovo.get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
         assertThat(di_nuovo.get("fatture").get(0).get("motivo").asText()).startsWith("Già registrata il");
+        // la stessa nota non fa da duplicato a una FATTURA con lo stesso numero
+        String fatturaStessoNumero = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "NC-1", "2026-10-09", "24.40", "20.00", "4.40"));
+        assertThat(anteprima(f("f.xml", fatturaStessoNumero)).get("fatture").get(0).get("duplicata").asBoolean()).isFalse();
         assertThat(leggi("/api/movimenti").get("elementi")).hasSize(1);
+    }
+
+    @Test
+    void laNotaDiCreditoSemplificataTD08SiImportaComeLeAltre() throws Exception {
+        String td08 = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD08", "NS-1", "2026-10-09", "12.20", "10.00", "2.20"));
+        JsonNode a = anteprima(f("td08.xml", td08));
+        assertThat(a.get("errori")).isEmpty();
+        assertThat(a.get("fatture").get(0).get("notaDiCredito").asBoolean()).isTrue();
+    }
+
+    // Come nel progetto del ristorante: TD17/18/19 (autofatture per acquisti dall'estero) sono costi al totale lordo
+    // perche' la fattura originale estera non arriva da SdI; TD16 no, perche' l'originale del fornitore italiano e' gia' una fattura.
+    @Test
+    void leIntegrazioniTD17TD18TD19SonoCostiAlTotaleELaTD16NoConUnMotivo() throws Exception {
+        String fornitore = denominazione("Meta Platforms Ireland Limited", "9692928F");
+        String td17 = fattura(fornitore, body("TD17", "S1", "2026-10-01", "122.00", "100.00", "22.00"));
+        String td18 = fattura(fornitore, body("TD18", "S2", "2026-10-02", "61.00", "50.00", "11.00"));
+        String td19 = fattura(fornitore, body("TD19", "S3", "2026-10-03", "12.20", "10.00", "2.20"));
+        String td16 = fattura(denominazione("Riam Ascensori Srl", "01234567891"), body("TD16", "S4", "2026-10-04", "122.00", "100.00", "22.00"));
+        JsonNode a = anteprima(f("17.xml", td17), f("18.xml", td18), f("19.xml", td19), f("16.xml", td16));
+        assertThat(a.get("fatture")).hasSize(3);
+        assertThat(a.get("fatture")).allSatisfy(x -> {
+            assertThat(x.get("integrazione").asBoolean()).isTrue();
+            assertThat(x.get("notaDiCredito").asBoolean()).isFalse();
+        });
+        assertThat(a.get("errori")).singleElement().satisfies(e -> {
+            assertThat(e.get("nomeFile").asText()).isEqualTo("16.xml");
+            assertThat(e.get("messaggio").asText()).isEqualTo("Integrazione TD16: non importata, la fattura originale del fornitore è già una fattura a parte.");
+        });
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Pubblicità", 1, "Pubblicità", 2, "Pubblicità"), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(3);
+        JsonNode elenco = leggi("/api/movimenti");
+        assertThat(elenco.get("elementi")).allSatisfy(m -> {
+            assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+            assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+        });
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(12200 + 6100 + 1220);
     }
 
     @Test

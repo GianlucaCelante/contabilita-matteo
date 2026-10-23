@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ErroreFileImportato, FatturaLetta } from "../api/importa";
-import { conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione } from "./anteprimaImportazione";
+import { conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto } from "./anteprimaImportazione";
 
 const err = (nomeFile: string, messaggio: string): ErroreFileImportato => ({ nomeFile, messaggio });
 
@@ -43,6 +43,7 @@ const fatt = (indice: number, fornitore: string, numero: string, extra: Partial<
   duplicata: false,
   motivo: null,
   notaDiCredito: false,
+  integrazione: false,
   ...extra,
 });
 
@@ -69,7 +70,22 @@ describe("filtraFatture", () => {
     expect(filtraFatture(tutte, { testo: "", filtro: "escluse" }, escluse).map((f) => f.indice)).toEqual([3]);
   });
   it("i conteggi dei filtri non dipendono dal testo", () => {
-    expect(conteggiFiltri(tutte, escluse)).toEqual({ tutte: 4, daImportare: 2, giaPresenti: 1, noteDiCredito: 1, escluse: 1 });
+    expect(conteggiFiltri(tutte, escluse)).toEqual({ tutte: 4, daImportare: 2, giaPresenti: 1, noteDiCredito: 1, integrazioni: 0, escluse: 1 });
+  });
+});
+
+describe("integrazioni", () => {
+  it("si filtrano a parte (autofatture per acquisti dall'estero)", () => {
+    const f = [fatt(0, "Meta Platforms Ireland", "S1", { integrazione: true }), fatt(1, "Forno Rossi Srl", "FT-1")];
+    expect(filtraFatture(f, { testo: "", filtro: "integrazioni" }, new Set()).map((x) => x.indice)).toEqual([0]);
+    expect(conteggiFiltri(f, new Set()).integrazioni).toBe(1);
+  });
+});
+
+describe("testoRiassunto", () => {
+  it("le note di credito si mostrano in meno, perché riducono i costi", () => {
+    const r = riassuntoSelezione([fatt(0, "A", "1", { totaleCent: 100000 }), fatt(1, "A", "NC", { totaleCent: 5000, notaDiCredito: true })]);
+    expect(testoRiassunto(r)).toBe("1 fattura · € 1.000,00 · 1 nota di credito · −€ 50,00");
   });
 });
 

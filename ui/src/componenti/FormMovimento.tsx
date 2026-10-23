@@ -105,10 +105,15 @@ const OPZIONI_RICAVO: Opzione<"RICAVO_FATTURATO" | "RICAVO_EXTRA">[] = [
             { valore: "RICAVO_EXTRA", etichetta: "Extra (non fatturato)" },
           ];
 
-const OPZIONI_DOCUMENTO: Opzione<"FATTURA" | "SCONTRINO">[] = [
+const OPZIONI_DOCUMENTO: Opzione<"FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO">[] = [
             { valore: "FATTURA", etichetta: "Fattura" },
             { valore: "SCONTRINO", etichetta: "Scontrino" },
           ];
+// Una nota di credito arriva dall'importazione: a mano non si crea, ma se c'e' si puo' modificare senza cambiarne il documento.
+const OPZIONI_CON_NOTA: Opzione<"FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO">[] = [
+  ...OPZIONI_DOCUMENTO,
+  { valore: "NOTA_DI_CREDITO", etichetta: "Nota di credito" },
+];
 
 const OPZIONI_RETRIBUZIONE: Opzione<"REGOLARE" | "EXTRA">[] = [
                 { valore: "REGOLARE", etichetta: "Regolare" },
@@ -173,7 +178,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const chiedeCategoriaForm = campi.tipo !== "COSTO_FISSO" && chiedeCategoria(campi);
   const fornitoreRichiesto = chiedeFornitore(campi);
   const retribuzione = campi.tipo === "COSTO_FISSO" && campi.voceFissa === "RETRIBUZIONE";
-  const fattura = campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile === "FATTURA";
+  const fattura = campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile !== "SCONTRINO";
 
   function cambiaTipo(tipo: Tipo) {
     onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", fornitore: "" });
@@ -242,7 +247,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
 
       {/* Nel dettaglio sul telefono il documento non si cambia: il modulo parte dai campi. */}
       {campi.tipo === "COSTO_VARIABILE" && (grande || !modifica) && (
-        <Scelte legenda="Documento" valore={campi.documentoVariabile} opzioni={OPZIONI_DOCUMENTO} onScegli={(v) => onCambia({ documentoVariabile: v })} />
+        <Scelte legenda="Documento" valore={campi.documentoVariabile} opzioni={campi.documentoVariabile === "NOTA_DI_CREDITO" ? OPZIONI_CON_NOTA : OPZIONI_DOCUMENTO} onScegli={(v) => onCambia({ documentoVariabile: v })} />
       )}
 
       {campi.tipo === "COSTO_FISSO" && (

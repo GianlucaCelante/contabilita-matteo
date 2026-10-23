@@ -58,8 +58,13 @@ public class ImportazioneService {
 
     static final Duration DURATA = Duration.ofMinutes(30);
     private static final int IMPORTAZIONI_MASSIME = 20;
-    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD04", "TD06", "TD24", "TD25");
-    private static final String NOTA_DI_CREDITO = "TD04";
+    // Come nel progetto del ristorante (catalog-service, FatturaPaDocumentTypes): fatture e parcelle sono costi; le note di
+    // credito li riducono; TD17/18/19 (autofatture per acquisti dall'estero) sono costi al totale lordo perche' l'originale
+    // estero non arriva da SdI; TD16 no, perche' l'originale del fornitore italiano e' gia' una fattura a parte.
+    private static final Set<String> NOTE_DI_CREDITO = Set.of("TD04", "TD08");
+    private static final Set<String> INTEGRAZIONI_CONTEGGIATE = Set.of("TD17", "TD18", "TD19");
+    private static final String INTEGRAZIONE_ESCLUSA = "TD16";
+    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD06", "TD17", "TD18", "TD19", "TD24", "TD25", "TD04", "TD08");
     private static final DateTimeFormatter GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM");
 
     /** Una fattura letta, con quello che serve alla conferma (non esce mai dal servizio). */
@@ -145,9 +150,12 @@ public class ImportazioneService {
     private static String problema(DatiFattura d, boolean inLotto) {
         String prefisso = inLotto ? "Fattura " + d.numero() + ": " : "";
         String tipo = d.tipoDocumento();
+        if (INTEGRAZIONE_ESCLUSA.equals(tipo)) {
+            return prefisso + "Integrazione TD16: non importata, la fattura originale del fornitore è già una fattura a parte.";
+        }
         if (!TIPI_AMMESSI.contains(tipo == null ? "" : tipo)) {
             return prefisso + "Tipo di documento " + (tipo == null ? "mancante" : tipo)
-                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD04, TD06, TD24 e TD25).";
+                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD04, TD06, TD08, TD17, TD18, TD19, TD24 e TD25).";
         }
         if (d.totaleCent() == 0) {
             return prefisso + "Importo zero: non c'è nessun costo da registrare.";
@@ -171,7 +179,7 @@ public class ImportazioneService {
             if (gia.isPresent()) {
                 motivo = "Già registrata il " + gia.get().getCreatoIl().format(GIORNO_MESE);
             }
-            return new String[]{notaDiCredito(dati) ? null : suggerisci(dati), motivo};
+            return new String[]{suggerisci(dati), motivo};
         });
         String motivo = esito[1];
         if (motivo == null && !viste.add(chiaveFattura(dati))) {
@@ -179,7 +187,7 @@ public class ImportazioneService {
         }
         FatturaLetta pubblica = new FatturaLetta(indice, file.nomeFile(), new FornitoreLetto(dati.fornitoreNome(), dati.partitaIva()),
                 dati.numero(), dati.data(), dati.imponibileCent(), dati.ivaCent(), dati.totaleCent(),
-                esito[0], motivo != null, motivo, notaDiCredito(dati));
+                esito[0], motivo != null, motivo, notaDiCredito(dati), INTEGRAZIONI_CONTEGGIATE.contains(dati.tipoDocumento()));
         return new Letta(pubblica, dati, file.originale(), file.nomeAllegato());
     }
 
@@ -190,21 +198,16 @@ public class ImportazioneService {
     }
 
     private static boolean notaDiCredito(DatiFattura d) {
-        return NOTA_DI_CREDITO.equals(d.tipoDocumento());
+        return NOTE_DI_CREDITO.contains(d.tipoDocumento());
     }
 
-    /** Il testo che dice cos'e' un ricavo nato da una nota di credito: e' anche il suo titolo nell'elenco. */
-    private static String descrizioneNotaDiCredito(DatiFattura d) {
-        return "Nota di credito " + d.numero() + " · " + d.fornitoreNome();
+    /** Una nota di credito e' un movimento di tipo diverso da una fattura: un numero uguale non le rende doppie. */
+    private static Documento documentoDi(DatiFattura d) {
+        return notaDiCredito(d) ? Documento.NOTA_DI_CREDITO : Documento.FATTURA;
     }
 
     private Optional<Movimento> trovaDuplicato(DatiFattura d) {
-        if (notaDiCredito(d)) {
-            return movimenti.findByDocumentoAndNumeroDocumentoAndData(Documento.RICAVO_EXTRA, d.numero(), d.data()).stream()
-                    .filter(m -> descrizioneNotaDiCredito(d).equals(m.getDescrizione()))
-                    .findFirst();
-        }
-        return movimenti.findByDocumentoAndNumeroDocumentoAndData(Documento.FATTURA, d.numero(), d.data()).stream()
+        return movimenti.findByDocumentoAndNumeroDocumentoAndData(documentoDi(d), d.numero(), d.data()).stream()
                 .filter(m -> stessoFornitore(m.getFornitore(), d))
                 .findFirst();
     }
@@ -298,10 +301,6 @@ public class ImportazioneService {
         if (gia.isPresent()) {
             throw new Duplicata("Già registrata il " + gia.get().getCreatoIl().format(GIORNO_MESE));
         }
-        if (notaDiCredito(d)) {
-            creaNotaDiCredito(letta, fileScritto);
-            return;
-        }
         Fornitore fornitore = d.partitaIva() == null ? null : fornitori.findFirstByPartitaIvaOrderByIdAsc(d.partitaIva()).orElse(null);
         if (fornitore == null) {
             fornitore = anagrafiche.fornitore(d.fornitoreNome(), d.partitaIva()).valore();
@@ -310,30 +309,11 @@ public class ImportazioneService {
         Movimento m = new Movimento();
         m.setData(d.data());
         m.setTipo(Tipo.COSTO_VARIABILE);
-        m.setDocumento(Documento.FATTURA);
+        m.setDocumento(documentoDi(d));
         m.setImportoCent(d.totaleCent());
         m.setFornitore(fornitore);
         String nomeCategoria = categoria == null || categoria.isBlank() ? null : categoria;
         m.setCategoria(nomeCategoria == null ? null : anagrafiche.categoria(nomeCategoria, Tipo.COSTO_VARIABILE).valore());
-        m.setNumeroDocumento(d.numero());
-        m.setOrigine(Origine.XML);
-        m.setCreatoIl(adesso);
-        m.setModificatoIl(adesso);
-        fileScritto[0] = allegati.salvaPerImportazione(m, letta.nomeAllegato(), letta.originale(),
-                letta.nomeAllegato().toLowerCase(Locale.ROOT).endsWith(".p7m"));
-        movimenti.saveAndFlush(m);
-    }
-
-    /** Una nota di credito ricevuta e' denaro che torna: si registra come ricavo extra, senza fornitore ne' categoria. */
-    private void creaNotaDiCredito(Letta letta, String[] fileScritto) {
-        DatiFattura d = letta.dati();
-        LocalDateTime adesso = LocalDateTime.now(clock).withNano(0);
-        Movimento m = new Movimento();
-        m.setData(d.data());
-        m.setTipo(Tipo.RICAVO);
-        m.setDocumento(Documento.RICAVO_EXTRA);
-        m.setImportoCent(d.totaleCent());
-        m.setDescrizione(descrizioneNotaDiCredito(d));
         m.setNumeroDocumento(d.numero());
         m.setOrigine(Origine.XML);
         m.setCreatoIl(adesso);

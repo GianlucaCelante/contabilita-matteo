@@ -16,8 +16,10 @@ export interface FatturaLetta {
   categoriaSuggerita: string | null;
   duplicata: boolean;
   motivo: string | null;
-  // Una nota di credito si importa come ricavo extra, non come fattura.
+  // Una nota di credito (TD04, TD08) riduce i costi.
   notaDiCredito: boolean;
+  // Un'integrazione (TD17, TD18, TD19): l'autofattura per un acquisto dall'estero, conteggiata come costo.
+  integrazione: boolean;
 }
 
 export interface ErroreFileImportato {

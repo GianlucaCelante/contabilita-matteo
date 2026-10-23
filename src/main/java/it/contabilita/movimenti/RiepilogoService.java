@@ -56,6 +56,7 @@ public class RiepilogoService {
                 case RICAVO_FATTURATO -> fatturati += importo;
                 case RICAVO_EXTRA -> extra += importo;
                 case FATTURA -> fatture += importo;
+                case NOTA_DI_CREDITO -> fatture -= importo; // riduce le fatture
                 case SCONTRINO -> scontrini += importo;
                 case RETRIBUZIONE_REGOLARE -> retribuzioneRegolare += importo;
                 case RETRIBUZIONE_EXTRA -> retribuzioneExtra += importo;

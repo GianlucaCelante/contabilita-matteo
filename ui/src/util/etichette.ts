@@ -20,6 +20,7 @@ export const NOME_DOCUMENTO: Record<Documento, string> = {
   RICAVO_FATTURATO: "Fatturato",
   RICAVO_EXTRA: "Extra",
   FATTURA: "Fattura",
+  NOTA_DI_CREDITO: "Nota di credito",
   SCONTRINO: "Scontrino",
   RETRIBUZIONE_REGOLARE: "Regolare",
   RETRIBUZIONE_EXTRA: "Extra",
@@ -59,6 +60,11 @@ export function sottotitoloMovimento(m: Movimento): string {
   if (m.dipendente && m.dipendente.nome !== principale) parti.push(m.dipendente.nome);
   if (m.note) parti.push(m.note);
   return parti.join(" · ");
+}
+
+// Il movimento fa salire il saldo: un ricavo, oppure una nota di credito ricevuta (riduce i costi).
+export function aumentaIlSaldo(m: Movimento): boolean {
+  return m.tipo === "RICAVO" || m.documento === "NOTA_DI_CREDITO";
 }
 
 export function documentoConNumero(m: Movimento): string {

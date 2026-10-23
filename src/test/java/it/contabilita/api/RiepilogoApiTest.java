@@ -65,6 +65,30 @@ class RiepilogoApiTest extends ProvaBase {
         assertThat(r.get("risultatoCent").asLong()).isEqualTo(-71000);
     }
 
+    // Una nota di credito ricevuta riduce i costi (non e' un ricavo): fatture 30000 - nota 5000 = 25000.
+    @Test
+    void laNotaDiCreditoRiduceLeFattureEICosti() throws Exception {
+        crea(movimento("2026-03-10", "COSTO_VARIABILE", "FATTURA", 30000));
+        crea(movimento("2026-03-12", "COSTO_VARIABILE", "NOTA_DI_CREDITO", 5000));
+        crea(movimento("2026-03-11", "COSTO_VARIABILE", "SCONTRINO", 4550));
+        crea(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 100000));
+
+        JsonNode r = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31");
+        assertThat(r.get("costiVariabili").get("fattureCent").asLong()).isEqualTo(25000);
+        assertThat(r.get("costiVariabili").get("scontriniCent").asLong()).isEqualTo(4550);
+        assertThat(r.get("costiVariabili").get("totaleCent").asLong()).isEqualTo(29550);
+        assertThat(r.get("costiCent").asLong()).isEqualTo(29550);
+        assertThat(r.get("ricavi").get("totaleCent").asLong()).isEqualTo(100000);
+        assertThat(r.get("risultatoCent").asLong()).isEqualTo(70450);
+
+        JsonNode elenco = leggi("/api/movimenti?da=2026-03-01&a=2026-03-31");
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(29550);
+        assertThat(elenco.get("totali").get("ricaviCent").asLong()).isEqualTo(100000);
+        assertThat(elenco.get("totali").get("saldoCent").asLong()).isEqualTo(70450);
+        assertThat(elenco.get("elementi")).extracting(e -> e.get("documento").asText()).contains("NOTA_DI_CREDITO");
+        assertThat(elenco.get("elementi").get(0).get("importoCent").asLong()).isEqualTo(5000); // l'importo resta positivo
+    }
+
     @Test
     void ilPeriodoSiRestringeEUnPeriodoVuotoDaTuttoZero() throws Exception {
         inserisciSet();

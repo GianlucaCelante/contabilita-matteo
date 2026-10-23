@@ -100,6 +100,17 @@ class EsportaApiTest extends ProvaBase {
         assertThat(righe).hasSize(8);
     }
 
+    // Nell'esportazione i costi sono negativi e una nota di credito, che li riduce, e' positiva.
+    @Test
+    void laNotaDiCreditoNelCsvHaSegnoPositivoEIlNomeDelDocumento() throws Exception {
+        crea(movimento("2026-03-12", "COSTO_VARIABILE", "NOTA_DI_CREDITO", 5000));
+        crea(movimento("2026-03-10", "COSTO_VARIABILE", "FATTURA", 30000));
+        String testo = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31");
+        assertThat(testo).contains("Nota di credito").contains("50,00");
+        assertThat(testo).doesNotContain("-50,00");
+        assertThat(testo).contains("-300,00");
+    }
+
     @Test
     void csvProteggeSeparatoreVirgoletteEACapoEMantieneAccentiEEuro() throws Exception {
         inserisciSet();

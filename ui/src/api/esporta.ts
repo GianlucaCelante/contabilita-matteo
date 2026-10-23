@@ -18,6 +18,7 @@ const DOCUMENTO_FILE: Record<Documento, string> = {
   RICAVO_FATTURATO: "Fatturato",
   RICAVO_EXTRA: "Extra",
   FATTURA: "Fattura",
+  NOTA_DI_CREDITO: "Nota di credito",
   SCONTRINO: "Scontrino",
   RETRIBUZIONE_REGOLARE: "Retribuzione regolare",
   RETRIBUZIONE_EXTRA: "Retribuzione extra",

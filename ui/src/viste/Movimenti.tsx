@@ -9,7 +9,7 @@ import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { useDebounced } from "../hooks/useDebounced";
 import { usePeriodo } from "../hooks/usePeriodo";
-import { CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, sottotitoloTelefono, TIPO_BREVE } from "../util/etichette";
+import { aumentaIlSaldo, CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, sottotitoloTelefono, TIPO_BREVE } from "../util/etichette";
 import { dataBreve, dataGiorno, dataRiga, euro, euroConSegno } from "../util/formato";
 
 const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
@@ -21,7 +21,7 @@ const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
 
 // Le date di riga sono brevi (gg/mm); con l'anno (gg/mm/aa) quando il periodo e' un anno o un intervallo libero.
 function RigaMovimento({ m, conAnno }: { m: Movimento; conAnno: boolean }) {
-  const ricavo = m.tipo === "RICAVO";
+  const ricavo = aumentaIlSaldo(m);
   const sotto = sottotitoloMovimento(m);
   const sottoTelefono = sottotitoloTelefono(m);
   return (

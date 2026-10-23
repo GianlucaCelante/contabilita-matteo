@@ -81,6 +81,8 @@ public class Movimento {
     public Documento getDocumento() { return documento; }
     public void setDocumento(Documento documento) { this.documento = documento; }
     public long getImportoCent() { return importoCent; }
+    /** Quanto pesa sui costi: l'importo, tranne una nota di credito ricevuta, che li riduce. */
+    public long getEffettoSuiCostiCent() { return documento == Documento.NOTA_DI_CREDITO ? -importoCent : importoCent; }
     public void setImportoCent(long importoCent) { this.importoCent = importoCent; }
     public Categoria getCategoria() { return categoria; }
     public void setCategoria(Categoria categoria) { this.categoria = categoria; }

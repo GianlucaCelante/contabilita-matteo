@@ -88,7 +88,7 @@ public class MovimentiService {
         long costi = 0;
         for (Movimento m : righe) {
             if (m.getTipo().isCosto()) {
-                costi += m.getImportoCent();
+                costi += m.getEffettoSuiCostiCent();
             } else {
                 ricavi += m.getImportoCent();
             }

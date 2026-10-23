@@ -19,6 +19,7 @@ const FILTRI: { valore: Filtro; etichetta: string }[] = [
   { valore: "daImportare", etichetta: "Da importare" },
   { valore: "giaPresenti", etichetta: "Già presenti" },
   { valore: "noteDiCredito", etichetta: "Note di credito" },
+  { valore: "integrazioni", etichetta: "Integrazioni" },
   { valore: "escluse", etichetta: "Escluse" },
 ];
 const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie"];
@@ -182,6 +183,7 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[15px] font-bold" title={f.fornitore.nome}>{f.fornitore.nome}</span>
           {nota && <span className="etichettaTipo shrink-0 bg-verdechiaro text-verdescuro">Nota di credito</span>}
+          {f.integrazione && <span className="etichettaTipo shrink-0 bg-sabbia text-spento" title="Autofattura per un acquisto dall'estero: conta come costo">Integrazione</span>}
         </div>
         {f.duplicata ? (
           <div className="text-[13px] font-bold text-ambra">{f.motivo ?? "Già registrata"}: non verrà aggiunta</div>
@@ -201,9 +203,7 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
 
       <div className="col-span-3 min-w-0 @min-[1000px]:col-span-1">
         <span className="etichettaMaiuscola @min-[1000px]:hidden">Categoria</span>
-        {nota ? (
-          <span className="text-[14px] text-spento">Ricavo extra: torna come incasso</span>
-        ) : f.duplicata ? (
+        {f.duplicata ? (
           <span className="text-[14px] text-spento">{f.categoriaSuggerita ?? "–"}</span>
         ) : (
           <div className="[&_.etichetta]:sr-only">

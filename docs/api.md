@@ -15,11 +15,13 @@ Fonte di verità condivisa tra servizio (`src/`) e interfaccia (`ui/`). Base: `/
 | Enum | Valori |
 |---|---|
 | `Tipo` | `RICAVO`, `COSTO_VARIABILE`, `COSTO_FISSO` |
-| `Documento` | `RICAVO_FATTURATO`, `RICAVO_EXTRA`, `FATTURA`, `SCONTRINO`, `RETRIBUZIONE_REGOLARE`, `RETRIBUZIONE_EXTRA`, `NESSUNO` |
+| `Documento` | `RICAVO_FATTURATO`, `RICAVO_EXTRA`, `FATTURA`, `NOTA_DI_CREDITO`, `SCONTRINO`, `RETRIBUZIONE_REGOLARE`, `RETRIBUZIONE_EXTRA`, `NESSUNO` |
 | `Origine` | `MANO`, `XML`, `RICORRENZA` |
 | `Ambito` | `SOLO_QUESTO`, `QUESTO_E_PROSSIMI` |
 
-Combinazioni valide `Tipo` → `Documento`: `RICAVO` → `RICAVO_FATTURATO` o `RICAVO_EXTRA`; `COSTO_VARIABILE` → `FATTURA` o `SCONTRINO`; `COSTO_FISSO` → `RETRIBUZIONE_REGOLARE`, `RETRIBUZIONE_EXTRA` o `NESSUNO`. Altre combinazioni: 400.
+Combinazioni valide `Tipo` → `Documento`: `RICAVO` → `RICAVO_FATTURATO` o `RICAVO_EXTRA`; `COSTO_VARIABILE` → `FATTURA`, `NOTA_DI_CREDITO` o `SCONTRINO`; `COSTO_FISSO` → `RETRIBUZIONE_REGOLARE`, `RETRIBUZIONE_EXTRA` o `NESSUNO`. Altre combinazioni: 400.
+
+**Nota di credito** (`COSTO_VARIABILE` + `NOTA_DI_CREDITO`, come nel progetto del ristorante): l'`importoCent` resta positivo, ma la nota **riduce** i costi: nei totali di `GET /api/movimenti`, nel Riepilogo (riga «Fatture»: fatture − note) e nell'esportazione (dove i costi sono negativi e la nota è positiva). Ha fornitore, categoria e numero come una fattura; arriva dall'importazione (a mano non la offre l'interfaccia, ma l'API la accetta).
 
 ## Anagrafiche (creazione al volo)
 
@@ -118,7 +120,7 @@ Il ripristino avviene **a riavvio**: sostituire il file di un database SQLite ap
 
 `GET /api/esporta?formato=xlsx|csv&da=&a=&includi=RICAVO,COSTO_VARIABILE,COSTO_FISSO` → il file in streaming (`Content-Disposition: attachment`, nome `contabilita-AAAA-MM-GG_AAAA-MM-GG.xlsx` / `.csv` con il periodo; `da` e `a` obbligatori, inclusivi; `includi` facoltativo, default tutti i tipi; valori non validi → 400).
 
-- **Etichette in italiano** nel file: Tipo `Ricavo` / `Costo variabile` / `Costo fisso`; Documento `Fatturato`, `Extra`, `Fattura`, `Scontrino`, `Retribuzione regolare`, `Retribuzione extra`, `-` (per `NESSUNO`).
+- **Etichette in italiano** nel file: Tipo `Ricavo` / `Costo variabile` / `Costo fisso`; Documento `Fatturato`, `Extra`, `Fattura`, `Nota di credito`, `Scontrino`, `Retribuzione regolare`, `Retribuzione extra`, `-` (per `NESSUNO`).
 - **Colonne del foglio Movimenti** (stesso ordine nel CSV): `Data`, `Tipo`, `Documento`, `Categoria`, `Fornitore`, `Dipendente`, `Descrizione`, `N. documento`, `Note`, `Importo`, `Origine` (`A mano`, `XML`, `Ricorrenza`). Ordinati per data crescente poi id. `Importo` **con segno** (ricavi positivi, costi negativi).
 - **XLSX** (libreria fastexcel, scrittura in streaming come nel progetto etichette): fogli `Movimenti` (data come cella data, importo come numero in euro con formato valuta, intestazione in grassetto e riga bloccata, larghezze colonna adeguate) e `Riepilogo` (stesse voci di `GET /api/riepilogo` per il periodo: ricavi fatturati/extra/totale, costi variabili fatture/scontrini/totale, costi fissi retribuzione regolare/extra/altre voci/totale, costi, risultato; importi come numeri).
 - **CSV**: solo i movimenti; separatore `;`, UTF-8 con BOM (si apre bene in Excel italiano), date `yyyy-MM-dd`, importi con virgola decimale e nessun separatore delle migliaia, campi con `;`, virgolette o a capo tra virgolette raddoppiate.
@@ -131,13 +133,13 @@ Gli zip si leggono dal loro indice finale (passano da un file temporaneo, cancel
 File accettati: `.xml` (FatturaPA, anche con più fatture in un lotto), `.xml.p7m` (fattura firmata: se ne estrae l'XML incorporato) e `.zip` con dentro file dei tipi precedenti (anche in sottocartelle). Tutto si legge **in locale**; il parser XML deve rifiutare DTD ed entità esterne (XXE); lo zip va letto con i controlli contro `zip-slip` e contro le «zip bomb» (limite al numero di file, a ~20 MB per file e ~200 MB in totale decompressi).
 
 - `POST /api/importa/anteprima` (multipart, campo `files`, uno o più) → `{importazioneId, fatture: [FatturaLetta], errori: [{nomeFile, messaggio}]}`. **Non salva movimenti.** `importazioneId` identifica le fatture lette (in memoria, scade dopo 30 minuti).
-- `FatturaLetta`: `{indice, nomeFile, fornitore: {nome, partitaIva|null}, numero, data, imponibileCent, ivaCent, totaleCent, categoriaSuggerita: "nome"|null, duplicata: bool, motivo: "testo"|null, notaDiCredito: bool}`.
+- `FatturaLetta`: `{indice, nomeFile, fornitore: {nome, partitaIva|null}, numero, data, imponibileCent, ivaCent, totaleCent, categoriaSuggerita: "nome"|null, duplicata: bool, motivo: "testo"|null, notaDiCredito: bool, integrazione: bool}`.
   - `fornitore.nome` = `Denominazione`, oppure `Nome Cognome`, del `CedentePrestatore`; `partitaIva` = `IdFiscaleIVA/IdCodice` (con o senza `IdPaese`).
   - `numero` = `DatiGeneraliDocumento/Numero`, `data` = `DatiGeneraliDocumento/Data`, `totaleCent` = `ImportoTotaleDocumento`; se manca = imponibile + IVA. `imponibileCent` e `ivaCent` = somma di `DatiRiepilogo/ImponibileImporto` e `Imposta`. Importi decimali con punto, da convertire a centesimi senza errori di arrotondamento (`BigDecimal`).
   - `categoriaSuggerita`: l'ultima categoria usata per quel fornitore (stessa partita IVA o stesso nome senza distinguere maiuscole), altrimenti `null`.
   - `duplicata = true` se esiste già un movimento `FATTURA` con lo stesso fornitore (partita IVA, o nome se manca), stesso `numeroDocumento` e stessa data; `motivo` dice «Già registrata il gg/mm».
-  - Si importano `TD01`, `TD02`, `TD04` (nota di credito), `TD06` (parcella), `TD24` e `TD25`; gli altri tipi non si importano e compaiono in `errori` con un messaggio chiaro. Una fattura con totale zero («Importo zero: non c'è nessun costo da registrare.») o negativo non si importa.
-  - `notaDiCredito` è vero per `TD04`: non ha categoria suggerita e alla conferma diventa un **ricavo extra** (`tipo = RICAVO`, `documento = RICAVO_EXTRA`, nessun fornitore né categoria) con `descrizione = «Nota di credito <numero> · <fornitore>»`, `numeroDocumento` = numero, l'XML come allegato. Una nota già importata (stesso numero, data e descrizione) risulta `duplicata`.
+  - Si importano: `TD01`, `TD02`, `TD06` (parcella), `TD24`, `TD25` come **fatture** (costo variabile, importo = totale del documento); `TD04` e `TD08` come **note di credito** (riducono i costi); `TD17`, `TD18`, `TD19` (autofatture per acquisti dall'estero) come fatture al **totale lordo**, perché la fattura originale estera non arriva da SdI. `TD16` (integrazione per fornitore italiano) **non** si importa: «Integrazione TD16: non importata, la fattura originale del fornitore è già una fattura a parte.». Gli altri tipi non si importano e compaiono in `errori`. Una fattura con totale zero («Importo zero: non c'è nessun costo da registrare.») o negativo non si importa.
+  - `notaDiCredito` è vero per `TD04`/`TD08`: alla conferma diventa un movimento `COSTO_VARIABILE` + `NOTA_DI_CREDITO` con fornitore, categoria (suggerita come per le fatture), numero e XML allegato. `integrazione` è vero per `TD17`/`TD18`/`TD19`. Una nota già importata (stesso fornitore, numero e data) risulta `duplicata`; un numero uguale a quello di una fattura non la rende doppia.
 - `POST /api/importa/conferma` `{importazioneId, righe: [{indice, categoria|null}]}` → `{importati, ignorate: [{indice, motivo}]}`. Crea un movimento per riga: `tipo = COSTO_VARIABILE`, `documento = FATTURA`, `data`, `importoCent = totaleCent`, fornitore get-or-create (con partita IVA), `categoria` dal corpo (get-or-create, `Tipo` costo variabile; `null` ammesso), `numeroDocumento`, `origine = XML`, e l'XML originale come **allegato** (vedi sotto). Le duplicate si ignorano comunque (anche se selezionate) con motivo. `importazioneId` scaduto o sconosciuto → 404 «L'importazione è scaduta: rileggi i file.». Operazione atomica per riga: una riga che fallisce non blocca le altre.
 
 ## Allegati (fase 4)

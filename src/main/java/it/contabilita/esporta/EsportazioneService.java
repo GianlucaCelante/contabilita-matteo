@@ -110,7 +110,7 @@ public class EsportazioneService {
     // ------------------------------------------------------------------ etichette
 
     private static Riga riga(Movimento m) {
-        long importo = m.getTipo().isCosto() ? -m.getImportoCent() : m.getImportoCent();
+        long importo = m.getTipo().isCosto() ? -m.getEffettoSuiCostiCent() : m.getImportoCent();
         return new Riga(m.getData(), etichetta(m.getTipo()), etichetta(m.getDocumento()),
                 m.getCategoria() == null ? "" : m.getCategoria().getNome(),
                 m.getFornitore() == null ? "" : m.getFornitore().getNome(),
@@ -136,6 +136,7 @@ public class EsportazioneService {
             case RICAVO_FATTURATO -> "Fatturato";
             case RICAVO_EXTRA -> "Extra";
             case FATTURA -> "Fattura";
+            case NOTA_DI_CREDITO -> "Nota di credito";
             case SCONTRINO -> "Scontrino";
             case RETRIBUZIONE_REGOLARE -> "Retribuzione regolare";
             case RETRIBUZIONE_EXTRA -> "Retribuzione extra";
