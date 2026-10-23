@@ -46,6 +46,31 @@ class LettoreFileTest {
         });
     }
 
+    // Lo zip esportato da Fatture in Cloud ha, dopo ogni voce, un descrittore con la dimensione a zero (quelle vere stanno
+    // solo nell'indice finale): una lettura "a flusso" lo rifiuta come danneggiato, l'indice invece e' corretto.
+    @Test
+    void unZipConDescrittoriDallaDimensioneZeroSiLegge() throws Exception {
+        byte[] z = zip(voci(
+                "Fatture in Cloud/lista clienti.xlsx", new byte[]{1, 2, 3, 4},
+                "Fatture in Cloud/acquisti elettronici/01_gennaio/a.xml", xml,
+                "Fatture in Cloud/acquisti elettronici/02_febbraio/b.xml", xml.replace("<Numero>1<", "<Numero>2<")));
+        azzeraDimensioniNeiDescrittori(z);
+
+        Risultato r = lettore.leggi("2026.zip", z);
+        assertThat(r.errori()).isEmpty();
+        assertThat(r.file()).extracting(LettoreFile.FileXml::xml).containsExactly(byt(xml), byt(xml.replace("<Numero>1<", "<Numero>2<")));
+        assertThat(r.file()).extracting(LettoreFile.FileXml::nomeAllegato).containsExactly("a.xml", "b.xml");
+    }
+
+    /** Scrive 0 nella dimensione decompressa di ogni descrittore dati (firma PK\8: crc, dimensione compressa, dimensione). */
+    private static void azzeraDimensioniNeiDescrittori(byte[] zip) {
+        for (int i = 0; i + 16 <= zip.length; i++) {
+            if (zip[i] == 'P' && zip[i + 1] == 'K' && zip[i + 2] == 7 && zip[i + 3] == 8) {
+                zip[i + 12] = zip[i + 13] = zip[i + 14] = zip[i + 15] = 0;
+            }
+        }
+    }
+
     @Test
     void unZipConPiuXmlEP7mAncheInSottocartelle() throws Exception {
         byte[] z = zip(voci(

@@ -2,22 +2,26 @@ package it.contabilita.importa;
 
 import it.contabilita.importa.ParserFatturaPa.ErroreLettura;
 
-import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /**
  * Dai file caricati ai file XML da leggere: {@code .xml}, {@code .xml.p7m} e {@code .zip} (anche con
- * sottocartelle). Tutto in memoria: dallo zip non si scrive MAI su disco, quindi il nome di una voce
- * ({@code ../x.xml}) non puo' far uscire un file dalla sua cartella ("zip-slip"); le voci con nomi di quel tipo
- * si scartano comunque, con un errore.
+ * sottocartelle). Lo zip si legge dal suo indice finale (come fanno Esplora risorse e gli altri programmi): la
+ * lettura "a flusso" rifiuta gli zip di Fatture in Cloud, che hanno dimensioni a zero nei descrittori delle voci. Per
+ * questo l'archivio intero (e solo lui) passa da un file temporaneo, cancellato subito dopo. Dallo zip non si scrive
+ * MAI una voce su disco, quindi il nome di una voce ({@code ../x.xml}) non puo' far uscire un file dalla sua
+ * cartella ("zip-slip"); le voci con nomi di quel tipo si scartano comunque, con un errore.
  *
  * <p>Difese da archivi malevoli ("zip bomb"): al massimo {@value #MAX_FILE} file, 20 MB per file e 200 MB in
  * totale DOPO la decompressione. La lettura si ferma appena un limite e' superato (non si decomprime il resto) e
@@ -104,30 +108,40 @@ public class LettoreFile {
         long totale = 0;
         int voci = 0;
         int fileContati = 0;
-        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(contenuto), StandardCharsets.UTF_8)) {
-            for (ZipEntry voce = zip.getNextEntry(); voce != null; voce = zip.getNextEntry()) {
-                if (++voci > maxFile * 10L) {
-                    throw new LimiteSuperato("Lo zip ha troppe voci: archivio rifiutato.");
-                }
-                if (voce.isDirectory()) {
-                    continue;
-                }
-                String percorso = voce.getName();
-                String etichetta = nomeZip + " › " + percorso;
-                if (!nomeValido(percorso)) {
-                    avvisi.add(new ErroreFile(etichetta, "Nome non valido nello zip: voce ignorata."));
-                    continue;
-                }
-                if (++fileContati > maxFile) {
-                    throw new LimiteSuperato("Lo zip contiene troppi file (massimo " + maxFile + "): archivio rifiutato.");
-                }
-                String base = percorso.substring(Math.max(percorso.lastIndexOf('/'), percorso.lastIndexOf('\\')) + 1);
-                String minuscolo = base.toLowerCase(Locale.ROOT);
-                boolean interessa = (eXml(minuscolo) || eP7m(minuscolo)) && !minuscolo.startsWith("._")
-                        && !percorso.startsWith("__MACOSX/") && !percorso.contains("/__MACOSX/");
-                Lettura letto = leggiLimitato(zip, percorso, interessa, totale);
-                totale += letto.contati();
-                if (letto.dati() != null) {
+        Path temporaneo = null;
+        try {
+            temporaneo = Files.createTempFile("contabilita-zip-", ".zip");
+            Files.write(temporaneo, contenuto);
+            try (ZipFile zip = new ZipFile(temporaneo.toFile(), StandardCharsets.UTF_8)) {
+                for (Enumeration<? extends ZipEntry> elenco = zip.entries(); elenco.hasMoreElements(); ) {
+                    ZipEntry voce = elenco.nextElement();
+                    if (++voci > maxFile * 10L) {
+                        throw new LimiteSuperato("Lo zip ha troppe voci: archivio rifiutato.");
+                    }
+                    if (voce.isDirectory()) {
+                        continue;
+                    }
+                    String percorso = voce.getName();
+                    String etichetta = nomeZip + " › " + percorso;
+                    if (!nomeValido(percorso)) {
+                        avvisi.add(new ErroreFile(etichetta, "Nome non valido nello zip: voce ignorata."));
+                        continue;
+                    }
+                    if (++fileContati > maxFile) {
+                        throw new LimiteSuperato("Lo zip contiene troppi file (massimo " + maxFile + "): archivio rifiutato.");
+                    }
+                    String base = percorso.substring(Math.max(percorso.lastIndexOf('/'), percorso.lastIndexOf('\\')) + 1);
+                    String minuscolo = base.toLowerCase(Locale.ROOT);
+                    boolean interessa = (eXml(minuscolo) || eP7m(minuscolo)) && !minuscolo.startsWith("._")
+                            && !percorso.startsWith("__MACOSX/") && !percorso.contains("/__MACOSX/");
+                    if (!interessa) {
+                        continue; // altri file (elenchi in Excel, PDF…): non si decomprimono nemmeno
+                    }
+                    Lettura letto;
+                    try (InputStream in = zip.getInputStream(voce)) {
+                        letto = leggiLimitato(in, percorso, true, totale);
+                    }
+                    totale += letto.contati();
                     aggiungi(etichetta, base, letto.dati(), trovati, avvisi);
                 }
             }
@@ -137,6 +151,14 @@ public class LettoreFile {
         } catch (IOException | IllegalArgumentException e) {
             errori.add(new ErroreFile(nomeZip, "Lo zip non si può leggere: è danneggiato o non è uno zip valido."));
             return;
+        } finally {
+            if (temporaneo != null) {
+                try {
+                    Files.deleteIfExists(temporaneo);
+                } catch (IOException ignorata) {
+                    // resta nella cartella temporanea del sistema, che si svuota da sola
+                }
+            }
         }
         file.addAll(trovati);
         errori.addAll(avvisi);

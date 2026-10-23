@@ -71,7 +71,7 @@ export default function NuovoMovimento() {
     setAllegato(null);
     if (eAltro) {
       // si riparte da un modulo vuoto dello stesso tipo, con la stessa data
-      const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo };
+      const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, categoria: campi.voceFissa === "ALTRA" ? campi.categoria : "", retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo };
       setCampi(nuovo);
       setIniziali(nuovo);
       setErrori({});

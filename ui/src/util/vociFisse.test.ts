@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VALORE_NUOVA_VOCE, valoreMenuVoce, vociPersonalizzate } from "./modelloMovimento";
+import { campiDaNomeVoce, campiVuoti, nomeVoce, opzioniVoce, preparaInput, vociPersonalizzate } from "./modelloMovimento";
 
 describe("vociPersonalizzate", () => {
   it("toglie le voci standard (senza badare alle maiuscole), i doppioni e le vuote, in ordine alfabetico", () => {
@@ -13,20 +13,48 @@ describe("vociPersonalizzate", () => {
   });
 });
 
-describe("valoreMenuVoce", () => {
-  const propri = ["Assicurazione", "Commercialista"];
-  it("le voci standard sono il loro codice", () => {
-    expect(valoreMenuVoce("AFFITTO", "", propri, false)).toBe("AFFITTO");
-    expect(valoreMenuVoce("RETRIBUZIONE", "", propri, false)).toBe("RETRIBUZIONE");
+describe("nomeVoce e campiDaNomeVoce: un solo campo per la voce fissa", () => {
+  it("le voci standard si riconoscono dal nome, comunque sia scritto", () => {
+    expect(campiDaNomeVoce("Retribuzione")).toEqual({ voceFissa: "RETRIBUZIONE", categoria: "" });
+    expect(campiDaNomeVoce(" affitto ")).toEqual({ voceFissa: "AFFITTO", categoria: "" });
+    expect(campiDaNomeVoce("UTENZE")).toEqual({ voceFissa: "UTENZE", categoria: "" });
   });
-  it("una voce propria già esistente è scelta col suo nome", () => {
-    expect(valoreMenuVoce("ALTRA", "Commercialista", propri, false)).toBe("voce:Commercialista");
+  it("qualunque altro nome è una voce propria, nuova o già usata", () => {
+    expect(campiDaNomeVoce("Commercialista")).toEqual({ voceFissa: "ALTRA", categoria: "Commercialista" });
+    expect(campiDaNomeVoce("Retribuz")).toEqual({ voceFissa: "ALTRA", categoria: "Retribuz" });
+    expect(campiDaNomeVoce("")).toEqual({ voceFissa: "ALTRA", categoria: "" });
   });
-  it("«Nuova voce…» resta scelta anche se si scrive un nome già esistente", () => {
-    expect(valoreMenuVoce("ALTRA", "Commercialista", propri, true)).toBe(VALORE_NUOVA_VOCE);
+  it("il testo del campo è il nome della voce", () => {
+    expect(nomeVoce({ voceFissa: "RETRIBUZIONE", categoria: "" })).toBe("Retribuzione");
+    expect(nomeVoce({ voceFissa: "UTENZE", categoria: "" })).toBe("Utenze");
+    expect(nomeVoce({ voceFissa: "ALTRA", categoria: "Commercialista" })).toBe("Commercialista");
   });
-  it("un nome non presente nell'elenco (ancora in caricamento o nuovo) è «Nuova voce…»", () => {
-    expect(valoreMenuVoce("ALTRA", "Pubblicità", propri, false)).toBe(VALORE_NUOVA_VOCE);
-    expect(valoreMenuVoce("ALTRA", "", propri, false)).toBe(VALORE_NUOVA_VOCE);
+});
+
+describe("opzioniVoce", () => {
+  const proprie = ["Assicurazione", "Commercialista"];
+  it("campo vuoto o con un nome già completo: si vedono tutte le voci, così si può cambiare scelta", () => {
+    const tutte = ["Retribuzione", "Affitto", "Utenze", "Assicurazione", "Commercialista"];
+    expect(opzioniVoce("", proprie)).toEqual(tutte);
+    expect(opzioniVoce("Affitto", proprie)).toEqual(tutte);
+    expect(opzioniVoce("commercialista", proprie)).toEqual(tutte);
+  });
+  it("mentre si scrive, restano le voci che contengono il testo", () => {
+    expect(opzioniVoce("ass", proprie)).toEqual(["Assicurazione"]);
+    expect(opzioniVoce("zz", proprie)).toEqual([]);
+  });
+});
+
+describe("voce fissa nel salvataggio", () => {
+  const fisso = { ...campiVuoti(), tipo: "COSTO_FISSO" as const, importo: "150" };
+  it("una voce propria vuota non si salva", () => {
+    const r = preparaInput({ ...fisso, voceFissa: "ALTRA", categoria: "  " }, false);
+    expect(r.input).toBeNull();
+    expect(r.errori.categoria).toBeTruthy();
+  });
+  it("una voce propria si manda come categoria", () => {
+    const r = preparaInput({ ...fisso, voceFissa: "ALTRA", categoria: " Commercialista " }, false);
+    expect(r.errori).toEqual({});
+    expect(r.input?.categoria).toBe("Commercialista");
   });
 });

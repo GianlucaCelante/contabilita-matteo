@@ -40,13 +40,13 @@ const CATEGORIA_DI_VOCE: Partial<Record<VoceFissa, string>> = {
   UTENZE: "Utenze",
 };
 
-// Il menu «Voce fissa»: dopo le voci standard ci sono quelle create da chi usa l'app (le categorie dei costi fissi),
-// poi «Nuova voce…». Le categorie standard e i doppioni (senza badare alle maiuscole) non si ripetono.
-export const VALORE_NUOVA_VOCE = "nuova";
-const PREFISSO_VOCE = "voce:";
+// La voce fissa e' un campo solo: si scrive il nome, o si sceglie fra Retribuzione, Affitto, Utenze e le voci create da chi
+// usa l'app (le categorie dei costi fissi). Un nome nuovo crea una voce nuova al salvataggio.
+const NOMI_STANDARD = (["RETRIBUZIONE", "AFFITTO", "UTENZE"] as const).map((v) => ({ voce: v, nome: NOME_VOCE[v] }));
 
+// Le voci proprie: le categorie dei costi fissi senza le standard e i doppioni (senza badare alle maiuscole).
 export function vociPersonalizzate(nomiCategorie: string[]): string[] {
-  const standard = new Set(Object.values(CATEGORIA_DI_VOCE).map((n) => (n ?? "").toLowerCase()));
+  const standard = new Set(NOMI_STANDARD.map((s) => s.nome.toLowerCase()));
   const viste = new Set<string>();
   const risultato: string[] = [];
   for (const grezzo of nomiCategorie) {
@@ -59,20 +59,23 @@ export function vociPersonalizzate(nomiCategorie: string[]): string[] {
   return risultato.sort((a, b) => a.localeCompare(b, "it"));
 }
 
-export function valoreVocePropria(nome: string): string {
-  return PREFISSO_VOCE + nome;
-}
-export function nomeDaValoreVoce(valore: string): string | null {
-  return valore.startsWith(PREFISSO_VOCE) ? valore.slice(PREFISSO_VOCE.length) : null;
+// Il testo del campo «Voce fissa».
+export function nomeVoce(c: Pick<CampiForm, "voceFissa" | "categoria">): string {
+  return c.voceFissa === "ALTRA" ? c.categoria : NOME_VOCE[c.voceFissa];
 }
 
-// Il valore che il menu mostra per i campi attuali. `nuova`: chi usa l'app ha scelto «Nuova voce…» (anche se poi scrive un nome già esistente).
-export function valoreMenuVoce(voce: VoceFissa, categoria: string, proprie: string[], nuova: boolean): string {
-  if (voce !== "ALTRA") return voce;
-  if (nuova) return VALORE_NUOVA_VOCE;
-  const nome = categoria.trim().toLowerCase();
-  const trovata = proprie.find((p) => p.toLowerCase() === nome);
-  return trovata ? valoreVocePropria(trovata) : VALORE_NUOVA_VOCE;
+// Dal testo scritto ai campi: le voci standard si riconoscono dal nome, ogni altro nome e' una voce propria.
+export function campiDaNomeVoce(testo: string): Pick<CampiForm, "voceFissa" | "categoria"> {
+  const standard = NOMI_STANDARD.find((s) => s.nome.toLowerCase() === testo.trim().toLowerCase());
+  return standard ? { voceFissa: standard.voce, categoria: "" } : { voceFissa: "ALTRA", categoria: testo };
+}
+
+// I suggerimenti: tutte le voci se il campo e' vuoto o contiene gia' un nome completo (per poter cambiare scelta), altrimenti quelle che contengono il testo.
+export function opzioniVoce(testo: string, proprie: string[]): string[] {
+  const tutte = [...NOMI_STANDARD.map((s) => s.nome), ...proprie];
+  const cerca = testo.trim().toLowerCase();
+  if (!cerca || tutte.some((n) => n.toLowerCase() === cerca)) return tutte;
+  return tutte.filter((n) => n.toLowerCase().includes(cerca));
 }
 
 export function campiVuoti(): CampiForm {
@@ -162,6 +165,7 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   if (cent === null) errori.importo = "Scrivi un importo, per esempio 86,00.";
   else if (cent <= 0) errori.importo = "L'importo deve essere maggiore di zero.";
   if (chiedeFornitore(c) === "si" && !c.fornitore.trim()) errori.fornitore = "Scegli o crea un fornitore.";
+  if (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
   let giorno: number | null = null;
   if (conRipetizione && c.ripeti && ripetibile(c)) {
     giorno = Number(c.giorno);

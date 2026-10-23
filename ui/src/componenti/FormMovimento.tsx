@@ -1,21 +1,17 @@
-import { useId, useMemo, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useMemo, type InputHTMLAttributes, type ReactNode } from "react";
 import Combobox from "./Combobox";
-import { IconaGiu } from "./Icone";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori } from "../hooks/useSuggerimenti";
 import {
+  campiDaNomeVoce,
   chiedeCategoria,
   chiedeDescrizione,
   chiedeFornitore,
-  NOME_VOCE,
-  nomeDaValoreVoce,
+  nomeVoce,
+  opzioniVoce,
   ripetibile,
   type CampiForm,
   type Errori,
-  type VoceFissa,
-  valoreMenuVoce,
-  valoreVocePropria,
-  VALORE_NUOVA_VOCE,
   vociPersonalizzate,
 } from "../util/modelloMovimento";
 import type { Tipo } from "../api/tipi";
@@ -103,9 +99,6 @@ const TIPI: Opzione<Tipo>[] = [
   { valore: "COSTO_FISSO", etichetta: "Costo fisso", bruno: true },
 ];
 
-const VOCI_STANDARD: { valore: VoceFissa; etichetta: string }[] = (Object.keys(NOME_VOCE) as VoceFissa[])
-  .filter((v) => v !== "ALTRA")
-  .map((v) => ({ valore: v, etichetta: NOME_VOCE[v] }));
 
 const OPZIONI_RICAVO: Opzione<"RICAVO_FATTURATO" | "RICAVO_EXTRA">[] = [
             { valore: "RICAVO_FATTURATO", etichetta: "Fatturato" },
@@ -174,30 +167,13 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const fornitori = useSuggerimentiFornitori(campi.fornitore);
   const dipendenti = useSuggerimentiDipendenti(campi.dipendente);
   const categorie = useSuggerimentiCategorie(campi.tipo, campi.categoria);
-  // Le voci fisse create da chi usa l'app sono le categorie dei costi fissi: stanno nel menu accanto a Affitto e Utenze.
+  // Le voci fisse create da chi usa l'app sono le categorie dei costi fissi: stanno nel campo «Voce fissa» accanto a Retribuzione, Affitto e Utenze.
   const categorieFisse = useSuggerimentiCategorie("COSTO_FISSO", "");
   const proprie = useMemo(() => vociPersonalizzate(categorieFisse.opzioni), [categorieFisse.opzioni]);
-  const [nuovaVoce, setNuovaVoce] = useState(false);
-  const valoreVoce = valoreMenuVoce(campi.voceFissa, campi.categoria, proprie, nuovaVoce);
-  const chiedeNomeVoce = campi.tipo === "COSTO_FISSO" && valoreVoce === VALORE_NUOVA_VOCE;
-  const chiedeCategoriaForm = campi.tipo === "COSTO_FISSO" ? chiedeNomeVoce : chiedeCategoria(campi);
+  const chiedeCategoriaForm = campi.tipo !== "COSTO_FISSO" && chiedeCategoria(campi);
   const fornitoreRichiesto = chiedeFornitore(campi);
   const retribuzione = campi.tipo === "COSTO_FISSO" && campi.voceFissa === "RETRIBUZIONE";
   const fattura = campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile === "FATTURA";
-
-  function scegliVoce(valore: string) {
-    const nome = nomeDaValoreVoce(valore);
-    if (nome !== null) {
-      setNuovaVoce(false);
-      onCambia({ voceFissa: "ALTRA", categoria: nome });
-    } else if (valore === VALORE_NUOVA_VOCE) {
-      setNuovaVoce(true);
-      onCambia({ voceFissa: "ALTRA", categoria: "" });
-    } else {
-      setNuovaVoce(false);
-      onCambia({ voceFissa: valore as VoceFissa, categoria: "" });
-    }
-  }
 
   function cambiaTipo(tipo: Tipo) {
     onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", fornitore: "" });
@@ -271,32 +247,17 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
 
       {campi.tipo === "COSTO_FISSO" && (
         <div className={modifica ? "grid items-start gap-4 md:grid-cols-2" : "contents"}>
-          <div>
-            <label htmlFor="voce-fissa" className="etichetta">
-              Voce fissa
-            </label>
-            <div className="campo">
-              <select
-                id="voce-fissa"
-                className="appearance-none"
-                value={valoreVoce}
-                onChange={(e) => scegliVoce(e.target.value)}
-              >
-                {VOCI_STANDARD.map((v) => (
-                  <option key={v.valore} value={v.valore}>
-                    {v.etichetta}
-                  </option>
-                ))}
-                {proprie.map((nome) => (
-                  <option key={nome} value={valoreVocePropria(nome)}>
-                    {nome}
-                  </option>
-                ))}
-                <option value={VALORE_NUOVA_VOCE}>Nuova voce…</option>
-              </select>
-              <IconaGiu larghezza={18} spessoreTratto={2} className="text-spento" />
-            </div>
-          </div>
+          <Combobox
+            etichetta="Voce fissa"
+            cosa="voce" genere="f"
+            value={nomeVoce(campi)}
+            onChange={(v) => onCambia(campiDaNomeVoce(v))}
+            opzioni={opzioniVoce(nomeVoce(campi), proprie)}
+            inCaricamento={categorieFisse.inCaricamento}
+            errore={categorieFisse.errore}
+            invalido={!!errori.categoria}
+            messaggioErrore={errori.categoria}
+          />
           {retribuzione && (
             <Scelte
               legenda="Tipo di retribuzione"
