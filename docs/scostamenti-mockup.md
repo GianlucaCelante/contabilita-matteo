@@ -43,3 +43,7 @@ Il mockup è il riferimento. Dove l'app deve fare di più di quanto il mockup di
 - «Fatture · N documenti» in Riepilogo: l'API non restituisce il numero di documenti.
 - Nell'importazione: «(anche firmati, .xml.p7m)» nel testo del banner; il titolo dice «da N file» quando i file sono più di uno.
 - Costi fissi del Riepilogo guidati dai dati (le righe Affitto, Utenze, Altre voci compaiono solo se ci sono movimenti).
+
+## Scelte successive al confronto (richieste dell'utente)
+- **Ripetizione nel Dettaglio:** il riquadro crema con link rosso e due radio è sostituito da «Ripetizione mensile» con giorno, interruttore «Applica ai prossimi mesi» e pulsante «Ferma la ripetizione» spiegato.
+- **Esporta:** tolta la scheda «Il file» (nome del file e pillole «Movimenti · uno per riga» / «Riepilogo · totali del periodo»).

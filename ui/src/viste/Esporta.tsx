@@ -2,7 +2,6 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, chiavi, messaggioErrore } from "../api/client";
 import {
-  nomeFileEsportazione,
   righeAnteprima,
   RIGHE_ANTEPRIMA,
   scaricaEsportazione,
@@ -46,7 +45,6 @@ export default function Esporta() {
 
   const anteprima = elenco.data ? righeAnteprima(elenco.data.elementi, tipi, formato) : null;
   const nessunTipo = tipi.length === 0;
-  const nomeFile = nomeFileEsportazione({ formato, da, a });
 
   function cambiaTipo(tipo: Tipo, acceso: boolean) {
     setScaricato(null);
@@ -122,23 +120,6 @@ export default function Esporta() {
 
         {/* Anteprima */}
         <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <section className="scheda px-6 py-5" aria-label="Il file">
-            <h2 className="mb-1 text-[18px] font-bold">Il file</h2>
-            <p className="num m-0 break-all text-[15px] text-spento" data-testid="nome-file">
-              {nomeFile}
-            </p>
-            <ul className="m-0 mt-3.5 flex list-none flex-wrap gap-2.5 p-0 text-[14px]">
-              <li className="rounded-lg border border-bordo bg-crema px-3 py-1.5">
-                <b>Movimenti</b> · uno per riga{formato === "csv" ? ", separati da punto e virgola" : ""}
-              </li>
-              {formato === "xlsx" && (
-                <li className="rounded-lg border border-bordo bg-crema px-3 py-1.5">
-                  <b>Riepilogo</b> · totali del periodo
-                </li>
-              )}
-            </ul>
-          </section>
-
           <section className="scheda flex min-w-0 flex-1 flex-col overflow-hidden" aria-label="Anteprima">
             <h2 className="etichettaMaiuscola flex h-12 items-center px-4 !font-testo">Anteprima del foglio «Movimenti»</h2>
             {elenco.isPending && <Caricamento />}

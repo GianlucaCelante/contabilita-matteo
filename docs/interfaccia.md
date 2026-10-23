@@ -156,8 +156,8 @@ File: `DettaglioMovimento.dc.html` (mostrato per una retribuzione regolare ricor
 
 1. Intestazione: freccia indietro (porta a Movimenti), titolo "Movimento", etichetta "Fisso · ricorrente", pulsante **Elimina** (rosso).
 2. Modulo con gli stessi campi del nuovo movimento, già compilati e modificabili: Voce fissa, Tipo di retribuzione (Regolare / Extra), Dipendente, Data, Importo, Note.
-3. Riquadro della ripetizione: "Si ripete ogni mese, il giorno [N]" (campo modificabile) e collegamento **Ferma la ripetizione** (rosso).
-4. Scelta dell'ambito **per le modifiche**, con la frase "Se cambi qualcosa, vale:" e due opzioni esclusive: **Solo per questo movimento** / **Per questo e per i prossimi**. Per **eliminare** non c'è scelta da ricordare: in una ripetizione attiva la finestra di conferma ha due pulsanti, **Elimina solo questo** (la ripetizione continua) ed **Elimina e ferma la ripetizione**; fermare senza cancellare resta il link «Ferma la ripetizione».
+3. **Riquadro «Ripetizione mensile»** (etichetta **Attiva** o **Ferma**), in tre cose separate: il **giorno del mese** (campo, modificabile solo con l'interruttore acceso); l'interruttore **«Applica ai prossimi mesi»** (spento: le modifiche valgono solo per questo movimento; acceso: importo, voce e giorno valgono anche per i prossimi); il pulsante **«Ferma la ripetizione»** con sotto la spiegazione (dal prossimo mese non vengono più creati movimenti; questo e quelli registrati restano). A ripetizione ferma il riquadro dice solo che non vengono più creati movimenti da soli.
+4. **Eliminare**: nessuna scelta da ricordare. In una ripetizione attiva la finestra di conferma ha due pulsanti, **Elimina solo questo** (la ripetizione continua) ed **Elimina e ferma la ripetizione**.
 5. Riquadri laterali: **Prossima volta** (data e importo del prossimo movimento generato) e **Registrato** (Creato, Origine, Ultima modifica).
 
 **Azioni.** Annulla e Salva modifiche (entrambi portano a Movimenti); Elimina (porta a Movimenti); Ferma la ripetizione (porta a Movimenti).
@@ -212,7 +212,7 @@ File: `Esporta.dc.html`
    - **Formato**: due scelte esclusive, **Excel** (`.xlsx`, con riepilogo, selezionato) e **CSV** (`.csv`, solo movimenti).
    - Pulsante **Scarica il file**.
 2. Colonna destra, anteprima:
-   - Riquadro **Il file**: nome previsto (es. `contabilita-2026-10.xlsx`) e i due fogli: **Movimenti** (uno per riga) e **Riepilogo** (totali del periodo).
+   - Niente riquadro «Il file»: il nome e i fogli del file non si ripetono (il nome lo decide il browser al download).
    - **Anteprima del foglio «Movimenti»**: tabella con colonne DATA, TIPO, FORNITORE, DOCUMENTO, IMPORTO. Date in formato `aaaa-mm-gg`; tipi in minuscolo (ricavo, variabile, fisso); importi con il segno (costi negativi) e senza simbolo di valuta.
 
 **Regole visibili.** Excel contiene i fogli Movimenti e Riepilogo; CSV contiene solo i movimenti. Il nome del file riporta l'anno e il mese. L'anteprima mostra solo il formato Excel; per il CSV non c'è una anteprima separata.

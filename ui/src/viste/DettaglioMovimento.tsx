@@ -7,6 +7,7 @@ import { IconaDocumento } from "../componenti/IconeMovimento";
 import SchedaAllegato from "../componenti/SchedaAllegato";
 import SchedaLaterale, { Riga } from "../componenti/SchedaLaterale";
 import ConfermaUscita from "../componenti/ConfermaUscita";
+import RiquadroRipetizione from "../componenti/RiquadroRipetizione";
 import { sceltePerEliminare, sottotitoloElimina } from "../util/eliminaMovimento";
 import Finestra from "../componenti/Finestra";
 import FormMovimento from "../componenti/FormMovimento";
@@ -151,57 +152,16 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
           <FormMovimento campi={campi} onCambia={cambia} errori={errori} modifica />
 
           {ricorrente && (
-            <section className="rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione">
-              {attiva ? (
-                <>
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                    <div className="flex items-center gap-2.5 text-[16px] font-bold">
-                      <label htmlFor="giorno-ricorrente">Si ripete ogni mese, il giorno</label>
-                      <div className={"campo min-h-11 w-[72px] justify-center px-0" + (errori.giorno ? " errore" : "")}>
-                        <input
-                          id="giorno-ricorrente"
-                          type="number"
-                          min={1}
-                          max={31}
-                          inputMode="numeric"
-                          className="num h-10 min-h-0 text-center font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                          value={campi.giorno}
-                          disabled={ambito !== "QUESTO_E_PROSSIMI"}
-                          aria-describedby="nota-giorno"
-                          title={ambito === "QUESTO_E_PROSSIMI" ? undefined : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
-                          onChange={(e) => cambia({ giorno: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <button type="button" className="min-h-11 text-[14px] font-bold text-rosso underline" onClick={() => setChiedeFerma(true)} disabled={ritardo}>
-                      Ferma la ripetizione
-                    </button>
-                  </div>
-                  <p id="nota-giorno" className="sr-only">
-                    {ambito === "QUESTO_E_PROSSIMI" ? "Vale dal prossimo mese." : "Per cambiare il giorno scegli «Per questo e per i prossimi»."}
-                  </p>
-                  {errori.giorno && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errori.giorno}</p>}
-                  <div id="ambito-etichetta" className="mb-1 mt-2 text-[13px] leading-4 text-spento">
-                    Se cambi qualcosa, vale:
-                  </div>
-                  <div role="radiogroup" aria-labelledby="ambito-etichetta">
-                    {(
-                      [
-                        ["SOLO_QUESTO", "Solo per questo movimento"],
-                        ["QUESTO_E_PROSSIMI", "Per questo e per i prossimi"],
-                      ] as const
-                    ).map(([valore, testo]) => (
-                      <button key={valore} type="button" role="radio" aria-checked={ambito === valore} className="flex h-10 w-full items-center gap-3 text-[16px]" onClick={() => setAmbito(valore)}>
-                        <span className={"pallino" + (ambito === valore ? " on" : "")} aria-hidden="true" />
-                        <span>{testo}</span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="m-0 text-[16px] font-bold">La ripetizione è ferma: i movimenti già registrati restano.</p>
-              )}
-            </section>
+            <RiquadroRipetizione
+              attiva={attiva}
+              giorno={campi.giorno}
+              errore={errori.giorno}
+              onGiorno={(v) => cambia({ giorno: v })}
+              estendi={ambito === "QUESTO_E_PROSSIMI"}
+              onEstendi={() => setAmbito((a) => (a === "QUESTO_E_PROSSIMI" ? "SOLO_QUESTO" : "QUESTO_E_PROSSIMI"))}
+              onFerma={() => setChiedeFerma(true)}
+              disabled={ritardo}
+            />
           )}
 
           {movimento.origine === "XML" && (
