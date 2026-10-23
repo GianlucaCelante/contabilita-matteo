@@ -58,7 +58,8 @@ public class ImportazioneService {
 
     static final Duration DURATA = Duration.ofMinutes(30);
     private static final int IMPORTAZIONI_MASSIME = 20;
-    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD06", "TD24", "TD25");
+    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD04", "TD06", "TD24", "TD25");
+    private static final String NOTA_DI_CREDITO = "TD04";
     private static final DateTimeFormatter GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM");
 
     /** Una fattura letta, con quello che serve alla conferma (non esce mai dal servizio). */
@@ -144,12 +145,9 @@ public class ImportazioneService {
     private static String problema(DatiFattura d, boolean inLotto) {
         String prefisso = inLotto ? "Fattura " + d.numero() + ": " : "";
         String tipo = d.tipoDocumento();
-        if ("TD04".equals(tipo)) {
-            return prefisso + "Nota di credito: non importata";
-        }
         if (!TIPI_AMMESSI.contains(tipo == null ? "" : tipo)) {
             return prefisso + "Tipo di documento " + (tipo == null ? "mancante" : tipo)
-                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD06, TD24 e TD25).";
+                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD04, TD06, TD24 e TD25).";
         }
         if (d.totaleCent() == 0) {
             return prefisso + "Importo zero: non c'è nessun costo da registrare.";
@@ -173,7 +171,7 @@ public class ImportazioneService {
             if (gia.isPresent()) {
                 motivo = "Già registrata il " + gia.get().getCreatoIl().format(GIORNO_MESE);
             }
-            return new String[]{suggerisci(dati), motivo};
+            return new String[]{notaDiCredito(dati) ? null : suggerisci(dati), motivo};
         });
         String motivo = esito[1];
         if (motivo == null && !viste.add(chiaveFattura(dati))) {
@@ -181,7 +179,7 @@ public class ImportazioneService {
         }
         FatturaLetta pubblica = new FatturaLetta(indice, file.nomeFile(), new FornitoreLetto(dati.fornitoreNome(), dati.partitaIva()),
                 dati.numero(), dati.data(), dati.imponibileCent(), dati.ivaCent(), dati.totaleCent(),
-                esito[0], motivo != null, motivo);
+                esito[0], motivo != null, motivo, notaDiCredito(dati));
         return new Letta(pubblica, dati, file.originale(), file.nomeAllegato());
     }
 
@@ -191,7 +189,21 @@ public class ImportazioneService {
         return f + "|" + d.numero() + "|" + d.data();
     }
 
+    private static boolean notaDiCredito(DatiFattura d) {
+        return NOTA_DI_CREDITO.equals(d.tipoDocumento());
+    }
+
+    /** Il testo che dice cos'e' un ricavo nato da una nota di credito: e' anche il suo titolo nell'elenco. */
+    private static String descrizioneNotaDiCredito(DatiFattura d) {
+        return "Nota di credito " + d.numero() + " · " + d.fornitoreNome();
+    }
+
     private Optional<Movimento> trovaDuplicato(DatiFattura d) {
+        if (notaDiCredito(d)) {
+            return movimenti.findByDocumentoAndNumeroDocumentoAndData(Documento.RICAVO_EXTRA, d.numero(), d.data()).stream()
+                    .filter(m -> descrizioneNotaDiCredito(d).equals(m.getDescrizione()))
+                    .findFirst();
+        }
         return movimenti.findByDocumentoAndNumeroDocumentoAndData(Documento.FATTURA, d.numero(), d.data()).stream()
                 .filter(m -> stessoFornitore(m.getFornitore(), d))
                 .findFirst();
@@ -286,6 +298,10 @@ public class ImportazioneService {
         if (gia.isPresent()) {
             throw new Duplicata("Già registrata il " + gia.get().getCreatoIl().format(GIORNO_MESE));
         }
+        if (notaDiCredito(d)) {
+            creaNotaDiCredito(letta, fileScritto);
+            return;
+        }
         Fornitore fornitore = d.partitaIva() == null ? null : fornitori.findFirstByPartitaIvaOrderByIdAsc(d.partitaIva()).orElse(null);
         if (fornitore == null) {
             fornitore = anagrafiche.fornitore(d.fornitoreNome(), d.partitaIva()).valore();
@@ -299,6 +315,25 @@ public class ImportazioneService {
         m.setFornitore(fornitore);
         String nomeCategoria = categoria == null || categoria.isBlank() ? null : categoria;
         m.setCategoria(nomeCategoria == null ? null : anagrafiche.categoria(nomeCategoria, Tipo.COSTO_VARIABILE).valore());
+        m.setNumeroDocumento(d.numero());
+        m.setOrigine(Origine.XML);
+        m.setCreatoIl(adesso);
+        m.setModificatoIl(adesso);
+        fileScritto[0] = allegati.salvaPerImportazione(m, letta.nomeAllegato(), letta.originale(),
+                letta.nomeAllegato().toLowerCase(Locale.ROOT).endsWith(".p7m"));
+        movimenti.saveAndFlush(m);
+    }
+
+    /** Una nota di credito ricevuta e' denaro che torna: si registra come ricavo extra, senza fornitore ne' categoria. */
+    private void creaNotaDiCredito(Letta letta, String[] fileScritto) {
+        DatiFattura d = letta.dati();
+        LocalDateTime adesso = LocalDateTime.now(clock).withNano(0);
+        Movimento m = new Movimento();
+        m.setData(d.data());
+        m.setTipo(Tipo.RICAVO);
+        m.setDocumento(Documento.RICAVO_EXTRA);
+        m.setImportoCent(d.totaleCent());
+        m.setDescrizione(descrizioneNotaDiCredito(d));
         m.setNumeroDocumento(d.numero());
         m.setOrigine(Origine.XML);
         m.setCreatoIl(adesso);

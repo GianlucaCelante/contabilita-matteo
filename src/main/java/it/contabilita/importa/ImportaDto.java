@@ -14,7 +14,7 @@ public final class ImportaDto {
 
     public record FatturaLetta(int indice, String nomeFile, FornitoreLetto fornitore, String numero, LocalDate data,
                                long imponibileCent, long ivaCent, long totaleCent,
-                               String categoriaSuggerita, boolean duplicata, String motivo) {
+                               String categoriaSuggerita, boolean duplicata, String motivo, boolean notaDiCredito) {
     }
 
     public record ErroreImportazione(String nomeFile, String messaggio) {

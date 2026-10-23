@@ -2,16 +2,25 @@ import { useId, useMemo, useState, type ChangeEvent, type DragEvent, type ReactN
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ErroreRichiesta, messaggioErrore } from "../api/client";
-import { apiImporta, type AnteprimaImportazione, type FatturaLetta } from "../api/importa";
+import { apiImporta, type AnteprimaImportazione, type ErroreFileImportato, type FatturaLetta } from "../api/importa";
 import Combobox from "../componenti/Combobox";
-import { IconaAllarme, IconaCarica, IconaCercaDiNuovo, IconaInfo } from "../componenti/Icone";
+import { IconaAllarme, IconaCarica, IconaCerca, IconaCercaDiNuovo, IconaGiu, IconaInfo } from "../componenti/Icone";
 import SelettoreModalita from "../componenti/SelettoreModalita";
 import { Caricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSuggerimentiCategorie } from "../hooks/useSuggerimenti";
+import { conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, type Filtro } from "../util/anteprimaImportazione";
 import { dataBreve, euro } from "../util/formato";
 
+const PAGINA = 50; // quante righe dell'anteprima si disegnano alla volta: con centinaia di fatture la pagina sarebbe lentissima
+const FILTRI: { valore: Filtro; etichetta: string }[] = [
+  { valore: "tutte", etichetta: "Tutte" },
+  { valore: "daImportare", etichetta: "Da importare" },
+  { valore: "giaPresenti", etichetta: "Già presenti" },
+  { valore: "noteDiCredito", etichetta: "Note di credito" },
+  { valore: "escluse", etichetta: "Escluse" },
+];
 const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie"];
 const SITO_AGENZIA = "https://www.agenziaentrate.gov.it";
 
@@ -151,6 +160,7 @@ interface ProprietaRiga {
 
 function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: ProprietaRiga) {
   const sugg = useSuggerimentiCategorie("COSTO_VARIABILE", categoria);
+  const nota = f.notaDiCredito;
   const etichetta = `Categoria della fattura ${f.numero} di ${f.fornitore.nome}`;
   return (
     <li
@@ -169,7 +179,10 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
         aria-label={`Importa la fattura ${f.numero} di ${f.fornitore.nome}`}
       />
       <div className="min-w-0">
-        <div className="truncate text-[15px] font-bold" title={f.fornitore.nome}>{f.fornitore.nome}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[15px] font-bold" title={f.fornitore.nome}>{f.fornitore.nome}</span>
+          {nota && <span className="etichettaTipo shrink-0 bg-verdechiaro text-verdescuro">Nota di credito</span>}
+        </div>
         {f.duplicata ? (
           <div className="text-[13px] font-bold text-ambra">{f.motivo ?? "Già registrata"}: non verrà aggiunta</div>
         ) : (
@@ -188,7 +201,9 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
 
       <div className="col-span-3 min-w-0 @min-[1000px]:col-span-1">
         <span className="etichettaMaiuscola @min-[1000px]:hidden">Categoria</span>
-        {f.duplicata ? (
+        {nota ? (
+          <span className="text-[14px] text-spento">Ricavo extra: torna come incasso</span>
+        ) : f.duplicata ? (
           <span className="text-[14px] text-spento">{f.categoriaSuggerita ?? "–"}</span>
         ) : (
           <div className="[&_.etichetta]:sr-only">
@@ -209,6 +224,50 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria }: Pr
   );
 }
 
+// ---- file non importati, raggruppati per motivo ----
+
+function Scarti({ errori }: { errori: ErroreFileImportato[] }) {
+  const gruppi = useMemo(() => raggruppaErrori(errori), [errori]);
+  const [aperto, setAperto] = useState<string | null>(null);
+  return (
+    <section aria-label="File non importati" className="rounded-[18px] border border-ambrabordo bg-ambrachiaro px-5 py-4">
+      <h2 className="flex items-center gap-2 text-[17px] font-bold text-ambra">
+        <IconaAllarme larghezza={20} spessoreTratto={2} />
+        {errori.length === 1 ? "1 file non importato" : `${errori.length} file non importati`}
+      </h2>
+      <ul className="m-0 mt-2 flex list-none flex-col p-0">
+        {gruppi.map((g) => {
+          const espanso = aperto === g.messaggio;
+          return (
+            <li key={g.messaggio} className="border-t border-ambrabordo first:border-t-0">
+              <button
+                type="button"
+                aria-expanded={espanso}
+                onClick={() => setAperto(espanso ? null : g.messaggio)}
+                className="flex min-h-[44px] w-full items-center gap-3 py-1.5 text-left text-[14px]"
+              >
+                <b className="num min-w-[2ch] text-right">{g.file.length}</b>
+                <span className="min-w-0 flex-1">{g.messaggio}</span>
+                <span className="text-[13px] font-bold underline">{espanso ? "Nascondi i file" : "Mostra i file"}</span>
+                <IconaGiu larghezza={16} spessoreTratto={2} className={espanso ? "rotate-180" : ""} />
+              </button>
+              {espanso && (
+                <ul className="m-0 mb-2 max-h-48 list-none overflow-auto rounded-lg bg-carta p-2 text-[13px]">
+                  {g.file.map((nome, i) => (
+                    <li key={nome + i} className="break-all py-0.5">
+                      {nome}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 // ---- anteprima con conferma ----
 
 function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImportazione; fonte: string; onScaduta: () => void; onAltri: () => void }) {
@@ -220,8 +279,15 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
     Object.fromEntries(dati.fatture.map((f) => [f.indice, f.categoriaSuggerita ?? ""])),
   );
 
+  const [testo, setTesto] = useState("");
+  const [filtro, setFiltro] = useState<Filtro>("tutte");
+  const [mostrate, setMostrate] = useState(PAGINA);
+
   const selezionate = useMemo(() => dati.fatture.filter((f) => !f.duplicata && !escluse.has(f.indice)), [dati.fatture, escluse]);
-  const totale = selezionate.reduce((somma, f) => somma + f.totaleCent, 0);
+  const riassunto = useMemo(() => riassuntoSelezione(selezionate), [selezionate]);
+  const conteggi = useMemo(() => conteggiFiltri(dati.fatture, escluse), [dati.fatture, escluse]);
+  const visibili = useMemo(() => filtraFatture(dati.fatture, { testo, filtro }, escluse), [dati.fatture, testo, filtro, escluse]);
+  const cosa = riassunto.note > 0 ? "documenti" : "fatture";
 
   const conferma = useMutation({
     mutationFn: () =>
@@ -237,7 +303,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
         return;
       }
       avvisa(
-        `${esito.importati === 1 ? "Importata 1 fattura" : `Importate ${esito.importati} fatture`}` +
+        `${esito.importati === 1 ? "Importato 1 documento" : `Importati ${esito.importati} ${cosa}`}` +
           (non > 0 ? `; ${non === 1 ? "1 non è stata aggiunta" : `${non} non sono state aggiunte`} (${esito.ignorate[0]?.motivo ?? "già presenti"}).` : "."),
       );
       void navigate("/movimenti");
@@ -257,24 +323,30 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
     });
   }
 
+  // Seleziona o deseleziona tutte le righe che si vedono (quelle gia' registrate non si possono selezionare).
+  function impostaVisibili(selezionata: boolean) {
+    setEscluse((prima) => {
+      const dopo = new Set(prima);
+      for (const f of visibili) {
+        if (f.duplicata) continue;
+        if (selezionata) dopo.delete(f.indice);
+        else dopo.add(f.indice);
+      }
+      return dopo;
+    });
+  }
+  function cambiaFiltro(valore: Filtro) {
+    setFiltro(valore);
+    setMostrate(PAGINA);
+  }
+
   const n = dati.fatture.length;
+  const mostraFiltri = FILTRI.filter((f) => f.valore === "tutte" || conteggi[f.valore] > 0);
+  const selezionabiliVisibili = visibili.filter((f) => !f.duplicata);
+  const tutteVisibiliSelezionate = selezionabiliVisibili.length > 0 && selezionabiliVisibili.every((f) => !escluse.has(f.indice));
   return (
     <>
-      {dati.errori.length > 0 && (
-        <section role="alert" aria-label="File non letti" className="rounded-[18px] border border-rossobordo bg-rossochiaro px-5 py-4 text-rosso">
-          <h2 className="flex items-center gap-2 text-[17px] font-bold">
-            <IconaAllarme larghezza={20} spessoreTratto={2} />
-            {dati.errori.length === 1 ? "1 file non è stato letto" : `${dati.errori.length} file non sono stati letti`}
-          </h2>
-          <ul className="m-0 mt-2 list-none p-0 text-[14px]">
-            {dati.errori.map((e) => (
-              <li key={e.nomeFile + e.messaggio} className="py-0.5">
-                <b>{e.nomeFile}</b>: {e.messaggio}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      {dati.errori.length > 0 && <Scarti errori={dati.errori} />}
 
       {n === 0 ? (
         <section className="scheda">
@@ -295,6 +367,34 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               {n === 1 ? "1 fattura letta" : `${n} fatture lette`} da {fonte} · controlla e conferma
             </h2>
           </div>
+          {n > 8 && (
+            <div className="flex flex-col gap-3 border-t border-riga px-5 py-3 md:flex-row md:items-center">
+              <label className="campo min-w-0 flex-1 !min-h-[44px] !rounded-xl !border-bordo2 !px-4 md:max-w-[340px]">
+                <IconaCerca larghezza={20} spessoreTratto={2} className="text-spento" />
+                <span className="sr-only">Cerca per fornitore o numero</span>
+                <input
+                  type="search"
+                  value={testo}
+                  onChange={(e) => {
+                    setTesto(e.target.value);
+                    setMostrate(PAGINA);
+                  }}
+                  placeholder="Cerca fornitore o numero…"
+                  className="!text-[16px]"
+                />
+              </label>
+              <div className="segmenti max-w-full overflow-x-auto max-md:min-h-0" role="group" aria-label="Quali fatture mostrare">
+                {mostraFiltri.map((f) => (
+                  <button key={f.valore} type="button" aria-pressed={filtro === f.valore} onClick={() => cambiaFiltro(f.valore)}>
+                    {f.etichetta} <span className="num ml-1.5 font-normal">{conteggi[f.valore]}</span>
+                  </button>
+                ))}
+              </div>
+              <button type="button" className="btn md:ml-auto" disabled={selezionabiliVisibili.length === 0} onClick={() => impostaVisibili(!tutteVisibiliSelezionate)}>
+                {tutteVisibiliSelezionate ? "Deseleziona" : "Seleziona"} {testo.trim() || filtro !== "tutte" ? "le visibili" : "tutte"}
+              </button>
+            </div>
+          )}
           <div role="table" aria-label="Fatture lette" className="@container">
             <div role="row" className="hidden h-[42px] grid-cols-[44px_minmax(0,1.4fr)_minmax(0,0.8fr)_64px_minmax(0,96px)_minmax(0,80px)_minmax(0,104px)_minmax(0,1.2fr)] items-center gap-x-3 px-5 @min-[1000px]:grid">
               {["Importa", "Fornitore", "N. fattura", "Data", "Imponibile", "IVA", "Totale", "Categoria"].map((t, i) => (
@@ -304,7 +404,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               ))}
             </div>
             <ul className="m-0 list-none p-0">
-              {dati.fatture.map((f) => (
+              {visibili.slice(0, mostrate).map((f) => (
                 <RigaFattura
                   key={f.indice}
                   f={f}
@@ -315,17 +415,25 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
                 />
               ))}
             </ul>
+            {visibili.length === 0 && <p className="m-0 border-t border-riga px-5 py-6 text-center text-[15px] text-spento">Nessuna fattura corrisponde alla ricerca.</p>}
+            {visibili.length > mostrate && (
+              <div className="flex justify-center border-t border-riga px-5 py-4">
+                <button type="button" className="btn" onClick={() => setMostrate((m) => m + PAGINA)}>
+                  Mostra altre {Math.min(PAGINA, visibili.length - mostrate)} (ne restano {visibili.length - mostrate})
+                </button>
+              </div>
+            )}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-b-[18px] border-t border-riga bg-crema px-5 py-4">
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-b-[18px] border-t border-riga bg-crema px-5 py-4 max-md:bottom-[calc(var(--d-nav)+env(safe-area-inset-bottom))]">
             <p className="m-0 text-[15px]" role="status">
-              {selezionate.length} da importare · totale <b className="num">{euro(totale)}</b>
+              {selezionate.length} da importare · <b className="num">{testoRiassunto(riassunto)}</b>
             </p>
             <div className="flex flex-wrap gap-3">
               <button type="button" className="btn grande" onClick={() => void navigate("/movimenti")}>
                 Annulla
               </button>
               <button type="button" className="btn primario grande" disabled={selezionate.length === 0 || conferma.isPending} onClick={() => conferma.mutate()}>
-                {conferma.isPending ? "Importo…" : selezionate.length === 1 ? "Importa 1 fattura" : `Importa ${selezionate.length} fatture`}
+                {conferma.isPending ? "Importo…" : selezionate.length === 1 ? "Importa 1 documento" : `Importa ${selezionate.length} ${cosa}`}
               </button>
             </div>
           </div>

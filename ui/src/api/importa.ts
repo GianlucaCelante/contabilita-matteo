@@ -16,6 +16,8 @@ export interface FatturaLetta {
   categoriaSuggerita: string | null;
   duplicata: boolean;
   motivo: string | null;
+  // Una nota di credito si importa come ricavo extra, non come fattura.
+  notaDiCredito: boolean;
 }
 
 export interface ErroreFileImportato {

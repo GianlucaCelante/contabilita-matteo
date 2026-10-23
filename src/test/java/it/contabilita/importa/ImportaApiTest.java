@@ -95,19 +95,18 @@ class ImportaApiTest extends ProvaBase {
     }
 
     @Test
-    void erroriPerFileNonLettiNoteDiCreditoETipiNonAmmessi() throws Exception {
+    void erroriPerFileNonLettiETipiNonAmmessi() throws Exception {
         String nc = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD04", "NC-1", "2026-10-09", "10.00", "8.20", "1.80"));
         String autofattura = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD17", "AF-1", "2026-10-09", "10.00", "8.20", "1.80"));
         String xxe = "<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY e SYSTEM \"file:///etc/passwd\">]><x>&e;</x>";
         JsonNode a = anteprima(f("ok.xml", forno), f("nc.xml", nc), f("af.xml", autofattura), f("rotto.xml", "non xml"),
                 f("xxe.xml", xxe), f("immagine.png", "x"));
-        assertThat(a.get("fatture")).hasSize(1);
-        assertThat(a.get("errori")).hasSize(5);
+        assertThat(a.get("fatture")).hasSize(2); // la fattura e la nota di credito
+        assertThat(a.get("errori")).hasSize(4);
         java.util.Map<String, String> perFile = new java.util.HashMap<>();
         a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
-        assertThat(perFile.get("nc.xml")).isEqualTo("Nota di credito: non importata");
         assertThat(perFile.get("af.xml")).contains("TD17").contains("non importata");
-        assertThat(perFile.keySet()).containsExactlyInAnyOrder("nc.xml", "af.xml", "rotto.xml", "xxe.xml", "immagine.png");
+        assertThat(perFile.keySet()).containsExactlyInAnyOrder("af.xml", "rotto.xml", "xxe.xml", "immagine.png");
     }
 
     @Test
@@ -137,6 +136,42 @@ class ImportaApiTest extends ProvaBase {
         a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
         assertThat(perFile.get("zero.xml")).isEqualTo("Importo zero: non c'è nessun costo da registrare.");
         assertThat(perFile.get("negativa.xml")).isEqualTo("Importo negativo: fattura non importata.");
+    }
+
+    private final String notaDiCredito = fattura(denominazione("Forno Rossi Srl", "01234567890"),
+            body("TD04", "NC-1", "2026-10-09", "24.40", "20.00", "4.40"));
+
+    @Test
+    void laNotaDiCreditoSiImportaComeRicavoExtra() throws Exception {
+        JsonNode a = anteprima(f("nc.xml", notaDiCredito), f("ok.xml", forno));
+        assertThat(a.get("errori")).isEmpty();
+        assertThat(a.get("fatture")).hasSize(2);
+        JsonNode nc = a.get("fatture").get(0);
+        assertThat(nc.get("notaDiCredito").asBoolean()).isTrue();
+        assertThat(a.get("fatture").get(1).get("notaDiCredito").asBoolean()).isFalse();
+        assertThat(nc.get("categoriaSuggerita").isNull()).isTrue();
+
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Farine", 1, "Pane e farine"), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(2);
+        JsonNode m = leggi("/api/movimenti?tipo=RICAVO").get("elementi").get(0);
+        assertThat(m.get("tipo").asText()).isEqualTo("RICAVO");
+        assertThat(m.get("documento").asText()).isEqualTo("RICAVO_EXTRA");
+        assertThat(m.get("importoCent").asLong()).isEqualTo(2440);
+        assertThat(m.get("data").asText()).isEqualTo("2026-10-09");
+        assertThat(m.get("descrizione").asText()).isEqualTo("Nota di credito NC-1 · Forno Rossi Srl");
+        assertThat(m.get("origine").asText()).isEqualTo("XML");
+        assertThat(m.get("categoria").isNull()).isTrue(); // un ricavo non ha categoria, anche se la riga ne aveva una
+        assertThat(m.get("allegatoNome").asText()).isEqualTo("nc.xml");
+    }
+
+    @Test
+    void unaNotaDiCreditoGiaImportataSiRiconosceComeDuplicata() throws Exception {
+        JsonNode a = anteprima(f("nc.xml", notaDiCredito));
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null), 200);
+        JsonNode di_nuovo = anteprima(f("nc.xml", notaDiCredito));
+        assertThat(di_nuovo.get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+        assertThat(di_nuovo.get("fatture").get(0).get("motivo").asText()).startsWith("Già registrata il");
+        assertThat(leggi("/api/movimenti").get("elementi")).hasSize(1);
     }
 
     @Test
