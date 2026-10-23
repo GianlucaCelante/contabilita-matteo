@@ -142,6 +142,12 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
           >
             Scegli i file
           </label>
+          {import.meta.env.VITE_DEMO === "1" && (
+            // Solo nella demo: chi la prova non ha fatture XML sotto mano.
+            <button type="button" className="btn grande primario !px-[22px]" disabled={occupato} onClick={() => onFile([new File(["demo"], "fatture-di-esempio.xml", { type: "text/xml" })])}>
+              Prova con fatture di esempio
+            </button>
+          )}
         </div>
       </section>
       {aperto && <RiquadroDove id={idRiquadro} />}

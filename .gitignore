@@ -15,6 +15,7 @@ data/
 target/
 node_modules/
 ui/dist/
+ui/dist-demo/
 .vite/
 .playwright-mcp/
 .idea/
