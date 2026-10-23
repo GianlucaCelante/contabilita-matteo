@@ -157,7 +157,7 @@ File: `DettaglioMovimento.dc.html` (mostrato per una retribuzione regolare ricor
 1. Intestazione: freccia indietro (porta a Movimenti), titolo "Movimento", etichetta "Fisso · ricorrente", pulsante **Elimina** (rosso).
 2. Modulo con gli stessi campi del nuovo movimento, già compilati e modificabili: Voce fissa, Tipo di retribuzione (Regolare / Extra), Dipendente, Data, Importo, Note.
 3. Riquadro della ripetizione: "Si ripete ogni mese, il giorno [N]" (campo modificabile) e collegamento **Ferma la ripetizione** (rosso).
-4. Scelta dell'ambito, con la frase "Se cambi qualcosa o elimini, vale:" e due opzioni esclusive: **Solo per questo movimento** / **Per questo e per i prossimi**.
+4. Scelta dell'ambito **per le modifiche**, con la frase "Se cambi qualcosa, vale:" e due opzioni esclusive: **Solo per questo movimento** / **Per questo e per i prossimi**. Per **eliminare** non c'è scelta da ricordare: in una ripetizione attiva la finestra di conferma ha due pulsanti, **Elimina solo questo** (la ripetizione continua) ed **Elimina e ferma la ripetizione**; fermare senza cancellare resta il link «Ferma la ripetizione».
 5. Riquadri laterali: **Prossima volta** (data e importo del prossimo movimento generato) e **Registrato** (Creato, Origine, Ultima modifica).
 
 **Azioni.** Annulla e Salva modifiche (entrambi portano a Movimenti); Elimina (porta a Movimenti); Ferma la ripetizione (porta a Movimenti).

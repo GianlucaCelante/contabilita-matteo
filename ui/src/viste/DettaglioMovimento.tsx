@@ -7,6 +7,7 @@ import { IconaDocumento } from "../componenti/IconeMovimento";
 import SchedaAllegato from "../componenti/SchedaAllegato";
 import SchedaLaterale, { Riga } from "../componenti/SchedaLaterale";
 import ConfermaUscita from "../componenti/ConfermaUscita";
+import { sceltePerEliminare, sottotitoloElimina } from "../util/eliminaMovimento";
 import Finestra from "../componenti/Finestra";
 import FormMovimento from "../componenti/FormMovimento";
 import { IconaCestino } from "../componenti/Icone";
@@ -66,7 +67,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
     onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
   });
   const elimina = useMutation({
-    mutationFn: () => api.eliminaMovimento(movimento.id, ricorrente && attiva ? ambito : "SOLO_QUESTO"),
+    mutationFn: (quale: Ambito) => api.eliminaMovimento(movimento.id, ricorrente && attiva ? quale : "SOLO_QUESTO"),
     onSuccess: () => {
       finito();
       avvisa("Movimento eliminato.");
@@ -181,7 +182,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
                   </p>
                   {errori.giorno && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errori.giorno}</p>}
                   <div id="ambito-etichetta" className="mb-1 mt-2 text-[13px] leading-4 text-spento">
-                    Se cambi qualcosa o elimini, vale:
+                    Se cambi qualcosa, vale:
                   </div>
                   <div role="radiogroup" aria-labelledby="ambito-etichetta">
                     {(
@@ -274,22 +275,24 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
       {chiedeElimina && (
         <Finestra
           titolo="Eliminare questo movimento?"
-          sottotitolo={
-            ricorrente && attiva
-              ? ambito === "QUESTO_E_PROSSIMI"
-                ? "Elimino questo movimento e fermo la ripetizione: i prossimi non verranno più registrati."
-                : "Elimino solo questo movimento. La ripetizione continua il mese prossimo."
-              : "Non si può annullare."
-          }
+          sottotitolo={sottotitoloElimina(ricorrente && attiva)}
           onChiudi={() => setChiedeElimina(false)}
           piede={
             <>
               <button type="button" className="btn" onClick={() => setChiedeElimina(false)}>
                 No, lascia
               </button>
-              <button type="button" className="btn pericolo pieno" disabled={elimina.isPending} onClick={() => elimina.mutate()}>
-                {elimina.isPending ? "Elimino…" : "Sì, elimina"}
-              </button>
+              {sceltePerEliminare(ricorrente && attiva).map((scelta) => (
+                <button
+                  key={scelta.ambito}
+                  type="button"
+                  className={"btn pericolo" + (scelta.pericoloso ? " pieno" : "")}
+                  disabled={elimina.isPending}
+                  onClick={() => elimina.mutate(scelta.ambito)}
+                >
+                  {elimina.isPending && elimina.variables === scelta.ambito ? "Elimino…" : scelta.etichetta}
+                </button>
+              ))}
             </>
           }
         />
