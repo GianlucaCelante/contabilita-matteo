@@ -128,7 +128,7 @@ public class MovimentiService {
         m.setCreatoIl(adesso);
         m.setModificatoIl(adesso);
         if (input.ricorrenza() != null) {
-            ricorrenze.creaDa(m, giorno(input));
+            ricorrenze.creaDa(m, input.ricorrenza());
         }
         MovimentoDto risultato = dto(movimenti.save(m));
         if (input.ricorrenza() != null) {
@@ -150,14 +150,12 @@ public class MovimentiService {
             RicorrenzeService.validaDocumentoRicorrente(m.getDocumento());
             if (ambito == Ambito.QUESTO_E_PROSSIMI) {
                 ricorrenze.copiaModello(m, r);
-                if (input.ricorrenza() != null && input.ricorrenza().giorno() != null) {
-                    r.setGiorno(giorno(input));
-                }
+                ricorrenze.aggiornaFrequenza(r, input.ricorrenza());
                 generare = true;
             }
         } else if (input.ricorrenza() != null) {
-            // un movimento singolo che diventa ripetuto: da qui in avanti ogni mese
-            ricorrenze.creaDa(m, giorno(input));
+            // un movimento singolo che diventa ripetuto: da qui in avanti con la frequenza scelta
+            ricorrenze.creaDa(m, input.ricorrenza());
             generare = true;
         }
         MovimentoDto risultato = dto(movimenti.save(m));
@@ -178,11 +176,6 @@ public class MovimentiService {
     }
 
     // ---- validazione e conversioni ----
-
-    private static int giorno(MovimentoInput input) {
-        RicorrenzeService.validaGiorno(input.ricorrenza().giorno());
-        return input.ricorrenza().giorno();
-    }
 
     static void valida(MovimentoInput in) {
         if (in == null) {
@@ -211,7 +204,7 @@ public class MovimentiService {
         lunghezza(in.numeroDocumento(), NUMERO_DOCUMENTO_MASSIMO, "Il numero del documento");
         lunghezza(in.note(), NOTE_MASSIME, "Le note");
         if (in.ricorrenza() != null) {
-            RicorrenzeService.validaGiorno(in.ricorrenza().giorno());
+            RicorrenzeService.valida(in.ricorrenza());
             RicorrenzeService.validaDocumentoRicorrente(in.documento());
         }
     }
@@ -249,7 +242,7 @@ public class MovimentiService {
                 m.getFornitore() == null ? null : new Rif(m.getFornitore().getId(), m.getFornitore().getNome()),
                 m.getDipendente() == null ? null : new Rif(m.getDipendente().getId(), m.getDipendente().getNome()),
                 m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(),
-                r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva()),
+                r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo()),
                 m.getAllegatoNome(), m.getCreatoIl(),
                 // la colonna e' sempre valorizzata (uguale a creato_il alla nascita): "mai modificato" = null
                 m.getModificatoIl() == null || m.getModificatoIl().equals(m.getCreatoIl()) ? null : m.getModificatoIl());

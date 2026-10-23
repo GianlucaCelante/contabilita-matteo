@@ -1,3 +1,4 @@
+import type { UnitaRipetizione } from "../util/ripetizione";
 // Tipi del contratto API (docs/api.md): nomi dei campi alla lettera.
 // Importi sempre in centesimi interi e positivi (il segno lo da' il tipo).
 
@@ -41,6 +42,8 @@ export interface RicorrenzaMovimento {
   id: number;
   giorno: number;
   attiva: boolean;
+  unita: UnitaRipetizione;
+  intervallo: number;
 }
 
 export interface Movimento {
@@ -74,7 +77,8 @@ export interface MovimentoInput {
   descrizione?: string;
   numeroDocumento?: string;
   note?: string;
-  ricorrenza?: { giorno: number } | null;
+  // Senza unita e intervallo vale «ogni mese»; il giorno serve per mesi e anni.
+  ricorrenza?: { giorno?: number; unita?: UnitaRipetizione; intervallo?: number } | null;
 }
 
 export interface TotaliMovimenti {

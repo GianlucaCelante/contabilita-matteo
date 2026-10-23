@@ -8,6 +8,7 @@ import SchedaAllegato from "../componenti/SchedaAllegato";
 import SchedaLaterale, { Riga } from "../componenti/SchedaLaterale";
 import ConfermaUscita from "../componenti/ConfermaUscita";
 import RiquadroRipetizione from "../componenti/RiquadroRipetizione";
+import { descriviFrequenza } from "../util/ripetizione";
 import { sceltePerEliminare, sottotitoloElimina } from "../util/eliminaMovimento";
 import Finestra from "../componenti/Finestra";
 import FormMovimento from "../componenti/FormMovimento";
@@ -79,6 +80,15 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
       avvisa(messaggioErrore(e), { tipo: "errore" });
     },
   });
+  const riattiva = useMutation({
+    mutationFn: () => api.riattivaRicorrenza(ricorrenza!.id),
+    onSuccess: () => {
+      finito();
+      avvisa("Ripetizione riattivata: riparte dalla prossima scadenza.");
+      esci();
+    },
+    onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
+  });
   const ferma = useMutation({
     mutationFn: () => api.fermaRicorrenza(ricorrenza!.id),
     onSuccess: () => {
@@ -114,9 +124,9 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
     salva.mutate({ corpo: input, ambito });
   }
 
-  const giornoCambiato = attiva && campi.giorno !== String(ricorrenza?.giorno);
+  const giornoCambiato = attiva && ambito === "QUESTO_E_PROSSIMI" && (campi.giorno !== String(ricorrenza?.giorno) || campi.frequenza !== iniziali.current.frequenza || campi.unita !== iniziali.current.unita || campi.intervallo !== iniziali.current.intervallo);
   const prossima = ricorrenza && attiva ? prossimaOccorrenza(movimento.data, Number(campi.giorno) || ricorrenza.giorno) : null;
-  const ritardo = salva.isPending || elimina.isPending || ferma.isPending;
+  const ritardo = salva.isPending || elimina.isPending || ferma.isPending || riattiva.isPending;
 
   return (
     <div className="flex min-h-full flex-col">
@@ -151,15 +161,17 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
         <div className="scheda flex min-w-0 flex-1 flex-col gap-[18px] max-md:gap-3.5 max-md:rounded-none max-md:border-0 max-md:bg-transparent max-md:p-0 md:px-7 md:py-6">
           <FormMovimento campi={campi} onCambia={cambia} errori={errori} modifica />
 
-          {ricorrente && (
+          {ricorrente && ricorrenza && (
             <RiquadroRipetizione
               attiva={attiva}
-              giorno={campi.giorno}
-              errore={errori.giorno}
-              onGiorno={(v) => cambia({ giorno: v })}
+              descrizione={descriviFrequenza(ricorrenza)}
+              campi={campi}
+              errori={errori}
+              onCambia={cambia}
               estendi={ambito === "QUESTO_E_PROSSIMI"}
               onEstendi={() => setAmbito((a) => (a === "QUESTO_E_PROSSIMI" ? "SOLO_QUESTO" : "QUESTO_E_PROSSIMI"))}
               onFerma={() => setChiedeFerma(true)}
+              onRiattiva={() => riattiva.mutate()}
               disabled={ritardo}
             />
           )}

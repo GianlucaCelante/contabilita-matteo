@@ -1,5 +1,6 @@
 import { useId, useMemo, type InputHTMLAttributes, type ReactNode } from "react";
 import Combobox from "./Combobox";
+import SceltaFrequenza from "./SceltaFrequenza";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori } from "../hooks/useSuggerimenti";
 import {
@@ -130,35 +131,19 @@ interface ProprietaForm {
   allegato?: ReactNode;
 }
 
-// La riga «Ripeti ogni mese»: interruttore a sinistra, «il giorno [N]» a destra.
-function RigaRipeti({ campi, onAccendi, onCambia, errore }: { campi: CampiForm; onAccendi: () => void; onCambia: (g: string) => void; errore?: string | undefined }) {
+// La riga «Ripeti»: interruttore e, da acceso, la frequenza («Ogni mese, il giorno N» oppure personalizzata).
+function RigaRipeti({ campi, onAccendi, onCambia, errori }: { campi: CampiForm; onAccendi: () => void; onCambia: (parziale: Partial<CampiForm>) => void; errori: Errori }) {
   return (
-    <div>
-      <div className="flex min-h-16 items-center gap-3.5 rounded-xl border border-bordo2 bg-crema px-[18px] py-2 max-md:gap-3 max-md:px-3">
-        <button type="button" role="switch" aria-checked={campi.ripeti} className="flex min-h-12 min-w-0 flex-1 items-center gap-3.5 text-left max-md:gap-3" onClick={onAccendi}>
-          <span className={"interruttoreCompatto" + (campi.ripeti ? "" : " off")} aria-hidden="true" />
-          <span className="text-[16px] font-bold">Ripeti ogni mese</span>
-        </button>
-        {campi.ripeti && (
-          <label className="flex shrink-0 items-center gap-2.5 text-[15px] max-md:gap-2">
-            <span>il giorno</span>
-            <span className={"campo min-h-11 w-[72px] justify-center px-0" + (errore ? " errore" : "")}>
-              <input
-                type="number"
-                min={1}
-                max={31}
-                inputMode="numeric"
-                aria-label="Il giorno del mese"
-                aria-invalid={errore ? true : undefined}
-                className="num h-10 min-h-0 text-center [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                value={campi.giorno}
-                onChange={(e) => onCambia(e.target.value)}
-              />
-            </span>
-          </label>
-        )}
-      </div>
-      {errore && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errore}</p>}
+    <div className="rounded-xl border border-bordo2 bg-crema px-[18px] py-1 max-md:px-3">
+      <button type="button" role="switch" aria-checked={campi.ripeti} className="flex min-h-14 w-full items-center gap-3.5 text-left max-md:gap-3" onClick={onAccendi}>
+        <span className={"interruttoreCompatto" + (campi.ripeti ? "" : " off")} aria-hidden="true" />
+        <span className="text-[16px] font-bold">Ripeti</span>
+      </button>
+      {campi.ripeti && (
+        <div className="pb-3.5">
+          <SceltaFrequenza campi={campi} errori={errori} onCambia={onCambia} />
+        </div>
+      )}
     </div>
   );
 }
@@ -348,7 +333,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
         </>
       )}
 
-      {!modifica && ripetibile(campi) && <RigaRipeti campi={campi} onAccendi={accendiRipeti} onCambia={(giorno) => onCambia({ giorno })} errore={errori.giorno} />}
+      {!modifica && ripetibile(campi) && <RigaRipeti campi={campi} onAccendi={accendiRipeti} onCambia={onCambia} errori={errori} />}
     </div>
   );
 }

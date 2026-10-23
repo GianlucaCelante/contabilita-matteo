@@ -1,71 +1,67 @@
+import type { CampiForm, Errori } from "../util/modelloMovimento";
 import Interruttore from "./Interruttore";
+import SceltaFrequenza from "./SceltaFrequenza";
 
 interface ProprietaRiquadro {
   attiva: boolean;
-  // Il giorno del mese come testo del campo, con l'eventuale errore.
-  giorno: string;
-  errore?: string;
-  onGiorno: (valore: string) => void;
-  // Le modifiche valgono anche per i movimenti dei prossimi mesi (e il giorno si puo' cambiare).
+  // La frequenza com'e' salvata: «Ogni mese, il giorno 10», «Ogni 2 settimane»…
+  descrizione: string;
+  // I campi della frequenza (modificabili solo con l'interruttore acceso) e i loro errori.
+  campi: Pick<CampiForm, "frequenza" | "intervallo" | "unita" | "giorno">;
+  errori: Pick<Errori, "intervallo" | "giorno">;
+  onCambia: (parziale: Partial<CampiForm>) => void;
+  // Le modifiche valgono anche per i movimenti dei prossimi mesi (e la frequenza si puo' cambiare).
   estendi: boolean;
   onEstendi: () => void;
   onFerma: () => void;
+  onRiattiva: () => void;
   disabled?: boolean;
 }
 
-// La ripetizione mensile di un movimento, in tre cose separate e dette per esteso: quando si ripete (il giorno), se le
-// modifiche valgono anche per i mesi dopo (un interruttore) e come fermarla (un pulsante, senza toccare questo movimento).
-export default function RiquadroRipetizione({ attiva, giorno, errore, onGiorno, estendi, onEstendi, onFerma, disabled }: ProprietaRiquadro) {
+// La ripetizione di un movimento, in cose separate e dette per esteso: ogni quanto (la frequenza), se le modifiche valgono anche
+// per i movimenti dopo (un interruttore) e come fermarla o riattivarla (un pulsante, senza toccare questo movimento).
+export default function RiquadroRipetizione({ attiva, descrizione, campi, errori, onCambia, estendi, onEstendi, onFerma, onRiattiva, disabled }: ProprietaRiquadro) {
   if (!attiva) {
     return (
-      <section className="rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione mensile">
-        <div className="flex items-center gap-2.5">
-          <h3 className="m-0 text-[16px] font-bold">Ripetizione mensile</h3>
-          <span className="etichettaTipo bg-sabbia text-spento">Ferma</span>
+      <section className="flex flex-col gap-3 rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h3 className="m-0 text-[16px] font-bold">Ripetizione</h3>
+            <span className="etichettaTipo bg-sabbia text-spento">Ferma</span>
+          </div>
+          <p className="m-0 mt-1 text-[15px] text-tenue">{descrizione}. Non vengono più creati movimenti da soli: quelli già registrati restano.</p>
         </div>
-        <p className="m-0 mt-1.5 text-[15px] text-tenue">Non vengono più creati movimenti da soli. Quelli già registrati restano.</p>
+        <div className="border-t border-bordo pt-3.5">
+          <button type="button" className="btn primario w-full md:w-auto" onClick={onRiattiva} disabled={disabled}>
+            Riattiva la ripetizione
+          </button>
+          <p className="m-0 mt-1.5 text-[13px] text-spento">Riparte dalla prossima scadenza: i movimenti che sarebbero caduti mentre era ferma non vengono creati.</p>
+        </div>
       </section>
     );
   }
   return (
-    <section className="flex flex-col gap-3.5 rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione mensile">
+    <section className="flex flex-col gap-3.5 rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione">
       <div>
         <div className="flex items-center gap-2.5">
-          <h3 className="m-0 text-[16px] font-bold">Ripetizione mensile</h3>
+          <h3 className="m-0 text-[16px] font-bold">Ripetizione</h3>
           <span className="etichettaTipo bg-verdechiaro text-verdescuro">Attiva</span>
         </div>
-        <p className="m-0 mt-1 text-[15px] text-tenue">Questo movimento si crea da solo ogni mese.</p>
+        <p className="m-0 mt-1 text-[15px] text-tenue">Questo movimento si crea da solo. {descrizione}.</p>
       </div>
 
-      <div>
-        <label htmlFor="giorno-ricorrente" className="etichetta">
-          Giorno del mese
-        </label>
-        <div className={"campo min-h-11 w-[96px] justify-center px-0" + (errore ? " errore" : "")}>
-          <input
-            id="giorno-ricorrente"
-            type="number"
-            min={1}
-            max={31}
-            inputMode="numeric"
-            className="num h-10 min-h-0 text-center font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-            value={giorno}
-            disabled={!estendi}
-            aria-describedby="nota-giorno"
-            onChange={(e) => onGiorno(e.target.value)}
-          />
-        </div>
-        <p id="nota-giorno" className="m-0 mt-1 text-[13px] text-spento">
-          {estendi ? "Vale dal prossimo mese." : "Per cambiarlo accendi «Applica ai prossimi mesi» qui sotto."}
+      <div className={estendi ? "" : "opacity-70"}>
+        <SceltaFrequenza campi={campi} errori={errori} onCambia={onCambia} disabled={!estendi} />
+        <p id="nota-giorno" className="m-0 mt-2 text-[13px] text-spento">
+          {estendi ? "Vale dal prossimo movimento." : "Per cambiare la frequenza accendi «Applica ai prossimi movimenti» qui sotto."}
         </p>
-        {errore && <p className="m-0 mt-1 text-[13px] font-bold text-rosso">{errore}</p>}
       </div>
 
       <Interruttore
         acceso={estendi}
         onCambia={onEstendi}
-        titolo="Applica ai prossimi mesi"
-        sotto={estendi ? "Le modifiche (importo, voce, giorno) valgono anche per i prossimi movimenti." : "Le modifiche valgono solo per questo movimento."}
+        titolo="Applica ai prossimi movimenti"
+        sotto={estendi ? "Le modifiche (importo, voce, frequenza) valgono anche per i prossimi movimenti." : "Le modifiche valgono solo per questo movimento."}
         disabled={disabled}
       />
 
@@ -73,7 +69,7 @@ export default function RiquadroRipetizione({ attiva, giorno, errore, onGiorno, 
         <button type="button" className="btn pericolo w-full md:w-auto" onClick={onFerma} disabled={disabled}>
           Ferma la ripetizione
         </button>
-        <p className="m-0 mt-1.5 text-[13px] text-spento">Dal prossimo mese non vengono più creati movimenti. Questo e quelli già registrati restano.</p>
+        <p className="m-0 mt-1.5 text-[13px] text-spento">Non vengono più creati movimenti. Questo e quelli già registrati restano; si può riattivare.</p>
       </div>
     </section>
   );

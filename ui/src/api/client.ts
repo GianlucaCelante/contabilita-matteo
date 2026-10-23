@@ -80,6 +80,7 @@ export const api = {
   eliminaMovimento: (id: number, ambito: Ambito) =>
     richiedi<void>(`/movimenti/${id}${stringaQuery({ ambito })}`, { method: "DELETE" }),
   fermaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/ferma`, { method: "POST" }),
+  riattivaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/riattiva`, { method: "POST" }),
   categorie: (tipo?: Tipo) => richiedi<Categoria[]>(`/categorie${stringaQuery({ tipo })}`),
   fornitori: (q: string) => richiedi<Fornitore[]>(`/fornitori${stringaQuery({ q })}`),
   dipendenti: (q: string) => richiedi<Dipendente[]>(`/dipendenti${stringaQuery({ q })}`),

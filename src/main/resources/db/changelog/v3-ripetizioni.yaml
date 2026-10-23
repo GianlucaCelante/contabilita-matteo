@@ -1,0 +1,60 @@
+databaseChangeLog:
+  # Versione 3: ripetizioni con frequenza personalizzata e riattivabili.
+  # - unita (GIORNI, SETTIMANE, MESI, ANNI) e intervallo (ogni N unita): prima era solo «ogni mese»;
+  # - prossima_data (yyyy-MM-dd): la prossima scadenza ancora da registrare, al posto di ultimo_mese
+  #   (che resta, aggiornato, per non rompere chi torna a una versione precedente);
+  # - il vincolo «una sola occorrenza per ricorrenza e per mese» cade (una ripetizione settimanale ne ha piu' di una al mese):
+  #   i doppioni li evita il generatore, che controlla (ricorrenza, data).
+  # Il contesto «ripetizioni» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 30-ricorrenza-frequenza
+      author: contabilita
+      context: ripetizioni
+      changes:
+        - addColumn:
+            tableName: ricorrenza
+            columns:
+              - column:
+                  name: unita
+                  type: TEXT
+                  defaultValue: MESI
+                  constraints:
+                    nullable: false
+              - column:
+                  name: intervallo
+                  type: INTEGER
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+              - column:
+                  name: prossima_data
+                  type: TEXT
+                  defaultValue: "1970-01-01"
+                  constraints:
+                    nullable: false
+        - sql:
+            comment: "SQLite non riempie col valore predefinito le righe che esistono gia': le ripetizioni di prima erano tutte «ogni mese»."
+            sql: UPDATE ricorrenza SET unita = 'MESI', intervallo = 1
+        - sql:
+            comment: "La prossima scadenza era il giorno scelto del mese dopo ultimo_mese (accorciato nei mesi piu' corti)."
+            sql: >
+              UPDATE ricorrenza SET prossima_data =
+              strftime('%Y-%m-', date(ultimo_mese || '-01', '+1 month')) ||
+              printf('%02d', min(giorno, CAST(strftime('%d', date(ultimo_mese || '-01', '+2 month', '-1 day')) AS INTEGER)))
+
+  - changeSet:
+      id: 31-movimento-ricorrenza-data
+      author: contabilita
+      context: ripetizioni
+      changes:
+        - dropIndex:
+            indexName: ux_movimento_ricorrenza_mese
+            tableName: movimento
+        - createIndex:
+            indexName: ix_movimento_ricorrenza_data
+            tableName: movimento
+            columns:
+              - column:
+                  name: ricorrenza_id
+              - column:
+                  name: data

@@ -5,3 +5,6 @@ databaseChangeLog:
   - include:
       file: v2-allegati.yaml
       relativeToChangelogFile: true
+  - include:
+      file: v3-ripetizioni.yaml
+      relativeToChangelogFile: true

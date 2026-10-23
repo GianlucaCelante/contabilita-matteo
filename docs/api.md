@@ -43,7 +43,7 @@ Oggetto `Movimento` (risposta):
   dipendente: {id, nome} | null,
   descrizione, numeroDocumento, note,
   origine,
-  ricorrenza: {id, giorno, attiva} | null,
+  ricorrenza: {id, giorno, attiva, unita, intervallo} | null,
   allegatoNome | null }
 ```
 
@@ -53,7 +53,7 @@ Corpo di creazione/modifica (`MovimentoInput`):
 { data, tipo, documento, importoCent,
   categoria?: "nome", fornitore?: "nome", dipendente?: "nome",   // creati al volo se non esistono
   descrizione?, numeroDocumento?, note?,
-  ricorrenza?: { giorno: 1..31 } | null }
+  ricorrenza?: { giorno?: 1..31, unita?: "GIORNI"|"SETTIMANE"|"MESI"|"ANNI", intervallo?: n } | null }   // senza unita e intervallo: ogni mese
 ```
 
 - `GET /api/movimenti?da=&a=&tipo=&q=&dipendente=` → `{elementi: [Movimento], totali: {ricaviCent, costiCent, saldoCent}}`, ordinati per `data` decrescente poi `id` decrescente. `da`/`a` inclusivi, facoltativi. `q` cerca in fornitore, descrizione, note. `dipendente` è l'id.
@@ -62,11 +62,15 @@ Corpo di creazione/modifica (`MovimentoInput`):
 - `PUT /api/movimenti/{id}?ambito=SOLO_QUESTO` `MovimentoInput` → `Movimento`. Con `ambito=QUESTO_E_PROSSIMI` su un movimento ricorrente, la modifica aggiorna anche il modello della ricorrenza (importo, categoria, fornitore, dipendente, descrizione, note, giorno): le prossime occorrenze lo useranno. Il `giorno` ricorrente si cambia solo con questo ambito.
 - `DELETE /api/movimenti/{id}?ambito=SOLO_QUESTO` → 204. Con `QUESTO_E_PROSSIMI` elimina questo e ferma la ricorrenza (`attiva = false`).
 - `POST /api/ricorrenze/{id}/ferma` → 204 (le occorrenze già registrate restano).
+- `POST /api/ricorrenze/{id}/riattiva` → 204: una ripetizione ferma torna attiva e riparte dalla **prossima scadenza futura**, senza recuperare quelle cadute mentre era ferma. Già attiva: non fa nulla. Inesistente: 404.
 
 ### Ricorrenze
 
-- Un movimento creato con `ricorrenza: {giorno}` genera una ricorrenza mensile: il movimento è la prima occorrenza, i suoi campi sono il modello.
-- Le occorrenze successive si registrano da sole come movimenti con `origine = RICORRENZA`, senza conferma, il `giorno` di ogni mese (se il mese ha meno giorni, l'ultimo giorno del mese). Un controllo giornaliero (03:05) e uno all'avvio recuperano anche i mesi saltati, solo fino a oggi. Idempotente: al massimo un'occorrenza per ricorrenza e per mese.
+- Un movimento creato con `ricorrenza: {...}` genera una ripetizione: il movimento è la prima occorrenza, i suoi campi sono il modello. La frequenza è «ogni `intervallo` `unita`» con `unita` = `GIORNI`, `SETTIMANE`, `MESI` o `ANNI`; senza `unita` e `intervallo` vale **ogni mese** (`{giorno}` come prima). `intervallo` va da 1 a 365 (giorni), 104 (settimane), 60 (mesi), 10 (anni): 400 con «Ogni quanto: da 1 a N …».
+- `giorno` (1..31) è obbligatorio per mesi e anni (nei mesi più corti diventa l'ultimo giorno del mese; per gli anni il mese è quello della data del movimento) e si ignora per giorni e settimane, che contano dalla data del movimento.
+- Le occorrenze successive si registrano da sole come movimenti con `origine = RICORRENZA`, senza conferma, a ogni scadenza. Un controllo giornaliero (03:05) e uno all'avvio recuperano anche le scadenze saltate, solo fino a oggi. Idempotente: il generatore non crea un'occorrenza se per quella ripetizione e quella data ce n'è già una; una occorrenza eliminata a mano non si ricrea.
+- Con `PUT ...?ambito=QUESTO_E_PROSSIMI` si cambiano anche frequenza e giorno: valgono dalla prossima scadenza ancora da registrare (per mesi e anni resta lo stesso mese col nuovo giorno).
+- Fermare (`ferma` o `DELETE` con `QUESTO_E_PROSSIMI`) e riattivare (`riattiva`) sono separati; la riattivazione non recupera i periodi in cui era ferma.
 - `RETRIBUZIONE_EXTRA` non può essere ricorrente: 400.
 
 ## Riepilogo

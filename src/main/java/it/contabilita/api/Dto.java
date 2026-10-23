@@ -3,6 +3,7 @@ package it.contabilita.api;
 import it.contabilita.dati.Documento;
 import it.contabilita.dati.Origine;
 import it.contabilita.dati.Tipo;
+import it.contabilita.dati.UnitaRipetizione;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -29,10 +30,11 @@ public final class Dto {
     public record Rif(Long id, String nome) {
     }
 
-    public record RicorrenzaRif(Long id, int giorno, boolean attiva) {
+    public record RicorrenzaRif(Long id, int giorno, boolean attiva, UnitaRipetizione unita, int intervallo) {
     }
 
-    public record RicorrenzaInput(Integer giorno) {
+    /** Senza unita e intervallo vale «ogni mese»; il giorno serve per mesi e anni. */
+    public record RicorrenzaInput(Integer giorno, UnitaRipetizione unita, Integer intervallo) {
     }
 
     public record MovimentoInput(LocalDate data, Tipo tipo, Documento documento, Long importoCent,

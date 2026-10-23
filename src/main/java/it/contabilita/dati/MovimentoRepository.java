@@ -27,5 +27,5 @@ public interface MovimentoRepository extends JpaRepository<Movimento, Long>, Jpa
     @EntityGraph(attributePaths = {"categoria"})
     Optional<Movimento> findFirstByFornitoreIdAndTipoAndCategoriaIsNotNullOrderByIdDesc(Long fornitoreId, Tipo tipo);
 
-    boolean existsByRicorrenzaIdAndAnnoMese(Long ricorrenzaId, String annoMese);
+    boolean existsByRicorrenzaIdAndData(Long ricorrenzaId, LocalDate data);
 }

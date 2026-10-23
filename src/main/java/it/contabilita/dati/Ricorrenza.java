@@ -2,10 +2,11 @@ package it.contabilita.dati;
 
 import jakarta.persistence.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
 
-/** Ricorrenza mensile: il modello delle occorrenze future. */
+/** Ripetizione di un movimento (ogni N giorni, settimane, mesi o anni): il modello delle occorrenze future. */
 @Entity
 @Table(name = "ricorrenza")
 public class Ricorrenza {
@@ -18,6 +19,19 @@ public class Ricorrenza {
 
     @Column(nullable = false)
     private boolean attiva = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UnitaRipetizione unita = UnitaRipetizione.MESI;
+
+    /** «Ogni N»: con unita MESI e intervallo 1 e' «ogni mese». */
+    @Column(nullable = false)
+    private int intervallo = 1;
+
+    /** La prossima scadenza ancora da registrare. */
+    @Convert(converter = ConvertitoreData.class)
+    @Column(name = "prossima_data", nullable = false)
+    private LocalDate prossimaData;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -45,7 +59,7 @@ public class Ricorrenza {
     private String descrizione;
     private String note;
 
-    /** Ultimo mese (yyyy-MM) gia' trattato dal generatore. */
+    /** Ultimo mese (yyyy-MM) gia' trattato dal generatore: oggi serve solo a chi torna a una versione precedente. */
     @Column(name = "ultimo_mese", nullable = false)
     private String ultimoMese;
 
@@ -56,6 +70,12 @@ public class Ricorrenza {
     public Long getId() { return id; }
     public int getGiorno() { return giorno; }
     public void setGiorno(int giorno) { this.giorno = giorno; }
+    public UnitaRipetizione getUnita() { return unita; }
+    public void setUnita(UnitaRipetizione unita) { this.unita = unita; }
+    public int getIntervallo() { return intervallo; }
+    public void setIntervallo(int intervallo) { this.intervallo = intervallo; }
+    public LocalDate getProssimaData() { return prossimaData; }
+    public void setProssimaData(LocalDate prossimaData) { this.prossimaData = prossimaData; }
     public boolean isAttiva() { return attiva; }
     public void setAttiva(boolean attiva) { this.attiva = attiva; }
     public Tipo getTipo() { return tipo; }

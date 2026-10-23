@@ -74,8 +74,8 @@ class RicorrenzeTest extends ProvaBase {
         assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 4, 30))).isZero();
         assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 4, 20))).isZero();
         assertThat(date()).hasSize(4);
-        // anche se l'indicatore di avanzamento va perso, il vincolo (ricorrenza, mese) evita i doppioni
-        jdbc.update("UPDATE ricorrenza SET ultimo_mese = '2026-01'");
+        // anche se l'indicatore di avanzamento va perso, il controllo (ricorrenza, data) evita i doppioni
+        jdbc.update("UPDATE ricorrenza SET prossima_data = '2026-02-05'");
         assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 4, 30))).isZero();
         assertThat(date()).hasSize(4);
     }
@@ -200,5 +200,159 @@ class RicorrenzeTest extends ProvaBase {
         modifica(singolo.get("id").asLong(), "SOLO_QUESTO", mod);
         assertThat(leggi("/api/movimenti?da=2026-04-20&a=2026-04-20").get("elementi")).hasSize(1);
         assertThat(leggi("/api/movimenti?da=2026-05-20&a=2026-05-20").get("elementi")).isEmpty();
+    }
+
+    // ------------------------------------------------------------ frequenza personalizzata
+
+    private JsonNode primaCon(String data, String unita, int intervallo, Integer giorno) throws Exception {
+        ObjectNode in = movimento(data, "COSTO_FISSO", "NESSUNO", 1000);
+        in.put("categoria", "Pulizie");
+        ObjectNode ric = in.putObject("ricorrenza");
+        ric.put("unita", unita).put("intervallo", intervallo);
+        if (giorno != null) {
+            ric.put("giorno", giorno);
+        }
+        return crea(in);
+    }
+
+    @Test
+    void ognuSettimanaGeneraUnaOccorrenzaAlLunedi() throws Exception {
+        primaCon("2026-01-05", "SETTIMANE", 1, null);
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 1, 28))).isEqualTo(3);
+        assertThat(date()).containsExactly("2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26");
+    }
+
+    @Test
+    void ogniDueSettimaneEOgniDieciGiorni() throws Exception {
+        primaCon("2026-01-05", "SETTIMANE", 2, null);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10));
+        assertThat(date()).containsExactly("2026-01-05", "2026-01-19", "2026-02-02");
+    }
+
+    @Test
+    void ogniDieciGiorni() throws Exception {
+        primaCon("2026-01-28", "GIORNI", 10, null);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 20));
+        assertThat(date()).containsExactly("2026-01-28", "2026-02-07", "2026-02-17");
+    }
+
+    @Test
+    void ogniTreMesiConIlGiorno31SiAccorciaNeiMesiCorti() throws Exception {
+        primaCon("2026-01-31", "MESI", 3, 31);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 8, 1));
+        assertThat(date()).containsExactly("2026-01-31", "2026-04-30", "2026-07-31");
+    }
+
+    @Test
+    void ogniAnnoIl29FebbraioDiventa28NeiNonBisestili() throws Exception {
+        primaCon("2028-02-29", "ANNI", 1, 29);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2029, 12, 31));
+        assertThat(date()).containsExactly("2028-02-29", "2029-02-28");
+    }
+
+    @Test
+    void senzaFrequenzaVaOgniMeseECosiLaRispostaLoDice() throws Exception {
+        JsonNode ric = primaOccorrenza("2026-01-05", 5, 100).get("ricorrenza");
+        assertThat(ric.get("unita").asText()).isEqualTo("MESI");
+        assertThat(ric.get("intervallo").asInt()).isEqualTo(1);
+        assertThat(ric.get("giorno").asInt()).isEqualTo(5);
+        JsonNode sett = primaCon("2026-01-05", "SETTIMANE", 2, null).get("ricorrenza");
+        assertThat(sett.get("unita").asText()).isEqualTo("SETTIMANE");
+        assertThat(sett.get("intervallo").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void unaFrequenzaNonValidaDa400() throws Exception {
+        for (Object[] caso : new Object[][]{{"GIORNI", 0, null}, {"GIORNI", 366, null}, {"SETTIMANE", 105, null}, {"MESI", 61, 5}, {"ANNI", 11, 5}, {"MESI", 1, null}, {"MESI", 1, 32}}) {
+            ObjectNode in = movimento("2026-01-05", "COSTO_FISSO", "NESSUNO", 100);
+            ObjectNode ric = in.putObject("ricorrenza").put("unita", (String) caso[0]).put("intervallo", (Integer) caso[1]);
+            if (caso[2] != null) {
+                ric.put("giorno", (Integer) caso[2]);
+            }
+            errore(post("/api/movimenti"), in, 400);
+        }
+        ObjectNode sconosciuta = movimento("2026-01-05", "COSTO_FISSO", "NESSUNO", 100);
+        sconosciuta.putObject("ricorrenza").put("unita", "QUINDICINE").put("intervallo", 1);
+        errore(post("/api/movimenti"), sconosciuta, 400);
+        assertThat(date()).isEmpty();
+    }
+
+    @Test
+    void unaOccorrenzaSettimanaleEliminataNonVieneRicreataENonCiSonoDoppioni() throws Exception {
+        primaCon("2026-01-05", "SETTIMANE", 1, null);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 1, 20));
+        JsonNode seconda = leggi("/api/movimenti?da=2026-01-12&a=2026-01-12").get("elementi").get(0);
+        elimina(seconda.get("id").asLong(), "SOLO_QUESTO");
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 1, 26))).isEqualTo(1);
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 1, 26))).isZero();
+        assertThat(date()).containsExactly("2026-01-05", "2026-01-19", "2026-01-26");
+    }
+
+    @Test
+    void cambiareLaFrequenzaConQuestoEProssimiParteDallaProssimaScadenza() throws Exception {
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 50000);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10)); // gennaio e febbraio fatti, la prossima era il 5 marzo
+        ObjectNode mod = movimento("2026-01-05", "COSTO_FISSO", "NESSUNO", 50000);
+        mod.put("categoria", "Affitto").put("descrizione", "Canone");
+        mod.putObject("ricorrenza").put("unita", "SETTIMANE").put("intervallo", 2);
+        JsonNode r = modifica(prima.get("id").asLong(), "QUESTO_E_PROSSIMI", mod);
+        assertThat(r.get("ricorrenza").get("unita").asText()).isEqualTo("SETTIMANE");
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 4, 10));
+        assertThat(date()).containsExactly("2026-01-05", "2026-02-05", "2026-03-05", "2026-03-19", "2026-04-02");
+    }
+
+    @Test
+    void cambiareSoloIlGiornoDiUnaRipetizioneMensileTieneIlMeseDellaProssimaScadenza() throws Exception {
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 100);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10));
+        ObjectNode mod = movimento("2026-01-05", "COSTO_FISSO", "NESSUNO", 100);
+        mod.put("categoria", "Affitto").put("descrizione", "Canone");
+        mod.putObject("ricorrenza").put("giorno", 3); // un giorno PRIMA del 5: marzo si fa il 3, non salta
+        modifica(prima.get("id").asLong(), "QUESTO_E_PROSSIMI", mod);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 3, 31));
+        assertThat(date()).containsExactly("2026-01-05", "2026-02-05", "2026-03-03");
+    }
+
+    // ------------------------------------------------------------ riattivare
+
+    @Test
+    void unaRipetizioneFermaSiRiattivaSenzaRecuperareIMesiInCuiEraFerma() throws Exception {
+        orologio.imposta("2026-02-10");
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 100);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 10));
+        long idRic = prima.get("ricorrenza").get("id").asLong();
+        invia(post("/api/ricorrenze/" + idRic + "/ferma"), null, 204);
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 6, 15))).isZero();
+
+        orologio.imposta("2026-06-15");
+        invia(post("/api/ricorrenze/" + idRic + "/riattiva"), null, 204);
+        invia(post("/api/ricorrenze/" + idRic + "/riattiva"), null, 204); // idempotente
+        assertThat(leggi("/api/movimenti").get("elementi").get(0).get("ricorrenza").get("attiva").asBoolean()).isTrue();
+
+        // marzo, aprile e maggio (e il 5 giugno, gia' passato) non si recuperano: si riparte dal 5 luglio
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 6, 15))).isZero();
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 7, 5))).isEqualTo(1);
+        assertThat(date()).containsExactly("2026-01-05", "2026-02-05", "2026-07-05");
+        errore(post("/api/ricorrenze/99999/riattiva"), null, 404);
+    }
+
+    @Test
+    void riattivareUnaRipetizioneGiaAttivaNonSpostaNiente() throws Exception {
+        JsonNode prima = primaOccorrenza("2026-01-05", 5, 100);
+        long idRic = prima.get("ricorrenza").get("id").asLong();
+        invia(post("/api/ricorrenze/" + idRic + "/riattiva"), null, 204);
+        assertThat(servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 3, 10))).isEqualTo(2); // febbraio e marzo, come prima
+    }
+
+    @Test
+    void unaRipetizioneSettimanaleFermaERiattivataRiparteDalLunediSuccessivo() throws Exception {
+        orologio.imposta("2026-01-20");
+        JsonNode prima = primaCon("2026-01-05", "SETTIMANE", 1, null);
+        long idRic = prima.get("ricorrenza").get("id").asLong();
+        invia(post("/api/ricorrenze/" + idRic + "/ferma"), null, 204);
+        orologio.imposta("2026-02-11"); // mercoledi'
+        invia(post("/api/ricorrenze/" + idRic + "/riattiva"), null, 204);
+        servizio.generaOccorrenzeMancanti(LocalDate.of(2026, 2, 24));
+        assertThat(date()).contains("2026-02-16", "2026-02-23").doesNotContain("2026-02-02", "2026-02-09");
     }
 }

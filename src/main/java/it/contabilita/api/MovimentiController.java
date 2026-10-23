@@ -78,6 +78,12 @@ public class MovimentiController {
         ricorrenze.ferma(id);
     }
 
+    @PostMapping("/ricorrenze/{id}/riattiva")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void riattiva(@PathVariable Long id) {
+        ricorrenze.riattiva(id);
+    }
+
     @GetMapping("/riepilogo")
     public Riepilogo riepilogo(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,

@@ -1,5 +1,6 @@
 import type { Documento, Movimento, MovimentoInput, Tipo } from "../api/tipi";
 import { dataValida, euroPerCampo, leggiEuro, oggiIso } from "./formato";
+import { descriviFrequenza, MASSIMO_INTERVALLO, nomeUnita, usaIlGiornoDelMese, type UnitaRipetizione } from "./ripetizione";
 
 // I campi del modulo di un movimento, come testo digitato, e il passaggio da/verso il
 // contratto API (docs/api.md, MovimentoInput).
@@ -22,6 +23,11 @@ export interface CampiForm {
   descrizione: string;
   note: string;
   ripeti: boolean;
+  // «Ogni mese» (il caso comune: serve solo il giorno) oppure «Personalizzata» (ogni N giorni, settimane, mesi o anni).
+  frequenza: "MESE" | "PERSONALIZZATA";
+  intervallo: string;
+  unita: UnitaRipetizione;
+  // Il giorno del mese: serve per «Ogni mese» e per la personalizzata in mesi o anni.
   giorno: string;
 }
 
@@ -94,6 +100,9 @@ export function campiVuoti(): CampiForm {
     descrizione: "",
     note: "",
     ripeti: false,
+    frequenza: "MESE",
+    intervallo: "1",
+    unita: "MESI",
     giorno: "",
   };
 }
@@ -120,6 +129,9 @@ export function daMovimento(m: Movimento): CampiForm {
     descrizione: m.descrizione ?? "",
     note: m.note ?? "",
     ripeti: m.ricorrenza?.attiva ?? false,
+    frequenza: m.ricorrenza && !(m.ricorrenza.unita === "MESI" && m.ricorrenza.intervallo === 1) ? "PERSONALIZZATA" : "MESE",
+    intervallo: String(m.ricorrenza?.intervallo ?? 1),
+    unita: m.ricorrenza?.unita ?? "MESI",
     giorno: m.ricorrenza ? String(m.ricorrenza.giorno) : "",
   };
 }
@@ -166,10 +178,19 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   else if (cent <= 0) errori.importo = "L'importo deve essere maggiore di zero.";
   if (chiedeFornitore(c) === "si" && !c.fornitore.trim()) errori.fornitore = "Scegli o crea un fornitore.";
   if (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
-  let giorno: number | null = null;
+  let ripetizione: NonNullable<MovimentoInput["ricorrenza"]> | null = null;
   if (conRipetizione && c.ripeti && ripetibile(c)) {
-    giorno = Number(c.giorno);
-    if (!Number.isInteger(giorno) || giorno < 1 || giorno > 31) errori.giorno = "Il giorno va da 1 a 31.";
+    const unita = unitaDi(c);
+    const intervallo = c.frequenza === "MESE" ? 1 : Number(c.intervallo.trim() === "" ? Number.NaN : c.intervallo);
+    if (!Number.isInteger(intervallo) || intervallo < 1 || intervallo > MASSIMO_INTERVALLO[unita]) {
+      errori.intervallo = `Ogni quanto: da 1 a ${MASSIMO_INTERVALLO[unita]} ${nomeUnita(unita, true)}.`;
+    }
+    ripetizione = { unita, intervallo };
+    if (usaIlGiornoDelMese(unita)) {
+      const giorno = c.giorno.trim() === "" ? Number.NaN : Number(c.giorno);
+      if (!Number.isInteger(giorno) || giorno < 1 || giorno > 31) errori.giorno = "Il giorno va da 1 a 31.";
+      else ripetizione.giorno = giorno;
+    }
   }
   if (Object.keys(errori).length > 0 || cent === null) return { errori, input: null };
 
@@ -181,12 +202,22 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile !== "SCONTRINO" && c.numeroDocumento.trim()) input.numeroDocumento = c.numeroDocumento.trim();
   if (chiedeDescrizione(c) && c.descrizione.trim()) input.descrizione = c.descrizione.trim();
   if (c.note.trim()) input.note = c.note.trim();
-  if (giorno !== null) input.ricorrenza = { giorno };
+  if (ripetizione !== null) input.ricorrenza = ripetizione;
   return { errori, input };
 }
 
-// Riga «Ogni mese, il 10» per il riquadro «Dove finisce».
+// L'unita' effettiva: «Ogni mese» e' sempre in mesi.
+export function unitaDi(c: Pick<CampiForm, "frequenza" | "unita">): UnitaRipetizione {
+  return c.frequenza === "MESE" ? "MESI" : c.unita;
+}
+
+// Riga «Ogni mese, il giorno 10» o «Ogni 2 settimane» per il riquadro «Dove finisce».
 export function testoRipetizione(c: CampiForm): string | null {
   if (!c.ripeti || !ripetibile(c)) return null;
-  return c.giorno ? `Ogni mese, il ${c.giorno}` : "Ogni mese";
+  const intervallo = c.frequenza === "MESE" ? 1 : Number(c.intervallo);
+  return descriviFrequenza({
+    unita: unitaDi(c),
+    intervallo: Number.isInteger(intervallo) && intervallo >= 1 ? intervallo : 1,
+    giorno: Number(c.giorno) || 1,
+  });
 }
