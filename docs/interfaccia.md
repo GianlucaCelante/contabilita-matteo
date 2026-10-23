@@ -24,7 +24,7 @@ In ordine: **Riepilogo**, **Movimenti**, **Esporta**. Non c'è Impostazioni sul 
 
 ### Filtro di periodo (ricorrente)
 
-Selettore a segmenti: Settimana, Mese, Anno, Periodo (libero). Compare in Riepilogo, Movimenti ed Esporta sul computer; il telefono ne ha una versione ridotta (vedi sotto). Con Settimana, Mese e Anno ci sono le frecce "Periodo precedente" / "Periodo successivo" e l'etichetta del periodo corrente (es. "12 – 18 ottobre 2026").
+Selettore a segmenti: **Oggi**, Settimana, Mese, Anno, Periodo (libero). «Oggi» è un filtro vero, non un pulsante a parte: mostra il giorno corrente (etichetta «Venerdì 23 ottobre 2026»), le frecce scorrono i giorni e cliccarlo di nuovo riporta sempre a oggi. Gli altri tipi tengono il giorno a cui si era arrivati. Compare in Riepilogo, Movimenti ed Esporta sul computer; il telefono ne ha una versione ridotta (vedi sotto). Con Settimana, Mese e Anno ci sono le frecce "Periodo precedente" / "Periodo successivo" e l'etichetta del periodo corrente (es. "12 – 18 ottobre 2026").
 
 ---
 

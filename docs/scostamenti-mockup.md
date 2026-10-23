@@ -47,3 +47,4 @@ Il mockup è il riferimento. Dove l'app deve fare di più di quanto il mockup di
 ## Scelte successive al confronto (richieste dell'utente)
 - **Ripetizione nel Dettaglio:** il riquadro crema con link rosso e due radio è sostituito da «Ripetizione mensile» con giorno, interruttore «Applica ai prossimi mesi» e pulsante «Ferma la ripetizione» spiegato.
 - **Esporta:** tolta la scheda «Il file» (nome del file e pillole «Movimenti · uno per riga» / «Riepilogo · totali del periodo»).
+- **Filtro «Oggi»** nel selettore del periodo (prima segmento, poi Settimana, Mese, Anno, Periodo): il mockup non lo ha; richiesto per tornare alla data corrente.

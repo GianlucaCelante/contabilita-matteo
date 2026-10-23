@@ -4,6 +4,7 @@ import type { TipoPeriodo } from "../util/formato";
 import { IconaDestra, IconaSinistra } from "./Icone";
 
 const SEGMENTI: { tipo: TipoPeriodo; etichetta: string }[] = [
+  { tipo: "giorno", etichetta: "Oggi" },
   { tipo: "settimana", etichetta: "Settimana" },
   { tipo: "mese", etichetta: "Mese" },
   { tipo: "anno", etichetta: "Anno" },
@@ -74,7 +75,7 @@ export default function SelettorePeriodo({
             type="button"
             aria-pressed={tipo === t}
             onClick={() => imposta(t)}
-            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:min-w-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[14px]"}
+            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:min-w-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[13px] max-md:tracking-tight"}
           >
             {e}
           </button>
@@ -85,8 +86,10 @@ export default function SelettorePeriodo({
   );
 }
 
-// Larghezza dell'etichetta sul computer, la piu' lunga che il tipo puo' avere («29 dicembre 2025 – 4 gennaio 2026», «Settembre 2026»).
-const LARGHEZZA_ETICHETTA: Record<"settimana" | "mese" | "anno", string> = {
+// Larghezza dell'etichetta sul computer, la piu' lunga che il tipo puo' avere («Mercoledì 23 settembre 2026»,
+// «29 dicembre 2025 – 4 gennaio 2026», «Settembre 2026»).
+const LARGHEZZA_ETICHETTA: Record<"giorno" | "settimana" | "mese" | "anno", string> = {
+  giorno: "md:w-[20rem]",
   settimana: "md:w-[22rem]",
   mese: "md:w-[11rem]",
   anno: "md:w-[7rem]",
@@ -95,41 +98,26 @@ const LARGHEZZA_ETICHETTA: Record<"settimana" | "mese" | "anno", string> = {
 // Le frecce con l'etichetta del periodo, oppure i due campi data per il periodo
 // libero. Sul telefono le frecce stanno ai lati e l'etichetta al centro.
 export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoPeriodo; className?: string }) {
-  const { tipo, intervallo, etichetta, sposta, vaiAOggi, contieneOggi, impostaLibero } = periodo;
+  const { tipo, intervallo, etichetta, sposta, impostaLibero } = periodo;
   if (tipo === "periodo") return <PeriodoLibero da={intervallo.da} a={intervallo.a} imposta={impostaLibero} />;
   return (
-    <div className={"grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 max-md:w-full md:flex md:gap-1 " + className}>
-      <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
+    <div className={"flex items-center gap-1 max-md:w-full max-md:justify-between " + className}>
+      <button type="button" className="btnIcona" aria-label={tipo === "giorno" ? "Giorno precedente" : "Periodo precedente"} onClick={() => sposta(-1)}>
         <IconaSinistra larghezza={20} spessoreTratto={2} />
       </button>
-      {/* Frecce ed etichetta stanno sempre nello stesso punto e alla stessa altezza: sul computer l'etichetta ha una
-          larghezza fissa per tipo di periodo, sul telefono occupa lo spazio fra le frecce con l'altezza di due righe. */}
+      {/* Le frecce stanno sempre nello stesso punto: sul computer l'etichetta ha una larghezza fissa per tipo di periodo,
+          sul telefono occupa lo spazio fra le frecce e ha l'altezza di due righe. */}
       <span
         className={
-          "flex items-center justify-center px-1 text-center font-titolo text-[16px] font-semibold leading-tight max-md:min-h-[2.5em] md:text-[18px] " +
+          "flex items-center justify-center px-1 text-center font-titolo text-[16px] font-semibold leading-tight max-md:min-w-0 max-md:flex-1 max-md:min-h-[2.5em] md:text-[18px] " +
           LARGHEZZA_ETICHETTA[tipo]
         }
         aria-live="polite"
       >
         {etichetta}
       </span>
-      <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
+      <button type="button" className="btnIcona" aria-label={tipo === "giorno" ? "Giorno successivo" : "Periodo successivo"} onClick={() => sposta(1)}>
         <IconaDestra larghezza={20} spessoreTratto={2} />
-      </button>
-      {/* «Oggi»: sul computer subito dopo le frecce (e quindi vicino a «Nuovo movimento»), sul telefono sotto l'etichetta. Il posto c'e'
-          sempre, anche quando non serve: cosi' niente si sposta. */}
-      <button
-        type="button"
-        className={
-          "col-start-2 row-start-2 min-h-[32px] justify-self-center px-4 text-[13px] font-bold text-verde underline md:ml-2 md:w-[72px] md:px-0" +
-          (contieneOggi ? " invisible" : "")
-        }
-        aria-label="Torna al periodo di oggi"
-        aria-hidden={contieneOggi || undefined}
-        tabIndex={contieneOggi ? -1 : undefined}
-        onClick={vaiAOggi}
-      >
-        Oggi
       </button>
     </div>
   );

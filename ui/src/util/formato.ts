@@ -133,7 +133,8 @@ export function dimensioneLeggibile(byte: number): string {
 
 // ---- periodi ----
 
-export type TipoPeriodo = "settimana" | "mese" | "anno" | "periodo";
+// «giorno» e' il filtro «Oggi»: un giorno solo, con le frecce che scorrono i giorni.
+export type TipoPeriodo = "giorno" | "settimana" | "mese" | "anno" | "periodo";
 
 export interface Intervallo {
   da: string;
@@ -148,6 +149,7 @@ export function lunediDi(iso: string): string {
 
 // L'intervallo di un tipo di periodo che contiene il giorno `riferimento`.
 export function intervalloDi(tipo: Exclude<TipoPeriodo, "periodo">, riferimento: string): Intervallo {
+  if (tipo === "giorno") return { da: riferimento, a: riferimento };
   const d = daIso(riferimento);
   if (tipo === "settimana") {
     const da = lunediDi(riferimento);
@@ -162,13 +164,9 @@ export function intervalloDi(tipo: Exclude<TipoPeriodo, "periodo">, riferimento:
   return { da: `${d.getFullYear()}-01-01`, a: `${d.getFullYear()}-12-31` };
 }
 
-// Il giorno `iso` cade dentro l'intervallo (estremi compresi)?
-export function intervalloContiene(intervallo: Intervallo, iso: string): boolean {
-  return intervallo.da <= iso && iso <= intervallo.a;
-}
-
 // Sposta il giorno di riferimento di un periodo avanti (+1) o indietro (-1).
 export function spostaRiferimento(tipo: Exclude<TipoPeriodo, "periodo">, riferimento: string, verso: 1 | -1): string {
+  if (tipo === "giorno") return aggiungiGiorni(riferimento, verso);
   if (tipo === "settimana") return aggiungiGiorni(riferimento, 7 * verso);
   if (tipo === "mese") return aggiungiMesi(`${riferimento.slice(0, 8)}01`, verso);
   return aggiungiMesi(`${riferimento.slice(0, 4)}-01-01`, 12 * verso);
@@ -178,6 +176,7 @@ export function spostaRiferimento(tipo: Exclude<TipoPeriodo, "periodo">, riferim
 export function etichettaIntervallo(tipo: TipoPeriodo, { da, a }: Intervallo): string {
   const d = daIso(da);
   const f = daIso(a);
+  if (tipo === "giorno") return `${dataGiorno(da)} ${d.getFullYear()}`;
   if (tipo === "anno") return String(d.getFullYear());
   if (tipo === "mese") {
     const m = MESI[d.getMonth()] ?? "";
@@ -203,6 +202,7 @@ export function settimanaBreve({ da, a }: Intervallo): string {
 }
 
 export const NOME_PERIODO: Record<TipoPeriodo, string> = {
+  giorno: "del giorno",
   settimana: "della settimana",
   mese: "del mese",
   anno: "dell'anno",

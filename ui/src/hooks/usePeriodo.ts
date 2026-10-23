@@ -3,7 +3,6 @@ import { useSearchParams } from "react-router-dom";
 import {
   dataValida,
   etichettaIntervallo,
-  intervalloContiene,
   intervalloDi,
   oggiIso,
   spostaRiferimento,
@@ -18,20 +17,16 @@ export interface StatoPeriodo {
   etichetta: string;
   imposta: (tipo: TipoPeriodo) => void;
   sposta: (verso: 1 | -1) => void;
-  // Torna al periodo di oggi (stesso tipo: la settimana, il mese o l'anno che contiene oggi).
-  vaiAOggi: () => void;
-  // Il periodo mostrato contiene gia' oggi (nel periodo libero non si naviga: vale sempre «si»).
-  contieneOggi: boolean;
   impostaLibero: (da: string, a: string) => void;
 }
 
-const TIPI: TipoPeriodo[] = ["settimana", "mese", "anno", "periodo"];
+const TIPI: TipoPeriodo[] = ["giorno", "settimana", "mese", "anno", "periodo"];
 
 // Il periodo scelto vive nell'indirizzo (?p=mese&r=2026-10-21, oppure
 // ?p=periodo&da=...&a=...): sopravvive al ricaricamento e al tasto indietro.
 // Si ricorda anche nel browser (util/filtriSalvati): se l'indirizzo non dice nulla, per esempio perche' si arriva
 // da un'altra pagina o si riapre l'applicazione, si riparte dall'ultimo periodo scelto, uguale in tutte le pagine.
-// Senza niente di salvato vale `predefinito` attorno a oggi.
+// Senza niente di salvato vale `predefinito` attorno a oggi. Scegliere «Oggi» (tipo «giorno») porta sempre al giorno corrente.
 export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
   const [params, setParams] = useSearchParams();
   const salvati = leggiFiltri();
@@ -63,7 +58,7 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     (nuovo: TipoPeriodo) => {
       salvaFiltri(
         magazzinoBrowser(),
-        nuovo === "periodo" ? { p: nuovo, da: intervallo.da, a: intervallo.a } : { p: nuovo, r: tipo === "periodo" ? oggiIso() : riferimento },
+        nuovo === "periodo" ? { p: nuovo, da: intervallo.da, a: intervallo.a } : { p: nuovo, r: nuovo === "giorno" || tipo === "periodo" ? oggiIso() : riferimento },
       );
       setParams(
         (prec) => {
@@ -74,7 +69,7 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
             p.set("a", intervallo.a);
             p.delete("r");
           } else {
-            p.set("r", tipo === "periodo" ? oggiIso() : riferimento);
+            p.set("r", nuovo === "giorno" || tipo === "periodo" ? oggiIso() : riferimento);
             p.delete("da");
             p.delete("a");
           }
@@ -103,21 +98,6 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     [setParams, tipo, riferimento],
   );
 
-  const vaiAOggi = useCallback(() => {
-    if (tipo === "periodo") return;
-    const oggi = oggiIso();
-    salvaFiltri(magazzinoBrowser(), { p: tipo, r: oggi });
-    setParams(
-      (prec) => {
-        const p = new URLSearchParams(prec);
-        p.set("p", tipo);
-        p.set("r", oggi);
-        return p;
-      },
-      { replace: true },
-    );
-  }, [setParams, tipo]);
-
   const impostaLibero = useCallback(
     (da: string, a: string) => {
       salvaFiltri(magazzinoBrowser(), { p: "periodo", da, a });
@@ -136,7 +116,5 @@ export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
     [setParams],
   );
 
-  const contieneOggi = tipo === "periodo" || intervalloContiene(intervallo, oggiIso());
-
-  return { tipo, intervallo, etichetta: etichettaIntervallo(tipo, intervallo), imposta, sposta, vaiAOggi, contieneOggi, impostaLibero };
+  return { tipo, intervallo, etichetta: etichettaIntervallo(tipo, intervallo), imposta, sposta, impostaLibero };
 }

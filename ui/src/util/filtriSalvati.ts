@@ -20,7 +20,7 @@ interface Magazzino {
 }
 
 const CHIAVE = "contabilita.filtri.v1";
-const TIPI_PERIODO: TipoPeriodo[] = ["settimana", "mese", "anno", "periodo"];
+const TIPI_PERIODO: TipoPeriodo[] = ["giorno", "settimana", "mese", "anno", "periodo"];
 const TIPI: (Tipo | "")[] = ["", "RICAVO", "COSTO_VARIABILE", "COSTO_FISSO"];
 
 export function magazzinoBrowser(): Magazzino | null {
