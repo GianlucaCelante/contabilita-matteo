@@ -135,6 +135,7 @@ l'icona; il resto (pacchetto **non ricollocabile**, `bootout` atteso prima del `
 
 - Windows: `.\update.ps1 "C:\percorso\Contabilita-0.2.0.msi"` (si autoeleva, fa il backup del database in
   `backup\pre-aggiornamento-<data>`, ferma servizio e finestre, lancia `msiexec`, e se fallisce rimette in piedi il servizio).
+  Dopo `msiexec` controlla che il servizio giri davvero: con la stessa versione già installata Windows Installer entra in «modalità manutenzione», esce con 0 e non riavvia nulla, quindi lo script rimette il servizio su avvio automatico (durante l'aggiornamento era «Disabilitato») e lo avvia. Prove dello script: `Invoke-Pester installer\tests` (Pester 3, incluso in Windows).
   Un doppio clic su un MSI più nuovo funziona uguale grazie all'UpgradeCode fisso (`F1E5A28E-4BA7-4B75-8F1F-8C5AE9025A9E`, non cambiarlo mai).
   Disinstallazione: «App installate»; i dati restano (`uninstall_service.ps1 -RemoveData` per cancellarli).
 - macOS: vedi sopra.
