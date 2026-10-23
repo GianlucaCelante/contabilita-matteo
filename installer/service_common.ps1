@@ -158,3 +158,57 @@ function Test-ServiceMarkedForDeleteError {
     if ([string]::IsNullOrEmpty($Text)) { return $false }
     return ($Text -match '\b1072\b') -or ($Text -match '0x0*430\b') -or ($Text -imatch 'marked for delet')
 }
+
+function Wait-ForServiceRunning {
+    <#
+      Aspetta (al massimo $TimeoutSeconds) che il servizio sia in esecuzione e torna il suo stato finale come testo
+      ("Running", "Stopped", "StartPending"...), oppure "Assente" se il servizio non e' registrato. Serve dopo
+      msiexec: di norma e' l'installer a riavviare il servizio, ma non sempre (vedi Get-PostInstallAction).
+    #>
+    param(
+        [string]$Name = "Contabilita",
+        [int]$TimeoutSeconds = 60
+    )
+    $fine = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ($true) {
+        $svc = Get-Service -Name $Name -ErrorAction SilentlyContinue
+        if ($null -eq $svc) {
+            $stato = "Assente"
+        } else {
+            $stato = [string]$svc.Status
+            if ($stato -eq "Running") {
+                return $stato
+            }
+        }
+        if ((Get-Date) -ge $fine) {
+            return $stato
+        }
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+function Get-PostInstallAction {
+    <#
+      Cosa fare dopo msiexec, dato il suo codice di uscita e lo stato del servizio:
+        "Nessuna"             tutto a posto (o il servizio sta partendo)
+        "AvviaServizio"       msiexec e' riuscito ma il servizio, che esiste, non gira. Succede rilanciando lo STESSO MSI gia'
+                              installato: Windows Installer entra in "modalita' manutenzione", esce con 0 e non
+                              esegue le azioni che registrano e riavviano il servizio
+        "RegistraEAvviaServizio"  msiexec e' riuscito ma il servizio non e' nemmeno registrato
+        "RipristinaServizio"  msiexec e' fallito: si rimette in piedi la versione che c'e' sul disco
+    #>
+    param(
+        [int]$ExitCode,
+        [string]$ServiceStatus
+    )
+    if ($ExitCode -ne 0 -and $ExitCode -ne 3010) {
+        return "RipristinaServizio"
+    }
+    if ($ServiceStatus -eq "Running" -or $ServiceStatus -eq "StartPending") {
+        return "Nessuna"
+    }
+    if ($ServiceStatus -eq "Assente") {
+        return "RegistraEAvviaServizio"
+    }
+    return "AvviaServizio"
+}

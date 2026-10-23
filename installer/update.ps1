@@ -346,7 +346,8 @@ function Invoke-Msiexec {
 }
 
 function Restore-ServiceAfterFailedInstall {
-    Write-Host "Installazione fallita: rimetto in piedi il servizio sulla versione presente sul disco..." -ForegroundColor Yellow
+    param([string]$Messaggio = "Installazione fallita: rimetto in piedi il servizio sulla versione presente sul disco...")
+    Write-Host $Messaggio -ForegroundColor Yellow
     if (Test-Path $InstallScript) {
         try {
             & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $InstallScript -Silent
@@ -439,10 +440,38 @@ Stop-ContabilitaServiceByName -TimeoutSeconds 40
 $exitCode = Invoke-Msiexec -Msi $MsiPath
 Write-Host "msiexec e' uscito con codice $exitCode."
 
-if ($exitCode -eq 0 -or $exitCode -eq 3010) {
+$ok = ($exitCode -eq 0 -or $exitCode -eq 3010)
+$statoServizio = "-"
+if ($ok) {
+    # Di norma e' l'installer a riavviare il servizio; gli si lascia il tempo di farlo, poi si controlla davvero.
+    $statoServizio = Wait-ForServiceRunning -Name "Contabilita" -TimeoutSeconds 60
+}
+$azione = Get-PostInstallAction -ExitCode $exitCode -ServiceStatus $statoServizio
+
+if ($ok) {
     Write-Host "Aggiornamento completato." -ForegroundColor Green
     if ($exitCode -eq 3010) {
-        Write-Host "Windows Installer segnala un riavvio in sospeso (3010); e' stato soppresso (/norestart). Il servizio e' gia' stato registrato e riavviato dall'installer."
+        Write-Host "Windows Installer segnala un riavvio in sospeso (3010); e' stato soppresso (/norestart)."
+    }
+    if ($azione -eq "AvviaServizio") {
+        # Stessa versione gia' installata (modalita' manutenzione): nessun file cambiato e servizio rimasto fermo.
+        # Il servizio c'e': basta avviarlo (install_service.ps1 cerca WinSW accanto a se', che nel repository non c'e').
+        Write-Host "L'installer non ha riavviato il servizio (stato: $statoServizio; di solito e' la stessa versione gia' installata): lo avvio..." -ForegroundColor Yellow
+        try {
+            # Durante l'aggiornamento il servizio e' stato messo su "Disabilitato" (cosi' non riparte da solo): di
+            # norma e' l'MSI a rimetterlo su avvio automatico, ma con la stessa versione non lo fa. Senza questo
+            # passo Start-Service fallisce.
+            $sc = Join-Path $env:SystemRoot "System32\sc.exe"
+            & $sc config "Contabilita" start= delayed-auto 2>&1 | Out-Null
+            Start-Service -Name "Contabilita" -ErrorAction Stop
+            $statoServizio = Wait-ForServiceRunning -Name "Contabilita" -TimeoutSeconds 60
+            Write-Host "Servizio Contabilita: $statoServizio."
+        } catch {
+            Write-Warning "Impossibile avviare il servizio Contabilita: $($_.Exception.Message)"
+            Restore-ServiceAfterFailedInstall -Messaggio "Provo a rimetterlo in piedi con lo script di installazione..."
+        }
+    } elseif ($azione -eq "RegistraEAvviaServizio") {
+        Restore-ServiceAfterFailedInstall -Messaggio "Il servizio Contabilita non e' registrato: lo registro e lo avvio..."
     }
     Open-ContabilitaAppWindows -Processes $appWindows
     exit 0
