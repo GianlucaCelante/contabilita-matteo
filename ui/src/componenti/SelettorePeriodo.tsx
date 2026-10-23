@@ -98,29 +98,38 @@ export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoP
   const { tipo, intervallo, etichetta, sposta, vaiAOggi, contieneOggi, impostaLibero } = periodo;
   if (tipo === "periodo") return <PeriodoLibero da={intervallo.da} a={intervallo.a} imposta={impostaLibero} />;
   return (
-    <div className={"flex items-center gap-1 max-md:w-full max-md:justify-between " + className}>
+    <div className={"grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1 max-md:w-full md:flex md:gap-1 " + className}>
       <button type="button" className="btnIcona" aria-label="Periodo precedente" onClick={() => sposta(-1)}>
         <IconaSinistra larghezza={20} spessoreTratto={2} />
       </button>
-      {/* Le frecce stanno sempre nello stesso punto: sul computer l'etichetta ha una larghezza fissa per tipo di periodo,
-          sul telefono occupa lo spazio fra le frecce e ha l'altezza di due righe; il posto di «Oggi» c'e' sempre. */}
-      <span className={"flex flex-col items-center justify-center px-1 text-center max-md:min-w-0 max-md:flex-1 " + LARGHEZZA_ETICHETTA[tipo]}>
-        <span className="flex items-center font-titolo text-[16px] font-semibold leading-tight max-md:min-h-[2.5em] md:text-[18px]" aria-live="polite">
-          {etichetta}
-        </span>
-        <button
-          type="button"
-          className={"-my-1 min-h-[32px] px-4 text-[13px] font-bold text-verde underline" + (contieneOggi ? " invisible" : "")}
-          aria-label="Torna al periodo di oggi"
-          aria-hidden={contieneOggi || undefined}
-          tabIndex={contieneOggi ? -1 : undefined}
-          onClick={vaiAOggi}
-        >
-          Oggi
-        </button>
+      {/* Frecce ed etichetta stanno sempre nello stesso punto e alla stessa altezza: sul computer l'etichetta ha una
+          larghezza fissa per tipo di periodo, sul telefono occupa lo spazio fra le frecce con l'altezza di due righe. */}
+      <span
+        className={
+          "flex items-center justify-center px-1 text-center font-titolo text-[16px] font-semibold leading-tight max-md:min-h-[2.5em] md:text-[18px] " +
+          LARGHEZZA_ETICHETTA[tipo]
+        }
+        aria-live="polite"
+      >
+        {etichetta}
       </span>
       <button type="button" className="btnIcona" aria-label="Periodo successivo" onClick={() => sposta(1)}>
         <IconaDestra larghezza={20} spessoreTratto={2} />
+      </button>
+      {/* «Oggi»: sul computer subito dopo le frecce (e quindi vicino a «Nuovo movimento»), sul telefono sotto l'etichetta. Il posto c'e'
+          sempre, anche quando non serve: cosi' niente si sposta. */}
+      <button
+        type="button"
+        className={
+          "col-start-2 row-start-2 min-h-[32px] justify-self-center px-4 text-[13px] font-bold text-verde underline md:ml-2 md:w-[72px] md:px-0" +
+          (contieneOggi ? " invisible" : "")
+        }
+        aria-label="Torna al periodo di oggi"
+        aria-hidden={contieneOggi || undefined}
+        tabIndex={contieneOggi ? -1 : undefined}
+        onClick={vaiAOggi}
+      >
+        Oggi
       </button>
     </div>
   );
