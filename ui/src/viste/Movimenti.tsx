@@ -98,6 +98,7 @@ export default function Movimenti() {
     <div className="flex min-h-full flex-col">
       {/* Le frecce del periodo stanno nella testata sul computer, cosi' periodo, tipo e ricerca stanno su una riga sola. */}
       <Testata
+        titoloSoloComputer
         titolo="Movimenti"
         azioni={
           <div className="flex items-center gap-4">

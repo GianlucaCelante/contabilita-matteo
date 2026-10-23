@@ -89,7 +89,7 @@ export default function Riepilogo() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <Testata titolo="Riepilogo" azioni={<PulsanteNuovoMovimento />} />
+      <Testata titoloSoloComputer titolo="Riepilogo" azioni={<PulsanteNuovoMovimento />} />
       <div className="flex flex-1 flex-col px-4 pb-24 md:px-8 md:pb-7">
         <div className="pb-3 md:pb-4">
           <SelettorePeriodo periodo={periodo} />

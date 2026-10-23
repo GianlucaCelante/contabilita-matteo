@@ -53,7 +53,7 @@ export default function Esporta() {
 
   return (
     <div className="flex min-h-full flex-col">
-      <Testata titolo="Esporta" />
+      <Testata titoloSoloComputer titolo="Esporta" />
       <div className="flex flex-1 flex-col gap-5 px-4 pb-24 md:flex-row md:px-8 md:pb-7">
         {/* Comandi */}
         <section className="scheda flex min-w-0 flex-col gap-[22px] px-5 py-5 md:w-[500px] md:shrink-0 md:px-7 md:py-6" aria-label="Cosa esportare">

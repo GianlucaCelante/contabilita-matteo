@@ -57,3 +57,5 @@ Gli accorgimenti per il telefono sono stati importati dal progetto gemello `etic
 Test automatici: `util/tastiera.test.ts`, `util/zoomLente.test.ts` (`npm run test`).
 
 A vista in Chrome (iframe a 390, 768, 860/861, 1000, 1180, 1366, 1440 px): scaglioni dello zoom (`getComputedStyle(html).zoom`), barre di scorrimento, apertura e chiusura della lente, passi di zoom, schermate scorrevoli a 390×844, 390×500, 1440×871, 1180×700 e 1000×590, tastiera simulata restringendo l'iframe. Non verificabili con Chrome da computer: il pizzico vero, la tastiera virtuale di iOS Safari e di Chrome Android, l'area sicura su un telefono con incavo, l'aspetto dell'icona sulla schermata Home.
+
+- **Titolo delle schermate a tab (Riepilogo, Movimenti, Esporta):** sul telefono non si vede, perché è già scritto nella barra in basso (resta per lo screen reader). Sul computer c'è come prima.
