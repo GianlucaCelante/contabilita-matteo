@@ -32,7 +32,8 @@ function PeriodoLibero({ da, a, imposta }: { da: string; a: string; imposta: (da
   const descrive = incoerente ? idErrore : undefined;
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex flex-wrap items-center gap-2">
+      {/* Telefono: le due date una sotto l'altra, larghe quanto i segmenti. */}
+      <div className="flex flex-wrap items-center gap-2 max-md:flex-col max-md:items-stretch">
         <label className={"campo !min-h-[48px]" + (incoerente ? " errore" : "")}>
           <span className="text-[13px] font-bold text-spento">Dal</span>
           <input type="date" value={bozzaDa} aria-invalid={incoerente || undefined} aria-describedby={descrive} onChange={(e) => cambia(e.target.value, bozzaA)} />
@@ -109,7 +110,7 @@ export function NavigatorePeriodo({ periodo, className = "" }: { periodo: StatoP
           sul telefono occupa lo spazio fra le frecce e ha l'altezza di due righe. */}
       <span
         className={
-          "flex items-center justify-center px-1 text-center font-titolo text-[16px] font-semibold leading-tight max-md:min-w-0 max-md:flex-1 max-md:min-h-[2.5em] md:text-[18px] " +
+          "flex items-center justify-center text-balance px-1 text-center font-titolo text-[16px] font-semibold leading-tight max-md:min-w-0 max-md:flex-1 max-md:min-h-[2.5em] md:text-[18px] " +
           LARGHEZZA_ETICHETTA[tipo]
         }
         aria-live="polite"
