@@ -2,6 +2,7 @@ package it.contabilita.api;
 
 import it.contabilita.esporta.EsportazioneService;
 import it.contabilita.esporta.EsportazioneService.Esportazione;
+import it.contabilita.movimenti.SediService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -29,8 +30,11 @@ public class EsportaController {
             @RequestParam(required = false) String formato,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
-            @RequestParam(required = false) String includi) {
-        Esportazione file = esportazione.prepara(formato, da, a, includi);
+            @RequestParam(required = false) String includi,
+            @RequestParam(required = false) String sedi,
+            @RequestParam(defaultValue = "true") boolean statistiche,
+            @RequestParam(defaultValue = "false") boolean colonnePerSede) {
+        Esportazione file = esportazione.prepara(formato, da, a, includi, SediService.idsDa(sedi), statistiche, colonnePerSede);
         return ResponseEntity.ok()
                 .contentType(file.tipoContenuto())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.nomeFile() + "\"")

@@ -1,4 +1,5 @@
 import type { Documento, Movimento, MovimentoInput, Tipo } from "../api/tipi";
+import { MASSIMO_NOME_CATEGORIA } from "./categorie";
 import { dataValida, euroPerCampo, leggiEuro, oggiIso } from "./formato";
 import { descriviFrequenza, MASSIMO_INTERVALLO, nomeUnita, usaIlGiornoDelMese, type UnitaRipetizione } from "./ripetizione";
 
@@ -29,6 +30,26 @@ export interface CampiForm {
   unita: UnitaRipetizione;
   // Il giorno del mese: serve per «Ogni mese» e per la personalizzata in mesi o anni.
   giorno: string;
+  // La sede (con almeno due sedi attive si sceglie; null = non ancora scelta) e, solo in creazione, «dividi» fra piu' sedi:
+  // `dividi` e' acceso con due o piu' sedi scelte; `sediDivise` sono i loro id, vuoto = tutte le sedi attive.
+  sedeId: number | null;
+  dividi: boolean;
+  sediDivise: number[];
+}
+
+// Una pillola sede toccata in creazione: si possono scegliere una, due o tutte le sedi attive. Con una sola il movimento
+// sta in quella sede; con due o piu' si divide l'importo (se tutte, `sediDivise` resta vuoto).
+export function alternaSede(c: Pick<CampiForm, "sedeId" | "dividi" | "sediDivise">, id: number, attive: number[]): Pick<CampiForm, "sedeId" | "dividi" | "sediDivise"> {
+  const scelte = c.dividi ? (c.sediDivise.length > 0 ? c.sediDivise : attive) : c.sedeId !== null ? [c.sedeId] : [];
+  const nuove = attive.filter((s) => (s === id ? !scelte.includes(s) : scelte.includes(s)));
+  if (nuove.length === 0) return { sedeId: null, dividi: false, sediDivise: [] };
+  if (nuove.length === 1) return { sedeId: nuove[0]!, dividi: false, sediDivise: [] };
+  return { sedeId: null, dividi: true, sediDivise: nuove.length === attive.length ? [] : nuove };
+}
+
+// Le sedi fra cui si divide (gli id), con «dividi» acceso: quelle scelte o, se vuoto, tutte le attive.
+export function sediDelleDivisione(c: Pick<CampiForm, "sediDivise">, attive: number[]): number[] {
+  return c.sediDivise.length > 0 ? c.sediDivise.filter((s) => attive.includes(s)) : attive;
 }
 
 export type Errori = Partial<Record<keyof CampiForm, string>>;
@@ -104,6 +125,9 @@ export function campiVuoti(): CampiForm {
     intervallo: "1",
     unita: "MESI",
     giorno: "",
+    sedeId: null,
+    dividi: false,
+    sediDivise: [],
   };
 }
 
@@ -133,6 +157,9 @@ export function daMovimento(m: Movimento): CampiForm {
     intervallo: String(m.ricorrenza?.intervallo ?? 1),
     unita: m.ricorrenza?.unita ?? "MESI",
     giorno: m.ricorrenza ? String(m.ricorrenza.giorno) : "",
+    sedeId: m.sede?.id ?? null,
+    dividi: false,
+    sediDivise: [],
   };
 }
 
@@ -148,9 +175,8 @@ export function ripetibile(c: CampiForm): boolean {
   return c.tipo === "COSTO_FISSO" && documentoDi(c) !== "RETRIBUZIONE_EXTRA";
 }
 
-// La categoria che verra' mandata (la voce fissa ha la sua; ricavi: nessuna).
+// La categoria che verra' mandata (la voce fissa ha la sua; per i ricavi e' facoltativa).
 export function categoriaDi(c: CampiForm): string {
-  if (c.tipo === "RICAVO") return "";
   if (c.tipo === "COSTO_FISSO") return CATEGORIA_DI_VOCE[c.voceFissa] ?? c.categoria.trim();
   return c.categoria.trim();
 }
@@ -165,19 +191,22 @@ export function chiedeDescrizione(c: CampiForm): boolean {
   return c.tipo !== "COSTO_VARIABILE" || c.documentoVariabile === "SCONTRINO";
 }
 export function chiedeCategoria(c: CampiForm): boolean {
-  return c.tipo === "COSTO_VARIABILE" || (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA");
+  return c.tipo === "RICAVO" || c.tipo === "COSTO_VARIABILE" || (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA");
 }
 
 // Controlla i campi e, se vanno bene, prepara il corpo per il servizio.
 // `conRipetizione`: se false la ripetizione non e' gestita da qui (dettaglio).
-export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: Errori; input: MovimentoInput | null } {
+// `sedeObbligatoria`: ci sono almeno due sedi attive, quindi la sede va scelta (una o piu' d'una); con una sola il servizio usa quella.
+export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligatoria = false): { errori: Errori; input: MovimentoInput | null } {
   const errori: Errori = {};
+  if (sedeObbligatoria && c.sedeId === null && !c.dividi) errori.sedeId = "Scegli una o più sedi.";
   if (!dataValida(c.data)) errori.data = "Scrivi una data valida.";
   const cent = leggiEuro(c.importo);
   if (cent === null) errori.importo = "Scrivi un importo, per esempio 86,00.";
   else if (cent <= 0) errori.importo = "L'importo deve essere maggiore di zero.";
   if (chiedeFornitore(c) === "si" && !c.fornitore.trim()) errori.fornitore = "Scegli o crea un fornitore.";
   if (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
+  else if (categoriaDi(c).length > MASSIMO_NOME_CATEGORIA) errori.categoria = `Il nome può avere al massimo ${MASSIMO_NOME_CATEGORIA} caratteri.`;
   let ripetizione: NonNullable<MovimentoInput["ricorrenza"]> | null = null;
   if (conRipetizione && c.ripeti && ripetibile(c)) {
     const unita = unitaDi(c);
@@ -202,13 +231,14 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean): { errori: E
   if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile !== "SCONTRINO" && c.numeroDocumento.trim()) input.numeroDocumento = c.numeroDocumento.trim();
   if (chiedeDescrizione(c) && c.descrizione.trim()) input.descrizione = c.descrizione.trim();
   if (c.note.trim()) input.note = c.note.trim();
+  if (c.sedeId !== null && !c.dividi) input.sedeId = c.sedeId;
   if (ripetizione !== null) input.ricorrenza = ripetizione;
   return { errori, input };
 }
 
 // Sono cambiati dati che finirebbero nei prossimi movimenti (importo, voce, fornitore...)? Allora al salvataggio si chiede
 // «solo questo o anche i prossimi». Data e numero del documento sono di questo movimento soltanto; la frequenza e' della ripetizione.
-const CAMPI_DEL_MODELLO: (keyof CampiForm)[] = ["importo", "voceFissa", "categoria", "retribuzione", "fornitore", "dipendente", "descrizione", "note"];
+const CAMPI_DEL_MODELLO: (keyof CampiForm)[] = ["importo", "voceFissa", "categoria", "retribuzione", "fornitore", "dipendente", "descrizione", "note", "sedeId"];
 
 export function modificheDelModello(prima: CampiForm, dopo: CampiForm): boolean {
   return CAMPI_DEL_MODELLO.some((k) => prima[k] !== dopo[k]);

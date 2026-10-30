@@ -39,6 +39,10 @@ public class Movimento {
     @JoinColumn(name = "dipendente_id")
     private Dipendente dipendente;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "sede_id", nullable = false)
+    private Sede sede;
+
     private String descrizione;
 
     @Column(name = "numero_documento")
@@ -90,6 +94,8 @@ public class Movimento {
     public void setFornitore(Fornitore fornitore) { this.fornitore = fornitore; }
     public Dipendente getDipendente() { return dipendente; }
     public void setDipendente(Dipendente dipendente) { this.dipendente = dipendente; }
+    public Sede getSede() { return sede; }
+    public void setSede(Sede sede) { this.sede = sede; }
     public String getDescrizione() { return descrizione; }
     public void setDescrizione(String descrizione) { this.descrizione = descrizione; }
     public String getNumeroDocumento() { return numeroDocumento; }

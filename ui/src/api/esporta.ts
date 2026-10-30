@@ -33,6 +33,12 @@ export interface ParametriEsportazione {
   da: string;
   a: string;
   tipi: Tipo[];
+  // «1,2»: le sedi scelte. Assente = tutte.
+  sedi?: string;
+  // Solo Excel: nel foglio Riepilogo una colonna per sede più «Totale» (il CSV lo ignora).
+  colonnePerSede?: boolean;
+  // Solo Excel: con false il file non ha il foglio «Statistiche» (pizze, ordini, scontrino medio).
+  statistiche?: boolean;
 }
 
 // Il nome previsto del file, come lo manda il servizio.
@@ -40,8 +46,18 @@ export function nomeFileEsportazione({ formato, da, a }: Pick<ParametriEsportazi
   return `contabilita-${da}_${a}.${formato}`;
 }
 
-export function urlEsportazione({ formato, da, a, tipi }: ParametriEsportazione): string {
-  return `/api/esporta${stringaQuery({ formato, da, a, includi: tipi.join(",") })}`;
+// Le opzioni dell'Excel si mandano solo per l'Excel e solo quando sono state scelte (il servizio ha i suoi predefiniti).
+export function urlEsportazione({ formato, da, a, tipi, sedi, colonnePerSede, statistiche }: ParametriEsportazione): string {
+  const excel = formato === "xlsx";
+  return `/api/esporta${stringaQuery({
+    formato,
+    da,
+    a,
+    includi: tipi.join(","),
+    sedi,
+    colonnePerSede: excel && colonnePerSede !== undefined ? String(colonnePerSede) : undefined,
+    statistiche: excel && statistiche !== undefined ? String(statistiche) : undefined,
+  })}`;
 }
 
 export interface RigaAnteprima {
@@ -50,6 +66,7 @@ export interface RigaAnteprima {
   tipo: string;
   fornitore: string;
   documento: string;
+  sede: string;
   importo: string;
   negativo: boolean;
 }
@@ -78,6 +95,7 @@ export function righeAnteprima(movimenti: Movimento[], tipi: Tipo[], formato: Fo
     tipo: formato === "xlsx" ? TIPO_ANTEPRIMA_EXCEL[m.tipo] : TIPO_FILE[m.tipo],
     fornitore: m.fornitore?.nome ?? "",
     documento: DOCUMENTO_FILE[m.documento],
+    sede: m.sede?.nome ?? "",
     importo: importoPerFile(m, formato),
     negativo: m.tipo !== "RICAVO",
   }));

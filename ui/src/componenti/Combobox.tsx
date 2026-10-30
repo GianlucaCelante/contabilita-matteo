@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useId, useMemo, useState, type KeyboardEvent, useRef } from "react";
 import { IconaGiu, IconaPiu } from "./Icone";
 
 interface ProprietaCombobox {
@@ -33,6 +33,7 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
   const idErrore = `${id}-errore`;
   const [aperto, setAperto] = useState(false);
   const [attivo, setAttivo] = useState(-1);
+  const rifCampo = useRef<HTMLInputElement>(null);
 
   const testo = value.trim();
   const esatto = opzioni.some((o) => o.toLowerCase() === testo.toLowerCase());
@@ -79,6 +80,7 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
       <div className={"campo" + (invalido ? " errore" : "")}>
         <input
           id={id}
+          ref={rifCampo}
           type="text"
           role="combobox"
           aria-expanded={aperto}
@@ -95,6 +97,7 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
             setAttivo(-1);
           }}
           onFocus={() => setAperto(true)}
+          onClick={() => setAperto(true)}
           onBlur={() => setAperto(false)}
           onKeyDown={suTasto}
         />
@@ -103,7 +106,22 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
             {etichettaNuovo}
           </span>
         )}
-        <IconaGiu larghezza={18} spessoreTratto={2} className="text-spento" />
+        <button
+          type="button"
+          tabIndex={-1}
+          aria-label={aperto ? `Chiudi i suggerimenti per ${etichetta.toLowerCase()}` : `Mostra i suggerimenti per ${etichetta.toLowerCase()}`}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            if (aperto) setAperto(false);
+            else {
+              rifCampo.current?.focus();
+              setAperto(true);
+            }
+          }}
+          className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-spento"
+        >
+          <IconaGiu larghezza={18} spessoreTratto={2} />
+        </button>
       </div>
       {invalido && messaggioErrore && (
         <p id={idErrore} className="m-0 mt-1 text-[13px] font-bold text-rosso">
@@ -120,8 +138,15 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
         {inCaricamento && opzioni.length === 0 && <li role="presentation" className="px-3 py-2 text-[13px] text-spento">Cerco…</li>}
         {errore && <li role="presentation" className="px-3 py-2 text-[13px] font-bold text-rosso">Non riesco a caricare i suggerimenti.</li>}
         {!inCaricamento && !errore && opzioni.length === 0 && (
-          <li role="presentation" className="px-3 py-2 text-[13px] text-spento">
-            {testo ? `Nessun${f ? "a" : ""} ${cosa} con questo nome` : `Scrivi per cercare o creare un${f ? "a" : ""} ${cosa}`}
+          <li role="presentation" className="m-1 rounded-lg border border-dashed border-bordo2 px-3 py-4 text-center text-[14px] text-spento">
+            {testo ? (
+              `Nessun${f ? "a" : ""} ${cosa} con questo nome`
+            ) : (
+              <>
+                <b className="block text-testo">Ancora nessun{f ? "a" : ""} {cosa}</b>
+                Scrivi un nome per {f ? "crearla" : "crearlo"}
+              </>
+            )}
           </li>
         )}
         {voci.map((v, i) => (
@@ -148,7 +173,9 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
                   </span>
                 </>
               ) : (
-                <span className="min-w-0 truncate">{v.testo}</span>
+                <>
+                  <span className="min-w-0 truncate">{v.testo}</span>
+                </>
               )}
             </button>
           </li>

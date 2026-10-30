@@ -8,6 +8,7 @@ import it.contabilita.dati.FornitoreRepository;
 import it.contabilita.dati.Movimento;
 import it.contabilita.dati.MovimentoRepository;
 import it.contabilita.dati.Origine;
+import it.contabilita.dati.Sede;
 import it.contabilita.dati.Tipo;
 import it.contabilita.importa.ImportaDto.Anteprima;
 import it.contabilita.importa.ImportaDto.Conferma;
@@ -21,6 +22,7 @@ import it.contabilita.importa.ImportaDto.RigaIgnorata;
 import it.contabilita.importa.ParserFatturaPa.DatiFattura;
 import it.contabilita.importa.ParserFatturaPa.ErroreLettura;
 import it.contabilita.movimenti.AnagraficheService;
+import it.contabilita.movimenti.SediService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -85,6 +87,7 @@ public class ImportazioneService {
     private final FornitoreRepository fornitori;
     private final AnagraficheService anagrafiche;
     private final AllegatiService allegati;
+    private final SediService sedi;
     private final LettoreFile lettore = new LettoreFile();
     private final TransactionTemplate tx;
     private final TransactionTemplate txLettura;
@@ -92,11 +95,13 @@ public class ImportazioneService {
     private final Map<String, Importazione> importazioni = new ConcurrentHashMap<>();
 
     public ImportazioneService(MovimentoRepository movimenti, FornitoreRepository fornitori, AnagraficheService anagrafiche,
-                               AllegatiService allegati, PlatformTransactionManager gestoreTransazioni, Clock clock) {
+                               AllegatiService allegati, SediService sedi, PlatformTransactionManager gestoreTransazioni,
+                               Clock clock) {
         this.movimenti = movimenti;
         this.fornitori = fornitori;
         this.anagrafiche = anagrafiche;
         this.allegati = allegati;
+        this.sedi = sedi;
         this.tx = new TransactionTemplate(gestoreTransazioni);
         this.txLettura = new TransactionTemplate(gestoreTransazioni);
         this.txLettura.setReadOnly(true);
@@ -252,6 +257,7 @@ public class ImportazioneService {
         if (importazione == null) {
             throw new ErroreApi(HttpStatus.NOT_FOUND, "L'importazione è scaduta: rileggi i file.");
         }
+        Sede sede = sedi.perNuovoMovimento(richiesta.sedeId()); // la stessa per tutte le righe; un errore e' un 400 prima di salvare
         int importati = 0;
         List<RigaIgnorata> ignorate = new ArrayList<>();
         Set<Integer> fatte = new HashSet<>();
@@ -269,7 +275,7 @@ public class ImportazioneService {
             } else if (letta.pubblica().duplicata()) {
                 ignorate.add(new RigaIgnorata(indice, letta.pubblica().motivo() + ": non aggiunta."));
             } else {
-                String esito = importaRiga(letta, riga.categoria());
+                String esito = importaRiga(letta, riga.categoria(), sede);
                 if (esito == null) {
                     importati++;
                 } else {
@@ -281,10 +287,10 @@ public class ImportazioneService {
     }
 
     /** Una riga, in una transazione sua. Torna null se importata, altrimenti il motivo. */
-    private String importaRiga(Letta letta, String categoria) {
+    private String importaRiga(Letta letta, String categoria, Sede sede) {
         String[] fileScritto = new String[1];
         try {
-            tx.executeWithoutResult(s -> crea(letta, categoria, fileScritto));
+            tx.executeWithoutResult(s -> crea(letta, categoria, sede, fileScritto));
             return null;
         } catch (Duplicata e) {
             return e.getMessage() + ": non aggiunta.";
@@ -295,7 +301,7 @@ public class ImportazioneService {
         }
     }
 
-    private void crea(Letta letta, String categoria, String[] fileScritto) {
+    private void crea(Letta letta, String categoria, Sede sede, String[] fileScritto) {
         DatiFattura d = letta.dati();
         Optional<Movimento> gia = trovaDuplicato(d);
         if (gia.isPresent()) {
@@ -312,6 +318,7 @@ public class ImportazioneService {
         m.setDocumento(documentoDi(d));
         m.setImportoCent(d.totaleCent());
         m.setFornitore(fornitore);
+        m.setSede(sede);
         String nomeCategoria = categoria == null || categoria.isBlank() ? null : categoria;
         m.setCategoria(nomeCategoria == null ? null : anagrafiche.categoria(nomeCategoria, Tipo.COSTO_VARIABILE).valore());
         m.setNumeroDocumento(d.numero());

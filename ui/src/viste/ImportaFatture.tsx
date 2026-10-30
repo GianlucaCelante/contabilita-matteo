@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ErroreRichiesta, messaggioErrore } from "../api/client";
 import { apiImporta, type AnteprimaImportazione, type ErroreFileImportato, type FatturaLetta } from "../api/importa";
+import BadgeSede from "../componenti/BadgeSede";
 import Combobox from "../componenti/Combobox";
 import { IconaAllarme, IconaCarica, IconaCerca, IconaCercaDiNuovo, IconaGiu, IconaInfo } from "../componenti/Icone";
 import SelettoreModalita from "../componenti/SelettoreModalita";
 import { Caricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
+import { useSedi } from "../hooks/useSedi";
 import { useSuggerimentiCategorie } from "../hooks/useSuggerimenti";
 import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, type Filtro } from "../util/anteprimaImportazione";
 import { dataBreve, euro } from "../util/formato";
@@ -22,7 +24,7 @@ const FILTRI: { valore: Filtro; etichetta: string }[] = [
   { valore: "integrazioni", etichetta: "Integrazioni" },
   { valore: "escluse", etichetta: "Escluse" },
 ];
-const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie"];
+const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "sedi"];
 const SITO_AGENZIA = "https://www.agenziaentrate.gov.it";
 
 // ---- riquadro «Dove trovo le fatture?» ----
@@ -293,6 +295,10 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
     Object.fromEntries(dati.fatture.map((f) => [f.indice, f.categoriaSuggerita ?? ""])),
   );
 
+  // La sede delle fatture: con piu' sedi attive si parte dalla sola sede selezionata, altrimenti si sceglie. Con una sola il servizio usa quella.
+  const sedi = useSedi();
+  const [sedeId, setSedeId] = useState<number | null>(sedi.sedePreselezionata);
+  const [manca, setManca] = useState(false);
   const [testo, setTesto] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("tutte");
   const [mostrate, setMostrate] = useState(PAGINA);
@@ -308,6 +314,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
       apiImporta.conferma(
         dati.importazioneId,
         selezionate.map((f) => ({ indice: f.indice, categoria: (categorie[f.indice] ?? "").trim() || null })),
+        sedi.piu && sedeId !== null ? sedeId : undefined,
       ),
     onSuccess: (esito) => {
       for (const k of INVALIDA) void client.invalidateQueries({ queryKey: [k] });
@@ -361,6 +368,37 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
   return (
     <>
       {dati.errori.length > 0 && <Scarti errori={dati.errori} />}
+
+      {sedi.piu && n > 0 && (
+        <section className="scheda px-5 py-4" aria-label="Sede delle fatture">
+          <div id="sede-importa" className="etichetta">
+            Di quale sede sono queste fatture
+          </div>
+          <div role="radiogroup" aria-labelledby="sede-importa" aria-describedby={manca ? "sede-importa-e" : undefined} className="flex flex-wrap gap-2">
+            {sedi.attive.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                role="radio"
+                aria-checked={sedeId === s.id}
+                className="pillaSede"
+                onClick={() => {
+                  setSedeId(s.id);
+                  setManca(false);
+                }}
+              >
+                <BadgeSede id={s.id} taglia="piccolo" decorativo />
+                {s.nome}
+              </button>
+            ))}
+          </div>
+          {manca && (
+            <p id="sede-importa-e" role="alert" className="m-0 mt-1.5 text-[14px] font-bold text-rosso">
+              Scegli la sede delle fatture prima di importarle.
+            </p>
+          )}
+        </section>
+      )}
 
       {n === 0 ? (
         <section className="scheda">
@@ -448,7 +486,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               <button type="button" className="btn grande" onClick={() => void navigate("/movimenti")}>
                 Annulla
               </button>
-              <button type="button" className="btn primario grande" disabled={selezionate.length === 0 || conferma.isPending} onClick={() => conferma.mutate()}>
+              <button type="button" className="btn primario grande" disabled={selezionate.length === 0 || conferma.isPending} onClick={() => (sedi.piu && sedeId === null ? setManca(true) : conferma.mutate())}>
                 {conferma.isPending ? "Importo…" : selezionate.length === 1 ? "Importa 1 documento" : `Importa ${selezionate.length} ${cosa}`}
               </button>
             </div>

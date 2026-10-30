@@ -63,11 +63,11 @@ export const apiImporta = {
     const risposta = await fetch("/api/importa/anteprima", { method: "POST", body: corpo });
     return leggiRisposta<AnteprimaImportazione>("/importa/anteprima", risposta);
   },
-  conferma: async (importazioneId: string, righe: RigaConferma[]): Promise<EsitoConferma> => {
+  conferma: async (importazioneId: string, righe: RigaConferma[], sedeId?: number): Promise<EsitoConferma> => {
     const risposta = await fetch("/api/importa/conferma", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ importazioneId, righe }),
+      body: JSON.stringify({ importazioneId, righe, ...(sedeId !== undefined ? { sedeId } : {}) }),
     });
     return leggiRisposta<EsitoConferma>("/importa/conferma", risposta);
   },

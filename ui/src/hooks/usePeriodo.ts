@@ -26,12 +26,13 @@ const TIPI: TipoPeriodo[] = ["giorno", "settimana", "mese", "anno", "periodo"];
 // ?p=periodo&da=...&a=...): sopravvive al ricaricamento e al tasto indietro.
 // Si ricorda anche nel browser (util/filtriSalvati): se l'indirizzo non dice nulla, per esempio perche' si arriva
 // da un'altra pagina o si riapre l'applicazione, si riparte dall'ultimo periodo scelto, uguale in tutte le pagine.
+// Con `senzaGiorno` (dati settimanali) un «Oggi» arrivato dall'indirizzo o dal salvato vale `predefinito`.
 // Senza niente di salvato vale `predefinito` attorno a oggi. Scegliere «Oggi» (tipo «giorno») porta sempre al giorno corrente.
-export function usePeriodo(predefinito: TipoPeriodo): StatoPeriodo {
+export function usePeriodo(predefinito: TipoPeriodo, senzaGiorno = false): StatoPeriodo {
   const [params, setParams] = useSearchParams();
   const salvati = leggiFiltri();
   const grezzo = params.get("p") ?? salvati.p;
-  const tipo = TIPI.find((t) => t === grezzo) ?? predefinito;
+  const tipo = TIPI.find((t) => t === grezzo && !(senzaGiorno && t === "giorno")) ?? predefinito;
   const rifGrezzo = params.get("r") ?? salvati.r;
   const riferimento = rifGrezzo && dataValida(rifGrezzo) ? rifGrezzo : oggiIso();
   const daLibero = params.get("da") ?? salvati.da ?? null;

@@ -6,7 +6,7 @@
 export const SOGLIA_TASTIERA_PX = 120;
 
 export interface IngressoTastiera {
-  // Larghezza da telefono (max-width 767 px).
+  // Larghezza da telefono (max-width 1023 px).
   telefono: boolean;
   // C'e' un campo di testo a fuoco.
   inModifica: boolean;

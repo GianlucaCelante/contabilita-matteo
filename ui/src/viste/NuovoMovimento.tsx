@@ -8,28 +8,47 @@ import ConfermaUscita from "../componenti/ConfermaUscita";
 import DoveFinisce from "../componenti/DoveFinisce";
 import FormMovimento from "../componenti/FormMovimento";
 import SelettoreModalita from "../componenti/SelettoreModalita";
+import { Caricamento } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
+import { mostraPrimoErrore } from "../hooks/scorriInVista";
 import { useAvviso } from "../hooks/useAvviso";
 import { useBloccoUscita } from "../hooks/useBloccoUscita";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { useSedi } from "../hooks/useSedi";
 import { campiVuoti, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
 
+// Aspetta l'elenco delle sedi, cosi' il modulo parte con la sede giusta gia' scelta (la sola selezionata, altrimenti nessuna).
 export default function NuovoMovimento() {
+  const sedi = useSedi();
+  if (!sedi.pronto) {
+    return (
+      <>
+        <Testata compatta titolo="Nuovo movimento" indietro="/movimenti" />
+        <Caricamento />
+      </>
+    );
+  }
+  return <ModuloNuovo sedeIniziale={sedi.sedePreselezionata} />;
+}
+
+function ModuloNuovo({ sedeIniziale }: { sedeIniziale: number | null }) {
   const navigate = useNavigate();
   const grande = useSchermoGrande();
   const avvisa = useAvviso();
   const client = useQueryClient();
-  const [campi, setCampi] = useState<CampiForm>(campiVuoti);
+  const { piu } = useSedi();
+  const [campi, setCampi] = useState<CampiForm>(() => ({ ...campiVuoti(), sedeId: sedeIniziale }));
   const [errori, setErrori] = useState<Errori>({});
   const [iniziali, setIniziali] = useState<CampiForm>(campi);
   const [allegato, setAllegato] = useState<File | null>(null);
   const modificato = JSON.stringify(campi) !== JSON.stringify(iniziali) || allegato !== null;
   const { blocker, consenti } = useBloccoUscita(modificato);
 
+  // Con due o piu' sedi scelte si crea un movimento per sede (una sola chiamata, tutto o niente); altrimenti ne crea uno.
   const salva = useMutation({
-    mutationFn: (corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>) => api.creaMovimento(corpo),
+    mutationFn: async (corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>) => (campi.dividi ? api.dividiMovimento(corpo, campi.sediDivise) : [await api.creaMovimento(corpo)]),
     onSuccess: () => {
-      for (const k of ["movimenti", "riepilogo", "fornitori", "categorie", "dipendenti"]) void client.invalidateQueries({ queryKey: [k] });
+      for (const k of ["movimenti", "riepilogo", "fornitori", "categorie", "dipendenti", "sedi"]) void client.invalidateQueries({ queryKey: [k] });
     },
     onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
   });
@@ -44,34 +63,37 @@ export default function NuovoMovimento() {
   }
 
   async function invia(eAltro: boolean) {
-    const { errori: nuovi, input } = preparaInput(campi, true);
+    const { errori: nuovi, input } = preparaInput(campi, true, piu);
     setErrori(nuovi);
     if (!input) {
-      avvisa("Controlla i campi segnati in rosso.", { tipo: "errore" });
+      avvisa("Controlla i campi segnati in rosso.", { tipo: "errore", posizione: "alto" });
+      mostraPrimoErrore();
       return;
     }
-    let creato;
+    let creati;
     try {
-      creato = await salva.mutateAsync(input);
+      creati = await salva.mutateAsync(input);
     } catch {
       return; // l'avviso d'errore e' gia' mostrato da onError
     }
     // Il movimento e' salvato: se l'allegato non parte, il movimento resta e non si rifa' la POST.
+    // Con «Tutte, dividi» l'allegato (la fattura, la foto) va sul primo dei movimenti creati.
     let allegatoOk = true;
-    if (allegato) {
+    const primo = creati[0];
+    if (allegato && primo) {
       try {
-        await apiAllegati.carica(creato.id, allegato);
+        await apiAllegati.carica(primo.id, allegato);
         void client.invalidateQueries({ queryKey: ["movimenti"] });
       } catch {
         allegatoOk = false;
       }
     }
-    if (allegatoOk) avvisa("Movimento salvato.");
+    if (allegatoOk) avvisa(creati.length > 1 ? `Movimento diviso fra ${creati.length} sedi.` : "Movimento salvato.");
     else avvisa("Movimento salvato, ma l'allegato non è stato caricato: puoi aggiungerlo dal dettaglio.", { tipo: "errore" });
     setAllegato(null);
     if (eAltro) {
       // si riparte da un modulo vuoto dello stesso tipo, con la stessa data
-      const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, categoria: campi.voceFissa === "ALTRA" ? campi.categoria : "", retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo };
+      const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, categoria: campi.voceFissa === "ALTRA" ? campi.categoria : "", retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo, sedeId: campi.sedeId, dividi: campi.dividi, sediDivise: campi.sediDivise };
       setCampi(nuovo);
       setIniziali(nuovo);
       setErrori({});

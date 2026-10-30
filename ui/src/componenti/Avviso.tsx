@@ -21,6 +21,7 @@ interface AvvisoAttivo {
   id: number;
   testo: string;
   errore: boolean;
+  alto: boolean;
 }
 
 // L'avviso temporaneo in basso. Un solo provider in cima all'app, richiamabile
@@ -44,7 +45,7 @@ export function ProviderAvviso({ children }: { children: ReactNode }) {
     (testo: string, opzioni?: OpzioniAvviso) => {
       const errore = opzioni?.tipo === "errore";
       contatore.current += 1;
-      setAttivo({ id: contatore.current, testo, errore });
+      setAttivo({ id: contatore.current, testo, errore, alto: opzioni?.posizione === "alto" });
       parti(opzioni?.durataMs ?? durataPer(testo, errore));
     },
     [parti],
@@ -67,7 +68,7 @@ export function ProviderAvviso({ children }: { children: ReactNode }) {
 
   const avvisoVisibile = (errore: boolean) =>
     attivo && attivo.errore === errore ? (
-      <div key={attivo.id} className={"avvisino" + (errore ? " errore" : "")} onMouseEnter={ferma} onMouseLeave={riprendi} onFocus={ferma} onBlur={riprendi}>
+      <div key={attivo.id} className={"avvisino" + (errore ? " errore" : "") + (attivo.alto ? " alto" : "")} onMouseEnter={ferma} onMouseLeave={riprendi} onFocus={ferma} onBlur={riprendi}>
         {errore && <IconaAllarme larghezza={20} spessoreTratto={2.2} />}
         <span className="min-w-0 flex-1">{attivo.testo}</span>
         <button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-lg" onClick={chiudi} aria-label="Chiudi l'avviso">

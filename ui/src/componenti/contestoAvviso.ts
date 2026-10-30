@@ -7,6 +7,8 @@ import { createContext } from "react";
 export interface OpzioniAvviso {
   tipo?: "errore" | "info";
   durataMs?: number;
+  // "alto": l'avviso sta in cima allo schermo invece che in basso (per non coprire i campi del modulo e i loro messaggi).
+  posizione?: "alto";
 }
 
 export interface ContestoAvviso {

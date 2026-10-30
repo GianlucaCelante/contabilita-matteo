@@ -56,6 +56,10 @@ public class Ricorrenza {
     @JoinColumn(name = "dipendente_id")
     private Dipendente dipendente;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "sede_id", nullable = false)
+    private Sede sede;
+
     private String descrizione;
     private String note;
 
@@ -90,6 +94,8 @@ public class Ricorrenza {
     public void setFornitore(Fornitore fornitore) { this.fornitore = fornitore; }
     public Dipendente getDipendente() { return dipendente; }
     public void setDipendente(Dipendente dipendente) { this.dipendente = dipendente; }
+    public Sede getSede() { return sede; }
+    public void setSede(Sede sede) { this.sede = sede; }
     public String getDescrizione() { return descrizione; }
     public void setDescrizione(String descrizione) { this.descrizione = descrizione; }
     public String getNote() { return note; }

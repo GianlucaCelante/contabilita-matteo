@@ -1,0 +1,20 @@
+databaseChangeLog:
+  # Versione 6: categorie personalizzate. Ogni categoria dice se l'ha creata chi usa l'app (personalizzata) o se e'
+  # predefinita; solo le personalizzate si rinominano, e nel Riepilogo i ricavi e i costi variabili di una categoria
+  # personalizzata hanno la riga della categoria.
+  # - Le categorie che esistono quando si applica questa migrazione sono tutte predefinite (personalizzata = 0): cosi' il
+  #   Riepilogo di un database esistente resta identico a prima (le fatture con categoria restano in «Fatture»).
+  #   Sono personalizzate (valore predefinito della colonna, 1) solo quelle create dopo, da chi usa l'app.
+  # Colonna con valore predefinito + UPDATE, senza chiave esterna (SQLite non accetta tutto cio' che addColumn genera).
+  # Il contesto «categorie» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 60-categoria-personalizzata
+      author: contabilita
+      context: categorie
+      changes:
+        - sql:
+            comment: "Il valore predefinito (1) vale per le categorie create da ora in poi."
+            sql: ALTER TABLE categoria ADD COLUMN personalizzata BOOLEAN NOT NULL DEFAULT 1
+        - sql:
+            comment: "Quelle che c'erano prima sono predefinite."
+            sql: UPDATE categoria SET personalizzata = 0

@@ -1,0 +1,86 @@
+databaseChangeLog:
+  # Versione 4: piu' sedi. Ogni movimento e ogni ripetizione appartiene a una sede.
+  # - tabella sede: nome_chiave (nome in minuscolo, calcolato dal servizio) con indice unico, come le altre anagrafiche;
+  #   una sede non si cancella, si archivia (archiviata); ordine decide la sequenza negli elenchi;
+  # - sede_id su movimento e ricorrenza, obbligatoria: i dati di prima passano tutti alla «Sede principale» (id 1),
+  #   che esiste anche in un database nuovo.
+  # Il contesto «sedi» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 40-sede
+      author: contabilita
+      context: sedi
+      changes:
+        - createTable:
+            tableName: sede
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: nome
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nome_chiave
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: archiviata
+                  type: BOOLEAN
+                  defaultValueBoolean: false
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ordine
+                  type: INTEGER
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: creato_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_sede_nome
+            tableName: sede
+            unique: true
+            columns:
+              - column:
+                  name: nome_chiave
+        - sql:
+            comment: "La sede di partenza: ci finiscono tutti i dati di prima (e un database nuovo ne ha comunque una)."
+            sql: >
+              INSERT INTO sede (id, nome, nome_chiave, archiviata, ordine, creato_il)
+              VALUES (1, 'Sede principale', 'sede principale', 0, 1, strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+
+  - changeSet:
+      id: 41-movimento-ricorrenza-sede
+      author: contabilita
+      context: sedi
+      changes:
+        - sql:
+            comment: >
+              SQLite aggiunge una colonna obbligatoria con chiave esterna solo con ALTER TABLE diretto (il «addColumn» di
+              Liquibase ricostruirebbe la tabella e fallisce): il valore predefinito 1 e' la sede principale.
+              Come le altre chiavi esterne del database, SQLite la dichiara ma non la fa rispettare (foreign_keys e' spento).
+            sql: ALTER TABLE movimento ADD COLUMN sede_id INTEGER NOT NULL DEFAULT 1 CONSTRAINT fk_movimento_sede REFERENCES sede(id)
+        - sql:
+            sql: ALTER TABLE ricorrenza ADD COLUMN sede_id INTEGER NOT NULL DEFAULT 1 CONSTRAINT fk_ricorrenza_sede REFERENCES sede(id)
+        - sql:
+            comment: "SQLite non riempie col valore predefinito le righe che esistono gia': tutto quello che c'era e' della sede principale."
+            sql: UPDATE movimento SET sede_id = (SELECT id FROM sede WHERE nome_chiave = 'sede principale')
+        - sql:
+            sql: UPDATE ricorrenza SET sede_id = (SELECT id FROM sede WHERE nome_chiave = 'sede principale')
+        - createIndex:
+            indexName: ix_movimento_sede
+            tableName: movimento
+            columns:
+              - column:
+                  name: sede_id

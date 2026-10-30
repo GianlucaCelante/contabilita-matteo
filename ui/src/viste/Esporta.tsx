@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, chiavi, messaggioErrore } from "../api/client";
 import {
@@ -11,9 +11,11 @@ import {
 import type { Tipo } from "../api/tipi";
 import { IconaEsporta } from "../componenti/Icone";
 import SelettorePeriodo from "../componenti/SelettorePeriodo";
+import SelettoreSedi from "../componenti/SelettoreSedi";
 import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { usePeriodo } from "../hooks/usePeriodo";
+import { useSedi } from "../hooks/useSedi";
 
 const FORMATI: { formato: FormatoFile; nome: string; estensione: string; descrizione: string }[] = [
   { formato: "xlsx", nome: "Excel", estensione: ".xlsx", descrizione: "con riepilogo" },
@@ -29,16 +31,47 @@ function Gruppo({ titolo, children, className = "" }: { titolo: string; children
   );
 }
 
+// Casella di un'opzione del file; le opzioni dell'Excel con il CSV restano visibili ma spente.
+function Opzione({ acceso, disabilitata, sottotesto, onCambia, children }: { acceso: boolean; disabilitata: boolean; sottotesto?: string; onCambia: (acceso: boolean) => void; children: ReactNode }) {
+  const nota = useId();
+  return (
+    <label className={"flex min-h-11 items-center gap-3 py-1 text-[16px] " + (disabilitata ? "cursor-default opacity-55" : "cursor-pointer")}>
+      <input
+        type="checkbox"
+        className="h-6 w-6 shrink-0 accent-verde"
+        checked={acceso && !disabilitata}
+        disabled={disabilitata}
+        aria-describedby={nota}
+        onChange={(e) => onCambia(e.target.checked)}
+      />
+      <span className="min-w-0">
+        {children}
+        <span id={nota} className="block text-[13px] font-normal text-spento">
+          {disabilitata ? "Solo nel file Excel" : sottotesto}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export default function Esporta() {
   const periodo = usePeriodo("mese");
   const { da, a } = periodo.intervallo;
   const [formato, setFormato] = useState<FormatoFile>("xlsx");
   const [tipi, setTipi] = useState<Tipo[]>(TIPI_ESPORTAZIONE.map((t) => t.tipo));
   const [scaricato, setScaricato] = useState<string | null>(null);
+  const sedi = useSedi();
+  const filtroSedi = sedi.parametro;
+  // «Una colonna per sede» parte acceso con almeno due sedi scelte, finche' non lo si cambia a mano.
+  const [colonneScelte, setColonneScelte] = useState<boolean | null>(null);
+  const [statistiche, setStatistiche] = useState(true);
+  const excel = formato === "xlsx";
+  const colonnePerSede = sedi.piu && (colonneScelte ?? sedi.selezionate.length >= 2);
 
-  const elenco = useQuery({ queryKey: chiavi.movimenti({ da, a }), queryFn: () => api.movimenti({ da, a }) });
+  const filtro = { da, a, ...(filtroSedi ? { sedi: filtroSedi } : {}) };
+  const elenco = useQuery({ queryKey: chiavi.movimenti(filtro), queryFn: () => api.movimenti(filtro), enabled: sedi.pronto });
   const scarica = useMutation({
-    mutationFn: () => scaricaEsportazione({ formato, da, a, tipi }),
+    mutationFn: () => scaricaEsportazione({ formato, da, a, tipi, sedi: filtroSedi, ...(excel ? { colonnePerSede, statistiche } : {}) }),
     onMutate: () => setScaricato(null),
     onSuccess: (nome) => setScaricato(nome),
   });
@@ -58,9 +91,23 @@ export default function Esporta() {
         {/* Comandi */}
         <section className="scheda flex min-w-0 flex-col gap-[22px] px-5 py-5 md:w-[500px] md:shrink-0 md:px-7 md:py-6" aria-label="Cosa esportare">
           <div>
+            <h2 className="m-0 font-titolo text-[18px] font-semibold">Cosa esportare</h2>
+            <p className="m-0 mt-1 text-[14px] text-spento">
+              {periodo.etichetta}
+              {sedi.piu ? ` · ${sedi.etichetta}` : ""}
+            </p>
+          </div>
+
+          <div>
             <div className="etichetta mb-2">Periodo</div>
             <SelettorePeriodo periodo={periodo} className="items-start md:flex-col md:gap-2.5" />
           </div>
+
+          {sedi.piu && (
+            <div>
+              <SelettoreSedi />
+            </div>
+          )}
 
           <Gruppo titolo="Cosa includere">
             {TIPI_ESPORTAZIONE.map(({ tipo, etichetta }) => (
@@ -74,6 +121,32 @@ export default function Esporta() {
                 Scegli almeno una voce da includere.
               </p>
             )}
+          </Gruppo>
+
+          <Gruppo titolo="Opzioni del file">
+            {sedi.piu && (
+              <Opzione
+                acceso={colonnePerSede}
+                disabilitata={!excel}
+                sottotesto="Altrimenti una riga sola con il totale"
+                onCambia={(v) => {
+                  setColonneScelte(v);
+                  setScaricato(null);
+                }}
+              >
+                Una colonna per sede
+              </Opzione>
+            )}
+            <Opzione
+              acceso={statistiche}
+              disabilitata={!excel}
+              onCambia={(v) => {
+                setStatistiche(v);
+                setScaricato(null);
+              }}
+            >
+              Pizze, ordini e scontrino medio
+            </Opzione>
           </Gruppo>
 
           <Gruppo titolo="Formato" className="flex gap-2.5">
@@ -113,7 +186,7 @@ export default function Esporta() {
             </div>
             <button type="button" className="btn primario h-14 w-full !text-[17px]" disabled={nessunTipo || scarica.isPending} onClick={() => scarica.mutate()}>
               <IconaEsporta larghezza={22} spessoreTratto={2} />
-              <span>{scarica.isPending ? "Preparo il file…" : "Scarica il file"}</span>
+              <span>{scarica.isPending ? "Preparo il file…" : excel ? "Scarica Excel" : "Scarica CSV"}</span>
             </button>
           </div>
         </section>
@@ -122,7 +195,7 @@ export default function Esporta() {
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <section className="scheda flex min-w-0 flex-1 flex-col overflow-hidden" aria-label="Anteprima">
             <h2 className="etichettaMaiuscola flex h-12 items-center px-4 !font-testo">Anteprima del foglio «Movimenti»</h2>
-            {elenco.isPending && <Caricamento />}
+            {(elenco.isPending || !sedi.pronto) && <Caricamento />}
             {elenco.isError && <ErroreCaricamento errore={elenco.error} onRiprova={() => void elenco.refetch()} />}
             {anteprima && anteprima.totale === 0 && (
               <div className="px-4 py-6 text-center">
@@ -137,7 +210,7 @@ export default function Esporta() {
                     <caption className="sr-only">Prime righe del file</caption>
                     <thead>
                       <tr className="bg-sabbia text-left">
-                        {["Data", "Tipo", "Fornitore", "Documento"].map((c) => (
+                        {["Data", "Tipo", "Fornitore", "Documento", ...(sedi.piu ? ["Sede"] : [])].map((c) => (
                           <th key={c} scope="col" className="h-10 px-2.5 font-testo text-[12px] font-bold uppercase first:pl-4">
                             <span className="text-spento">{c}</span>
                           </th>
@@ -154,6 +227,7 @@ export default function Esporta() {
                           <td className="whitespace-nowrap px-2.5">{r.tipo}</td>
                           <td className="px-2.5">{r.fornitore}</td>
                           <td className="px-2.5">{r.documento}</td>
+                          {sedi.piu && <td className="px-2.5">{r.sede}</td>}
                           <td className="num whitespace-nowrap px-2.5 pr-4 text-right">{r.importo}</td>
                         </tr>
                       ))}

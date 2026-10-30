@@ -281,4 +281,77 @@ class MovimentiApiTest extends ProvaBase {
         assertThat(leggi("/api/movimenti").get("elementi")).isEmpty();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM ricorrenza", Integer.class)).isZero();
     }
+
+    // ---- filtro per categorie ----
+
+    private long idCategoria(JsonNode movimento) {
+        return movimento.get("categoria").get("id").asLong();
+    }
+
+    private ObjectNode conCategoria(ObjectNode m, String categoria, String fornitore) {
+        m.put("categoria", categoria);
+        if (fornitore != null) {
+            m.put("fornitore", fornitore);
+        }
+        return m;
+    }
+
+    @Test
+    void filtraPerCategorie() throws Exception {
+        long mare = creaSede("Mare");
+        long farina = idCategoria(crea(inSede(conCategoria(movimento("2026-03-01", "COSTO_VARIABILE", "FATTURA", 1000), "Farina", "Molino"), 1)));
+        crea(inSede(conCategoria(movimento("2026-03-02", "COSTO_VARIABILE", "FATTURA", 2000), "Farina", "Pastificio"), 1));
+        long affitto = idCategoria(crea(inSede(conCategoria(movimento("2026-03-03", "COSTO_FISSO", "NESSUNO", 5000), "Affitto", null), mare)));
+        long vendite = idCategoria(crea(inSede(conCategoria(movimento("2026-03-04", "RICAVO", "RICAVO_FATTURATO", 9000), "Vendite", null), 1)));
+        crea(inSede(movimento("2026-03-05", "COSTO_FISSO", "NESSUNO", 700), 1)); // senza categoria
+
+        // senza il parametro (o vuoto) nulla cambia
+        JsonNode tutti = leggi("/api/movimenti");
+        assertThat(tutti.get("elementi")).hasSize(5);
+        assertThat(tutti.get("totali").get("ricaviCent").asLong()).isEqualTo(9000);
+        assertThat(tutti.get("totali").get("costiCent").asLong()).isEqualTo(8700);
+        assertThat(leggi("/api/movimenti?categorie=").get("elementi")).hasSize(5);
+
+        // una categoria
+        JsonNode una = leggi("/api/movimenti?categorie=" + farina);
+        assertThat(una.get("elementi")).hasSize(2);
+        assertThat(una.get("totali").get("costiCent").asLong()).isEqualTo(3000);
+        assertThat(una.get("totali").get("ricaviCent").asLong()).isZero();
+
+        // due categorie: i senza categoria restano fuori
+        JsonNode due = leggi("/api/movimenti?categorie=" + farina + "," + vendite);
+        assertThat(due.get("elementi")).hasSize(3);
+        assertThat(due.get("totali").get("ricaviCent").asLong()).isEqualTo(9000);
+        assertThat(due.get("totali").get("saldoCent").asLong()).isEqualTo(6000);
+
+        // categoria + tipo
+        JsonNode tipo = leggi("/api/movimenti?tipo=COSTO_FISSO&categorie=" + farina + "," + affitto);
+        assertThat(tipo.get("elementi")).hasSize(1);
+        assertThat(tipo.get("totali").get("costiCent").asLong()).isEqualTo(5000);
+
+        // categoria + sedi
+        JsonNode sede = leggi("/api/movimenti?sedi=" + mare + "&categorie=" + farina + "," + affitto);
+        assertThat(sede.get("elementi")).hasSize(1);
+        assertThat(sede.get("elementi").get(0).get("categoria").get("id").asLong()).isEqualTo(affitto);
+        assertThat(leggi("/api/movimenti?sedi=" + mare + "&categorie=" + farina).get("elementi")).isEmpty();
+
+        // categoria + q
+        JsonNode q = leggi("/api/movimenti?q=pastificio&categorie=" + farina);
+        assertThat(q.get("elementi")).hasSize(1);
+        assertThat(q.get("totali").get("costiCent").asLong()).isEqualTo(2000);
+
+        // categoria + periodo
+        assertThat(leggi("/api/movimenti?da=2026-03-02&a=2026-03-02&categorie=" + farina).get("elementi")).hasSize(1);
+    }
+
+    @Test
+    void categoriaInesistenteDaElencoVuotoETotaliAZero() throws Exception {
+        crea(conCategoria(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 1000), "Vendite", null));
+        JsonNode r = leggi("/api/movimenti?categorie=99999");
+        assertThat(r.get("elementi")).isEmpty();
+        assertThat(r.get("totali").get("ricaviCent").asLong()).isZero();
+        assertThat(r.get("totali").get("costiCent").asLong()).isZero();
+        assertThat(r.get("totali").get("saldoCent").asLong()).isZero();
+        errore(get("/api/movimenti?categorie=abc"), null, 400);
+    }
 }

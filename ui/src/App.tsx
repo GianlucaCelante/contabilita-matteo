@@ -6,7 +6,9 @@ import Impostazioni from "./viste/Impostazioni";
 import ImportaFatture from "./viste/ImportaFatture";
 import Movimenti from "./viste/Movimenti";
 import NuovoMovimento from "./viste/NuovoMovimento";
+import PizzeOrdini from "./viste/PizzeOrdini";
 import Riepilogo from "./viste/Riepilogo";
+import Statistiche from "./viste/Statistiche";
 
 // Le viste dietro un solo guscio. Riepilogo e' la rotta di partenza.
 export default function App() {
@@ -19,6 +21,8 @@ export default function App() {
         <Route path="/movimenti/nuovo" element={<NuovoMovimento />} />
         <Route path="/movimenti/importa" element={<ImportaFatture />} />
         <Route path="/movimenti/:id" element={<DettaglioMovimento />} />
+        <Route path="/statistiche" element={<Statistiche />} />
+        <Route path="/statistiche/pizze-ordini" element={<PizzeOrdini />} />
         <Route path="/esporta" element={<Esporta />} />
         <Route path="/impostazioni" element={<Impostazioni />} />
         <Route path="*" element={<Navigate to="/riepilogo" replace />} />

@@ -83,12 +83,18 @@ public abstract class ProvaBase {
                 }
             }
         }
+        jdbc.update("DELETE FROM dati_settimana");
         jdbc.update("DELETE FROM movimento");
         jdbc.update("DELETE FROM ricorrenza");
         jdbc.update("DELETE FROM categoria");
         jdbc.update("DELETE FROM fornitore");
         jdbc.update("DELETE FROM dipendente");
         jdbc.update("DELETE FROM impostazione");
+        // le sedi: resta solo la «Sede principale» (id 1), come in un database nuovo
+        jdbc.update("DELETE FROM sede");
+        jdbc.update("DELETE FROM sqlite_sequence WHERE name = 'sede'");
+        jdbc.update("INSERT INTO sede (id, nome, nome_chiave, archiviata, ordine, creato_il) "
+                + "VALUES (1, 'Sede principale', 'sede principale', 0, 1, '2026-01-01T10:00:00')");
     }
 
     // ---- scorciatoie ----
@@ -100,6 +106,17 @@ public abstract class ProvaBase {
         n.put("documento", documento);
         n.put("importoCent", importoCent);
         return n;
+    }
+
+    /** Lo stesso movimento, assegnato a una sede. */
+    protected ObjectNode inSede(ObjectNode movimento, long sedeId) {
+        movimento.put("sedeId", sedeId);
+        return movimento;
+    }
+
+    /** Crea una sede con la API e torna il suo id. */
+    protected long creaSede(String nome) throws Exception {
+        return invia(post("/api/sedi"), json.createObjectNode().put("nome", nome), 201).get("id").asLong();
     }
 
     protected JsonNode corpo(org.springframework.test.web.servlet.ResultActions r) throws Exception {

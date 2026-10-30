@@ -27,7 +27,7 @@ public final class ImportaDto {
     public record RigaConferma(Integer indice, String categoria) {
     }
 
-    public record Conferma(String importazioneId, List<RigaConferma> righe) {
+    public record Conferma(String importazioneId, List<RigaConferma> righe, Long sedeId) {
     }
 
     public record RigaIgnorata(int indice, String motivo) {

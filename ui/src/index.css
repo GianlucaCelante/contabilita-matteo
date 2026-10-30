@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* Telefono con poca altezza (barre del browser, orizzontale): stesse soglie dei token --d-*. */
-@custom-variant corto (@media (max-width: 767.98px) and (max-height: 700px));
+@custom-variant corto (@media (max-width: 1023.98px) and (max-height: 700px));
 
 /* ============================================================
    Font incorporati: Bricolage Grotesque (titoli) e Atkinson
@@ -43,6 +43,8 @@
 /* Token di stile (docs/interfaccia.md, sezione 5), come utility Tailwind:
    bg-carta, text-tenue, border-bordo, font-titolo... */
 @theme {
+  /* Il layout «da computer» (barra laterale, tabelle) parte da 1024 px; sotto, anche sul tablet in verticale, vale quello da telefono. */
+  --breakpoint-md: 64rem;
   --color-fondo: #EADECE;
   --color-testo: #58443C;
   --color-tenue: #6B5B4F;
@@ -90,10 +92,10 @@
 }
 /* Telefono con poca altezza (barre del browser, orizzontale): la barra in
    basso e i pulsanti fissi si stringono ma restano >= 44 px. */
-@media (max-width: 767.98px) and (max-height: 700px) {
+@media (max-width: 1023.98px) and (max-height: 700px) {
   :root { --d-nav: 54px; --d-barra: 52px; }
 }
-@media (max-width: 767.98px) and (max-height: 600px) {
+@media (max-width: 1023.98px) and (max-height: 600px) {
   :root { --d-nav: 50px; --d-barra: 48px; }
 }
 
@@ -128,7 +130,7 @@ html {
   scrollbar-width: thin;
   scrollbar-color: var(--color-bordo2) transparent;
 }
-@media (max-width: 767.98px) {
+@media (max-width: 1023.98px) {
   * { scrollbar-width: none; }
   /* Tocco senza selezione ne' menu di sistema sui controlli (pulsanti, voci
      della barra in basso): una pressione lunga non seleziona il testo. I campi
@@ -216,6 +218,7 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     border-radius: 10px; border: 1px solid var(--color-bordo2); background: var(--color-carta); color: var(--color-testo);
   }
   .btnIcona:hover:not(:disabled) { background: var(--color-sabbia); }
+  .btnIcona:disabled { opacity: 0.4; cursor: default; }
 
   /* Selettore a segmenti (Settimana, Mese, ...) */
   .segmenti {
@@ -229,7 +232,7 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
   .segmenti > [aria-pressed="true"], .segmenti > [aria-current="page"] { background: var(--color-testo); color: #fff; }
   .segmenti > :focus-visible { outline-offset: -3px; }
 
-  /* Scelte esclusive grandi (Cosa registri, Documento) */
+  /* Scelte esclusive grandi (Che cos'è, Documento) */
   .scelta {
     flex: 1 1 0; min-width: max-content; white-space: nowrap; min-height: 56px; border: 1px solid var(--color-bordo2); border-radius: 12px; background: var(--color-carta);
     display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 16px; font-weight: 700;
@@ -264,10 +267,32 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .rigaMov:hover { background: var(--color-sabbia); }
-  @media (min-width: 768px) {
+  @media (min-width: 1024px) {
     .rigaMov { min-height: 54px; padding: 0 20px; }
     .rigaMov, .intestazioneTabella {
       grid-template-columns: 84px 112px minmax(0, 1fr) 150px 150px 120px;
+    }
+  }
+
+  /* Sedi: la pillola (selettore sedi, scelta della sede nel modulo) e il foglio dal basso del telefono. */
+  .pillaSede {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 8px; border: 1px solid var(--color-bordo2);
+    border-radius: 22px; background: var(--color-carta); color: var(--color-testo); font-size: 14px; font-weight: 700; white-space: nowrap;
+    text-decoration: none;
+  }
+  .pillaSede.senzaBadge { padding-left: 14px; }
+  .pillaSede:hover:not(:disabled) { background: var(--color-sabbia); }
+  .pillaSede:is([aria-pressed="true"], [aria-checked="true"]) { background: var(--color-verdechiaro); border-color: var(--color-verde); color: var(--color-verdescuro); }
+  .pillaSede:disabled { opacity: 0.55; }
+  .casellaSede {
+    display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex-shrink: 0; border-radius: 7px;
+    border: 2px solid var(--color-bordocampo); background: var(--color-carta); color: #fff;
+  }
+  [aria-checked="true"] > .casellaSede { background: var(--color-verde); border-color: var(--color-verde); }
+  @media (max-width: 1023.98px) {
+    .velo:has(> .finestra.foglio) { align-items: flex-end; padding: 0; }
+    .finestra.foglio {
+      max-width: none; max-height: 88%; border-radius: 20px 20px 0 0; padding: 20px 16px max(20px, env(safe-area-inset-bottom));
     }
   }
 
@@ -284,7 +309,7 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     display: flex; align-items: center; justify-content: center; padding: 12px;
   }
   /* Telefono con incavo o barra dei gesti: le finestre non vanno sotto. */
-  @media (max-width: 767.98px) {
+  @media (max-width: 1023.98px) {
     .velo {
       padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
         max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
@@ -311,12 +336,16 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     background: var(--color-testo); color: #fff; font-size: 15px; box-shadow: var(--shadow-ombra); max-width: 520px;
   }
   .avvisino.errore { background: var(--color-rossochiaro); color: var(--color-rosso); border: 1px solid var(--color-rossobordo); }
+  /* In cima allo schermo: l'errore di un modulo non deve coprire il campo sbagliato e il suo messaggio */
+  .avvisino.alto {
+    position: fixed; top: calc(10px + env(safe-area-inset-top)); left: 12px; right: 12px; width: fit-content; margin-inline: auto;
+  }
   .zonaAvvisi {
     position: fixed; left: 12px; right: 12px; bottom: 84px; z-index: 60; display: flex; flex-direction: column;
     align-items: center; gap: 8px; pointer-events: none;
   }
   .zonaAvvisi > * { pointer-events: auto; }
-  @media (min-width: 768px) { .zonaAvvisi { bottom: 24px; } }
+  @media (min-width: 1024px) { .zonaAvvisi { bottom: 24px; } }
 
   .interruttore {
     position: relative; width: 52px; height: 30px; border-radius: 15px; background: var(--color-verde); flex-shrink: 0;

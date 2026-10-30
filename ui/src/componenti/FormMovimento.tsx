@@ -1,9 +1,13 @@
 import { useId, useMemo, type InputHTMLAttributes, type ReactNode } from "react";
+import BadgeSede from "./BadgeSede";
 import Combobox from "./Combobox";
+import GestioneCategoria from "./GestioneCategoria";
 import SceltaFrequenza from "./SceltaFrequenza";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { useSedi } from "../hooks/useSedi";
 import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori } from "../hooks/useSuggerimenti";
 import {
+  alternaSede,
   campiDaNomeVoce,
   chiedeCategoria,
   chiedeDescrizione,
@@ -11,11 +15,14 @@ import {
   nomeVoce,
   opzioniVoce,
   ripetibile,
+  sediDelleDivisione,
   type CampiForm,
   type Errori,
   vociPersonalizzate,
 } from "../util/modelloMovimento";
 import type { Tipo } from "../api/tipi";
+import { leggiEuro } from "../util/formato";
+import { anteprimaDivisione } from "../util/sedi";
 
 interface Opzione<T extends string> {
   valore: T;
@@ -68,12 +75,15 @@ function Campo({
   facoltativo,
   errore,
   suffisso,
+  nota,
   ...input
 }: {
   etichetta: ReactNode;
   facoltativo?: boolean;
   errore?: string | undefined;
   suffisso?: string;
+  // Una riga di spiegazione sotto il campo (se non c'e' un errore).
+  nota?: string;
 } & InputHTMLAttributes<HTMLInputElement>) {
   const id = useId();
   return (
@@ -82,12 +92,17 @@ function Campo({
         {etichetta} {facoltativo && <span className="font-normal">(facoltativo)</span>}
       </label>
       <div className={"campo" + (errore ? " errore" : "")}>
-        <input id={id} aria-invalid={errore ? true : undefined} aria-describedby={errore ? `${id}-e` : undefined} {...input} />
+        <input id={id} aria-invalid={errore ? true : undefined} aria-describedby={errore ? `${id}-e` : nota ? `${id}-n` : undefined} {...input} />
         {suffisso && <span className="text-spento">{suffisso}</span>}
       </div>
       {errore && (
         <p id={`${id}-e`} className="m-0 mt-1 text-[13px] font-bold text-rosso">
           {errore}
+        </p>
+      )}
+      {nota && !errore && (
+        <p id={`${id}-n`} className="m-0 mt-1 text-[13px] text-spento">
+          {nota}
         </p>
       )}
     </div>
@@ -135,14 +150,95 @@ interface ProprietaForm {
 function RigaRipeti({ campi, onAccendi, onCambia, errori }: { campi: CampiForm; onAccendi: () => void; onCambia: (parziale: Partial<CampiForm>) => void; errori: Errori }) {
   return (
     <div className="rounded-xl border border-bordo2 bg-crema px-[18px] py-1 max-md:px-3">
-      <button type="button" role="switch" aria-checked={campi.ripeti} className="flex min-h-14 w-full items-center gap-3.5 text-left max-md:gap-3" onClick={onAccendi}>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={campi.ripeti}
+        className="flex min-h-14 w-full items-center gap-3.5 text-left max-md:gap-3"
+        onClick={onAccendi}
+      >
         <span className={"interruttoreCompatto" + (campi.ripeti ? "" : " off")} aria-hidden="true" />
         <span className="text-[16px] font-bold">Ripeti</span>
       </button>
+      {campi.dividi && campi.ripeti && (
+        <p className="m-0 pb-3 text-[13px] text-spento">Ogni sede ripete la sua parte: i mesi dopo escono già divisi.</p>
+      )}
       {campi.ripeti && (
         <div className="pb-3.5">
           <SceltaFrequenza campi={campi} errori={errori} onCambia={onCambia} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// «Di quale sede»: una pillola con la lettera per ogni sede attiva. In creazione si possono scegliere una, due o tutte le sedi
+// (si toccano le pillole che servono; «Tutte, dividi» le sceglie in un colpo): con due o piu' un movimento per sede, importo
+// diviso in parti uguali. In modifica la sede si puo' cambiare ma non dividere. Compare solo con almeno due sedi attive.
+function SceltaSede({ campi, onCambia, errore, modifica }: { campi: CampiForm; onCambia: (parziale: Partial<CampiForm>) => void; errore?: string | undefined; modifica?: boolean }) {
+  const sedi = useSedi();
+  const id = useId();
+  if (!sedi.piu) return null;
+  // Una sede archiviata resta visibile se e' quella del movimento che si sta modificando.
+  const archiviataAttuale = modifica ? sedi.sedi.find((s) => s.archiviata && s.id === campi.sedeId) : undefined;
+  const opzioni = archiviataAttuale ? [archiviataAttuale, ...sedi.attive] : sedi.attive;
+  const idAttive = sedi.attive.map((s) => s.id);
+  const divise = campi.dividi ? sediDelleDivisione(campi, idAttive) : [];
+  const importo = leggiEuro(campi.importo);
+  const anteprima = campi.dividi && importo !== null && importo > 0 ? anteprimaDivisione(importo, divise.length) : "";
+  const tutteScelte = campi.dividi && divise.length === idAttive.length;
+  const nomi = sedi.attive.filter((s) => divise.includes(s.id)).map((s) => s.nome);
+  const nomiDivise = nomi.length > 1 ? `${nomi.slice(0, -1).join(", ")} e ${nomi[nomi.length - 1]}` : nomi.join("");
+  return (
+    <div>
+      <div id={id} className="etichetta">
+        {modifica ? "Di quale sede" : "Di quale sede (una o più)"}
+      </div>
+      <div role={modifica ? "radiogroup" : "group"} aria-labelledby={id} aria-describedby={errore ? `${id}-e` : undefined} className="flex flex-wrap gap-2">
+        {opzioni.map((s) => {
+          const scelta = campi.dividi ? divise.includes(s.id) : campi.sedeId === s.id;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              role={modifica ? "radio" : "checkbox"}
+              aria-checked={scelta}
+              className="pillaSede"
+              onClick={() => onCambia(modifica ? { sedeId: s.id, dividi: false, sediDivise: [] } : alternaSede(campi, s.id, idAttive))}
+            >
+              <BadgeSede id={s.id} taglia="piccolo" decorativo />
+              {s.nome}
+              {s.archiviata ? " (archiviata)" : ""}
+            </button>
+          );
+        })}
+        {!modifica && (
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={tutteScelte}
+            className="pillaSede senzaBadge"
+            onClick={() => onCambia(tutteScelte ? { dividi: false, sedeId: null, sediDivise: [] } : { dividi: true, sedeId: null, sediDivise: [] })}
+          >
+            Tutte, dividi
+          </button>
+        )}
+      </div>
+      {campi.dividi && (
+        <p className="m-0 mt-1.5 text-[13px] text-spento" aria-live="polite">
+          {anteprima ? (
+            <>
+              Diviso fra {tutteScelte ? `le ${divise.length} sedi` : nomiDivise}: <b className="num text-testo">{anteprima}</b>
+            </>
+          ) : (
+            `Scrivi l'importo: lo divido in parti uguali fra ${tutteScelte ? `le ${divise.length} sedi` : nomiDivise}.`
+          )}
+        </p>
+      )}
+      {errore && (
+        <p id={`${id}-e`} className="m-0 mt-1 text-[13px] font-bold text-rosso">
+          {errore}
+        </p>
       )}
     </div>
   );
@@ -178,15 +274,8 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const campoImporto = (
     <Campo
       key="importo"
-      etichetta={
-        campi.tipo === "COSTO_VARIABILE" ? (
-          <>
-            Importo<span className="max-md:hidden"> totale</span>
-          </>
-        ) : (
-          "Importo"
-        )
-      }
+      etichetta="Importo"
+      nota={campi.dividi ? "Totale da dividere" : undefined}
       type="text"
       inputMode="decimal"
       autoComplete="off"
@@ -224,7 +313,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
 
   return (
     <div className={"flex flex-col [&_.etichetta]:leading-4 " + (modifica ? "gap-[18px] max-md:gap-3.5" : "gap-5 max-md:gap-4")}>
-      {!modifica && <Scelte legenda="Cosa registri" valore={campi.tipo} opzioni={TIPI} onScegli={cambiaTipo} />}
+      {!modifica && <Scelte legenda="Che cos'è" valore={campi.tipo} opzioni={TIPI} onScegli={cambiaTipo} />}
 
       {campi.tipo === "RICAVO" && (
         <Scelte legenda="Che ricavo è" valore={campi.tipoRicavo} opzioni={OPZIONI_RICAVO} onScegli={(v) => onCambia({ tipoRicavo: v })} bassa={modifica} />
@@ -237,17 +326,20 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
 
       {campi.tipo === "COSTO_FISSO" && (
         <div className={modifica ? "grid items-start gap-4 md:grid-cols-2" : "contents"}>
-          <Combobox
-            etichetta="Voce fissa"
-            cosa="voce" genere="f"
-            value={nomeVoce(campi)}
-            onChange={(v) => onCambia(campiDaNomeVoce(v))}
-            opzioni={opzioniVoce(nomeVoce(campi), proprie)}
-            inCaricamento={categorieFisse.inCaricamento}
-            errore={categorieFisse.errore}
-            invalido={!!errori.categoria}
-            messaggioErrore={errori.categoria}
-          />
+          <div className="min-w-0">
+            <Combobox
+              etichetta="Voce fissa"
+              cosa="voce" genere="f"
+              value={nomeVoce(campi)}
+              onChange={(v) => onCambia(campiDaNomeVoce(v))}
+              opzioni={opzioniVoce(nomeVoce(campi), proprie)}
+              inCaricamento={categorieFisse.inCaricamento}
+              errore={categorieFisse.errore}
+              invalido={!!errori.categoria}
+              messaggioErrore={errori.categoria}
+            />
+            <GestioneCategoria campi={campi} onCambia={onCambia} />
+          </div>
           {retribuzione && (
             <Scelte
               legenda="Tipo di retribuzione"
@@ -259,6 +351,8 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
           )}
         </div>
       )}
+
+      <SceltaSede campi={campi} onCambia={onCambia} errore={errori.sedeId} modifica={modifica} />
 
       {grande ? (
         <div className="grid grid-cols-3 gap-4">
@@ -289,15 +383,19 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
             />
           )}
           {chiedeCategoriaForm && (
-            <Combobox
-              etichetta={campi.tipo === "COSTO_FISSO" ? "Nome della voce" : "Categoria"}
-              cosa={campi.tipo === "COSTO_FISSO" ? "voce" : "categoria"} genere="f"
-              value={campi.categoria}
-              onChange={(v) => onCambia({ categoria: v })}
-              invalido={!!errori.categoria}
-              messaggioErrore={errori.categoria}
-              {...categorie}
-            />
+            <div className="min-w-0">
+              <Combobox
+                etichetta="Categoria"
+                cosa="categoria" genere="f"
+                value={campi.categoria}
+                onChange={(v) => onCambia({ categoria: v })}
+                facoltativo={campi.tipo === "RICAVO"}
+                invalido={!!errori.categoria}
+                messaggioErrore={errori.categoria}
+                {...categorie}
+              />
+              <GestioneCategoria campi={campi} onCambia={onCambia} />
+            </div>
           )}
         </div>
       )}

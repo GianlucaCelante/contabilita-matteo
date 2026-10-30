@@ -13,10 +13,10 @@ import java.util.Optional;
 public interface MovimentoRepository extends JpaRepository<Movimento, Long>, JpaSpecificationExecutor<Movimento> {
 
     @Override
-    @EntityGraph(attributePaths = {"categoria", "fornitore", "dipendente", "ricorrenza"})
+    @EntityGraph(attributePaths = {"categoria", "fornitore", "dipendente", "ricorrenza", "sede"})
     List<Movimento> findAll(Specification<Movimento> spec, Sort sort);
 
-    @EntityGraph(attributePaths = {"categoria", "fornitore", "dipendente", "ricorrenza"})
+    @EntityGraph(attributePaths = {"categoria", "fornitore", "dipendente", "ricorrenza", "sede"})
     Optional<Movimento> findWithRelazioniById(Long id);
 
     /** Le fatture gia' registrate con quel numero e quella data (il fornitore si confronta nel servizio). */
@@ -30,6 +30,10 @@ public interface MovimentoRepository extends JpaRepository<Movimento, Long>, Jpa
     /** Quanti movimenti ha ogni fornitore: {@code [id del fornitore, numero]} (per ordinare i suggerimenti). */
     @org.springframework.data.jpa.repository.Query("select m.fornitore.id, count(m) from Movimento m where m.fornitore is not null group by m.fornitore.id")
     List<Object[]> contaPerFornitore();
+
+    /** Quanti movimenti ha ogni sede: {@code [id della sede, numero]}. */
+    @org.springframework.data.jpa.repository.Query("select m.sede.id, count(m) from Movimento m group by m.sede.id")
+    List<Object[]> contaPerSede();
 
     boolean existsByRicorrenzaIdAndData(Long ricorrenzaId, LocalDate data);
 }

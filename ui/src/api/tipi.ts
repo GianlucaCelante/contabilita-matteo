@@ -23,6 +23,8 @@ export interface Categoria {
   id: number;
   nome: string;
   tipo: Tipo;
+  // Vero per le categorie create da chi usa l'app (dal movimento o a mano): solo queste si rinominano. Le predefinite no.
+  personalizzata: boolean;
 }
 export interface Fornitore {
   id: number;
@@ -36,6 +38,15 @@ export interface Dipendente {
 export interface RifNome {
   id: number;
   nome: string;
+}
+
+// Una sede (docs/api.md, «Sedi»). `movimenti` e' il numero di movimenti della sede.
+export interface Sede {
+  id: number;
+  nome: string;
+  archiviata: boolean;
+  ordine: number;
+  movimenti: number;
 }
 
 export interface RicorrenzaMovimento {
@@ -57,6 +68,7 @@ export interface Movimento {
   categoria: RifNome | null;
   fornitore: RifNome | null;
   dipendente: RifNome | null;
+  sede: RifNome;
   descrizione: string | null;
   numeroDocumento: string | null;
   note: string | null;
@@ -79,6 +91,8 @@ export interface MovimentoInput {
   descrizione?: string;
   numeroDocumento?: string;
   note?: string;
+  // Vedi «Quale sede» in docs/api.md: con una sola sede attiva si puo' omettere.
+  sedeId?: number;
   // Senza unita e intervallo vale «ogni mese»; il giorno serve per mesi e anni.
   ricorrenza?: { giorno?: number; unita?: UnitaRipetizione; intervallo?: number } | null;
 }
@@ -99,21 +113,34 @@ export interface FiltroMovimenti {
   tipo?: Tipo;
   q?: string;
   dipendente?: number;
+  // «1,2»: le sedi scelte. Assente = tutte.
+  sedi?: string;
+  // «3,7»: id di categoria. Assente = tutte; i movimenti senza categoria (retribuzioni) restano fuori quando c'e'.
+  categorie?: string;
+}
+
+// Una riga del Riepilogo per categoria. Nei ricavi e nei costi variabili sono solo le categorie personalizzate
+// (l'importo di una nota di credito conta in negativo); l'ordine e' quello del servizio.
+export interface VoceRiepilogo {
+  categoria: string;
+  importoCent: number;
 }
 
 export interface Riepilogo {
   da: string;
   a: string;
-  ricavi: { fatturatiCent: number; extraCent: number; totaleCent: number };
-  costiVariabili: { fattureCent: number; scontriniCent: number; totaleCent: number };
+  ricavi: { fatturatiCent: number; extraCent: number; altreVoci: VoceRiepilogo[]; totaleCent: number };
+  costiVariabili: { fattureCent: number; scontriniCent: number; altreVoci: VoceRiepilogo[]; totaleCent: number };
   costiFissi: {
     retribuzioneRegolareCent: number;
     retribuzioneExtraCent: number;
-    altreVoci: { categoria: string; importoCent: number }[];
+    altreVoci: VoceRiepilogo[];
     totaleCent: number;
   };
   costiCent: number;
   risultatoCent: number;
+  // Una riga per ogni sede scelta; la somma e' uguale ai totali.
+  perSede?: { sede: RifNome; ricaviCent: number; costiCent: number; risultatoCent: number }[];
 }
 
 export interface IndirizzoRete {
@@ -140,4 +167,59 @@ export interface CopiaBackup {
 export interface RispostaRipristino {
   riavvio: boolean;
   copiaDiSicurezza: string;
+}
+
+// ---- Statistiche (docs/api.md, «Statistiche») ----
+
+// Una sede in una settimana (GET /api/statistiche/settimana). Senza dati inseriti: pizze, ordini e medie sono null.
+export interface RigaSettimana {
+  sede: RifNome;
+  pizze: number | null;
+  ordini: number | null;
+  ricaviCent: number;
+  scontrinoMedioCent: number | null;
+  pizzePerOrdine: number | null;
+  completa: boolean;
+}
+export interface Settimana {
+  // Il lunedi' (yyyy-MM-dd) e la domenica della settimana.
+  settimana: string;
+  fine: string;
+  sedi: RigaSettimana[];
+}
+export interface VoceSettimanaInput {
+  sedeId: number;
+  pizze: number | null;
+  ordini: number | null;
+}
+export interface SettimanaInput {
+  settimana: string;
+  voci: VoceSettimanaInput[];
+}
+
+export interface MedieStatistiche {
+  pizze: number;
+  ordini: number;
+  ricaviCent: number;
+  scontrinoMedioCent: number | null;
+  pizzePerOrdine: number | null;
+}
+export interface StatisticheSede extends MedieStatistiche {
+  sede: RifNome;
+  settimaneConDati: number;
+}
+export interface StatisticheSettimana {
+  settimana: string;
+  pizze: number;
+  ordini: number;
+  ricaviCent: number;
+  scontrinoMedioCent: number | null;
+  sediMancanti: RifNome[];
+}
+export interface Statistiche {
+  da: string;
+  a: string;
+  totale: MedieStatistiche & { settimaneConDati: number; settimaneTotali: number };
+  perSede: StatisticheSede[];
+  settimane: StatisticheSettimana[];
 }

@@ -16,6 +16,7 @@ import it.contabilita.dati.Origine;
 import it.contabilita.dati.Ricorrenza;
 import it.contabilita.dati.Tipo;
 import it.contabilita.ricorrenze.RicorrenzeService;
+import it.contabilita.dati.Sede;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
@@ -29,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /** Il registro dei movimenti: elenco con totali, lettura, creazione, modifica e eliminazione con ambito. */
 @Service
@@ -44,21 +46,24 @@ public class MovimentiService {
     private final RicorrenzeService ricorrenze;
     private final Clock clock;
     private final AllegatiService allegati;
+    private final SediService sedi;
 
     public MovimentiService(MovimentoRepository movimenti, AnagraficheService anagrafiche,
-                            RicorrenzeService ricorrenze, Clock clock, AllegatiService allegati) {
+                            RicorrenzeService ricorrenze, Clock clock, AllegatiService allegati, SediService sedi) {
         this.movimenti = movimenti;
         this.anagrafiche = anagrafiche;
         this.ricorrenze = ricorrenze;
         this.clock = clock;
         this.allegati = allegati;
+        this.sedi = sedi;
     }
 
     // ---- lettura ----
 
     /** Movimenti del periodo, in ordine di data e id decrescenti, con i totali (di tutto l'elenco filtrato). */
     @Transactional(readOnly = true)
-    public ElencoMovimenti elenca(LocalDate da, LocalDate a, Tipo tipo, String q, Long dipendenteId) {
+    public ElencoMovimenti elenca(LocalDate da, LocalDate a, Tipo tipo, String q, Long dipendenteId, Set<Long> sediIds,
+                                   Set<Long> categorieIds) {
         if (da != null && a != null && da.isAfter(a)) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "La data iniziale non può essere dopo quella finale.");
         }
@@ -75,6 +80,13 @@ public class MovimentiService {
             }
             if (dipendenteId != null) {
                 p.add(cb.equal(root.get("dipendente").get("id"), dipendenteId));
+            }
+            if (sediIds != null) {
+                p.add(root.get("sede").get("id").in(sediIds));
+            }
+            if (categorieIds != null) {
+                // i movimenti senza categoria (es. le retribuzioni) restano fuori
+                p.add(root.get("categoria").get("id").in(categorieIds));
             }
             return cb.and(p.toArray(new Predicate[0]));
         };
@@ -121,9 +133,14 @@ public class MovimentiService {
     @Transactional
     public MovimentoDto crea(MovimentoInput input) {
         valida(input);
+        return creaIn(input, sedi.perNuovoMovimento(input.sedeId()));
+    }
+
+    private MovimentoDto creaIn(MovimentoInput input, Sede sede) {
         LocalDateTime adesso = LocalDateTime.now(clock).withNano(0);
         Movimento m = new Movimento();
         applica(m, input);
+        m.setSede(sede);
         m.setOrigine(Origine.MANO);
         m.setCreatoIl(adesso);
         m.setModificatoIl(adesso);
@@ -138,11 +155,54 @@ public class MovimentiService {
         return risultato;
     }
 
+    /**
+     * «Tutte le sedi, dividi»: un movimento per ogni sede attiva, con l'importo diviso in parti uguali; i centesimi di
+     * resto vanno uno ciascuno alle prime sedi (per ordine), cosi' la somma delle parti e' l'importo esatto. Tutto in
+     * una transazione. Se l'importo ha meno centesimi delle sedi, le sedi in fondo restano senza parte (un movimento
+     * da zero non esiste). Se il movimento e' ripetuto (costo fisso), ogni sede ha la sua ripetizione con la sua parte:
+     * i mesi dopo escono gia' divisi. Con {@code sediScelte} (gli id) si divide solo fra quelle sedi, che devono essere almeno due
+     * e attive; senza (null) fra tutte le sedi attive.
+     */
+    @Transactional
+    public List<MovimentoDto> dividi(MovimentoInput input, Set<Long> sediScelte) {
+        valida(input);
+        if (input.sedeId() != null) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Per dividere fra più sedi non indicare la sede.");
+        }
+        List<Sede> attive = sedi.attive();
+        if (sediScelte != null) {
+            if (sediScelte.size() < 2) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Per dividere scegli almeno due sedi.");
+            }
+            for (Long id : sediScelte) {
+                sedi.perNuovoMovimento(id); // sede inesistente o archiviata = 400
+            }
+            attive = attive.stream().filter(s -> sediScelte.contains(s.getId())).toList();
+        }
+        long base = input.importoCent() / attive.size();
+        long resto = input.importoCent() % attive.size();
+        List<MovimentoDto> creati = new ArrayList<>();
+        for (int i = 0; i < attive.size(); i++) {
+            long parte = base + (i < resto ? 1 : 0);
+            if (parte <= 0) {
+                continue;
+            }
+            MovimentoInput perSede = new MovimentoInput(input.data(), input.tipo(), input.documento(), parte,
+                    input.categoria(), input.fornitore(), input.dipendente(), input.descrizione(),
+                    input.numeroDocumento(), input.note(), input.ricorrenza(), null);
+            creati.add(creaIn(perSede, attive.get(i)));
+        }
+        return creati;
+    }
+
     @Transactional
     public MovimentoDto modifica(Long id, MovimentoInput input, Ambito ambito) {
         valida(input);
         Movimento m = trova(id);
         applica(m, input);
+        if (input.sedeId() != null && !input.sedeId().equals(m.getSede().getId())) {
+            m.setSede(sedi.perNuovoMovimento(input.sedeId())); // spostare un movimento su una sede archiviata non si puo'
+        }
         m.setModificatoIl(LocalDateTime.now(clock).withNano(0));
         Ricorrenza r = m.getRicorrenza();
         boolean generare = false;
@@ -246,6 +306,7 @@ public class MovimentiService {
                 m.getCategoria() == null ? null : new Rif(m.getCategoria().getId(), m.getCategoria().getNome()),
                 m.getFornitore() == null ? null : new Rif(m.getFornitore().getId(), m.getFornitore().getNome()),
                 m.getDipendente() == null ? null : new Rif(m.getDipendente().getId(), m.getDipendente().getNome()),
+                new Rif(m.getSede().getId(), m.getSede().getNome()),
                 m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(),
                 r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo(), r.getProssimaData()),
                 m.getAllegatoNome(), m.getCreatoIl(),

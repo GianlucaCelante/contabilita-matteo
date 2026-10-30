@@ -89,6 +89,77 @@ class RiepilogoApiTest extends ProvaBase {
         assertThat(elenco.get("elementi").get(0).get("importoCent").asLong()).isEqualTo(5000); // l'importo resta positivo
     }
 
+    private ObjectNode conCategoria(ObjectNode m, String categoria) {
+        m.put("categoria", categoria);
+        return m;
+    }
+
+    /**
+     * Ricavi: fatturati 100000, Delivery 30000 + 12000 (personalizzata). Costi variabili: fattura «Farine» 20000 con
+     * categoria predefinita (inserita a mano nel database di prova: il backend non ne ha fra i costi variabili),
+     * scontrino senza categoria 1500, Imballaggi 8000 - nota 3000, Bibite 900. Le categorie personalizzate vanno nella
+     * loro riga e non in Fatture/Scontrini/Extra/Fatturati; i totali sono quelli di sempre.
+     */
+    @Test
+    void leCategoriePersonalizzateHannoLaLoroRigaETotaliInvariati() throws Exception {
+        crea(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 100000));
+        crea(conCategoria(movimento("2026-03-02", "RICAVO", "RICAVO_EXTRA", 30000), "Delivery"));
+        crea(conCategoria(movimento("2026-03-03", "RICAVO", "RICAVO_FATTURATO", 12000), "delivery"));
+        jdbc.update("INSERT INTO categoria (nome, nome_chiave, tipo, personalizzata) VALUES ('Farine', 'farine', 'COSTO_VARIABILE', 0)");
+        crea(conCategoria(movimento("2026-03-04", "COSTO_VARIABILE", "FATTURA", 20000), "Farine")); // predefinita: resta in «Fatture»
+        crea(movimento("2026-03-05", "COSTO_VARIABILE", "SCONTRINO", 1500)); // idem, «Scontrini»
+        crea(conCategoria(movimento("2026-03-06", "COSTO_VARIABILE", "FATTURA", 8000), "Imballaggi"));
+        crea(conCategoria(movimento("2026-03-07", "COSTO_VARIABILE", "NOTA_DI_CREDITO", 3000), "Imballaggi"));
+        crea(conCategoria(movimento("2026-03-08", "COSTO_VARIABILE", "SCONTRINO", 900), "Bibite"));
+        crea(conCategoria(movimento("2026-03-09", "COSTO_FISSO", "NESSUNO", 60000), "Affitto"));
+        crea(conCategoria(movimento("2026-03-10", "COSTO_FISSO", "NESSUNO", 4000), "Commercialista")); // fisso: come prima
+
+        JsonNode r = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31");
+        JsonNode ricavi = r.get("ricavi");
+        assertThat(ricavi.get("fatturatiCent").asLong()).isEqualTo(100000);
+        assertThat(ricavi.get("extraCent").asLong()).isZero();
+        assertThat(ricavi.get("altreVoci")).hasSize(1);
+        assertThat(ricavi.get("altreVoci").get(0).get("categoria").asText()).isEqualTo("Delivery");
+        assertThat(ricavi.get("altreVoci").get(0).get("importoCent").asLong()).isEqualTo(42000);
+        assertThat(ricavi.get("totaleCent").asLong()).isEqualTo(142000);
+
+        JsonNode variabili = r.get("costiVariabili");
+        assertThat(variabili.get("fattureCent").asLong()).isEqualTo(20000);
+        assertThat(variabili.get("scontriniCent").asLong()).isEqualTo(1500);
+        assertThat(variabili.get("altreVoci")).hasSize(2);
+        assertThat(variabili.get("altreVoci").get(0).get("categoria").asText()).isEqualTo("Imballaggi");
+        assertThat(variabili.get("altreVoci").get(0).get("importoCent").asLong()).isEqualTo(5000); // 8000 - nota 3000
+        assertThat(variabili.get("altreVoci").get(1).get("categoria").asText()).isEqualTo("Bibite");
+        assertThat(variabili.get("altreVoci").get(1).get("importoCent").asLong()).isEqualTo(900);
+        assertThat(variabili.get("totaleCent").asLong()).isEqualTo(27400);
+
+        JsonNode fissi = r.get("costiFissi");
+        assertThat(fissi.get("altreVoci")).hasSize(2);
+        assertThat(fissi.get("totaleCent").asLong()).isEqualTo(64000);
+        // gli stessi totali di prima della regola: 142000 ricavi, 27400 + 64000 costi
+        assertThat(r.get("costiCent").asLong()).isEqualTo(91400);
+        assertThat(r.get("risultatoCent").asLong()).isEqualTo(50600);
+
+        // la ripartizione per sede non cambia
+        JsonNode sede = r.get("perSede").get(0);
+        assertThat(sede.get("ricaviCent").asLong()).isEqualTo(142000);
+        assertThat(sede.get("costiCent").asLong()).isEqualTo(91400);
+        // e l'elenco dei movimenti ha gli stessi totali
+        assertThat(leggi("/api/movimenti?da=2026-03-01&a=2026-03-31").get("totali").get("saldoCent").asLong()).isEqualTo(50600);
+    }
+
+    @Test
+    void conIlFiltroSediLeRigheDiCategoriaSeguonoLeSedi() throws Exception {
+        long mare = creaSede("Sede Mare");
+        crea(inSede(conCategoria(movimento("2026-03-02", "RICAVO", "RICAVO_EXTRA", 30000), "Delivery"), 1));
+        crea(inSede(conCategoria(movimento("2026-03-03", "RICAVO", "RICAVO_EXTRA", 5000), "Delivery"), mare));
+        JsonNode r = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31&sedi=" + mare);
+        assertThat(r.get("ricavi").get("altreVoci").get(0).get("importoCent").asLong()).isEqualTo(5000);
+        assertThat(r.get("ricavi").get("totaleCent").asLong()).isEqualTo(5000);
+        JsonNode tutte = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31");
+        assertThat(tutte.get("ricavi").get("altreVoci").get(0).get("importoCent").asLong()).isEqualTo(35000);
+    }
+
     @Test
     void ilPeriodoSiRestringeEUnPeriodoVuotoDaTuttoZero() throws Exception {
         inserisciSet();

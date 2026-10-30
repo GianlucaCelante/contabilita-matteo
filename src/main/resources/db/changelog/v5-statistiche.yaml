@@ -1,0 +1,72 @@
+databaseChangeLog:
+  # Versione 5: statistiche settimanali. Pizze e ordini si caricano a mano, una volta a settimana per sede, e servono a
+  # ricavare scontrino medio (ricavi / ordini) e pizze per ordine.
+  # - tabella dati_settimana: una riga per (sede, settimana); settimana e' il LUNEDI' della settimana ISO (yyyy-MM-dd),
+  #   calcolato dal servizio; l'indice unico (sede_id, settimana) permette un solo dato per sede e settimana;
+  # - pizze e ordini non negativi (CHECK); la coerenza fra i due (ordini 0 => pizze 0) la controlla il servizio.
+  # Tabella nuova: createTable va bene anche su SQLite (e' addColumn con chiave esterna che non funziona).
+  # Il contesto «statistiche» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 50-dati-settimana
+      author: contabilita
+      context: statistiche
+      changes:
+        - createTable:
+            tableName: dati_settimana
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: sede_id
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_dati_settimana_sede
+                    references: sede(id)
+              - column:
+                  name: settimana
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: pizze
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ordini
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modificato_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_dati_settimana_sede_settimana
+            tableName: dati_settimana
+            unique: true
+            columns:
+              - column:
+                  name: sede_id
+              - column:
+                  name: settimana
+        - sql:
+            splitStatements: false
+            comment: "Numeri non negativi anche se qualcuno scrive nel database senza passare dal servizio (SQLite non aggiunge CHECK con ALTER: si fa con due trigger)."
+            sql: >
+              CREATE TRIGGER tr_dati_settimana_ins BEFORE INSERT ON dati_settimana
+              WHEN NEW.pizze < 0 OR NEW.ordini < 0
+              BEGIN SELECT RAISE(ABORT, 'pizze e ordini non possono essere negativi'); END
+        - sql:
+            splitStatements: false
+            sql: >
+              CREATE TRIGGER tr_dati_settimana_upd BEFORE UPDATE ON dati_settimana
+              WHEN NEW.pizze < 0 OR NEW.ordini < 0
+              BEGIN SELECT RAISE(ABORT, 'pizze e ordini non possono essere negativi'); END

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, createHashRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
 import { ProviderAvviso } from "./componenti/Avviso";
+import { ProviderSedi } from "./componenti/ProviderSedi";
 import "./index.css";
 
 // Build della demo (npm run build:demo): il servizio e' finto, dentro il browser (src/demo), e il router usa
@@ -34,7 +35,9 @@ const router = (demo ? createHashRouter : createBrowserRouter)([
     path: "*",
     element: (
       <ProviderAvviso>
-        <App />
+        <ProviderSedi>
+          <App />
+        </ProviderSedi>
       </ProviderAvviso>
     ),
   },

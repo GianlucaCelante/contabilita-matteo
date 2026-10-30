@@ -133,6 +133,7 @@ public class RicorrenzeService {
         r.setCategoria(m.getCategoria());
         r.setFornitore(m.getFornitore());
         r.setDipendente(m.getDipendente());
+        r.setSede(m.getSede());
         r.setDescrizione(m.getDescrizione());
         r.setNote(m.getNote());
     }
@@ -254,6 +255,7 @@ public class RicorrenzeService {
         m.setCategoria(r.getCategoria());
         m.setFornitore(r.getFornitore());
         m.setDipendente(r.getDipendente());
+        m.setSede(r.getSede());
         m.setDescrizione(r.getDescrizione());
         m.setNote(r.getNote());
         m.setOrigine(Origine.RICORRENZA);

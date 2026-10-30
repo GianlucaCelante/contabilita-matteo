@@ -54,15 +54,17 @@ function PeriodoLibero({ da, a, imposta }: { da: string; a: string; imposta: (da
 
 // Settimana / Mese / Anno / Periodo con le frecce e l'etichetta del periodo.
 // Per il periodo libero compaiono due campi data (anche sul telefono, dove
-// vanno a capo). `conPeriodoLibero={false}` nasconde la scelta «Periodo».
+// vanno a capo). `conPeriodoLibero={false}` nasconde la scelta «Periodo», `senzaGiorno` la scelta «Oggi».
 export default function SelettorePeriodo({
   periodo,
   conPeriodoLibero = true,
+  senzaGiorno = false,
   senzaNavigatore = false,
   className = "flex-wrap items-center gap-x-4 gap-y-2",
 }: {
   periodo: StatoPeriodo;
   conPeriodoLibero?: boolean;
+  senzaGiorno?: boolean;
   senzaNavigatore?: boolean;
   className?: string;
 }) {
@@ -76,7 +78,7 @@ export default function SelettorePeriodo({
             type="button"
             aria-pressed={tipo === t}
             onClick={() => imposta(t)}
-            className={(t === "periodo" && !conPeriodoLibero ? "hidden " : "") + "max-md:min-h-0 max-md:min-w-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[13px] max-md:tracking-tight"}
+            className={((t === "periodo" && !conPeriodoLibero) || (t === "giorno" && senzaGiorno) ? "hidden " : "") + "max-md:min-h-0 max-md:min-w-0 max-md:flex-1 max-md:justify-center max-md:px-0 max-md:text-[13px] max-md:tracking-tight max-[339px]:text-[12px]"}
           >
             {e}
           </button>

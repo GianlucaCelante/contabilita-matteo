@@ -13,6 +13,10 @@ import type {
   Rete,
   Riepilogo,
   RispostaRipristino,
+  Sede,
+  Settimana,
+  SettimanaInput,
+  Statistiche,
   Tipo,
 } from "./tipi";
 
@@ -71,7 +75,7 @@ export function stringaQuery(parametri: Record<string, string | number | undefin
 const json = (corpo: unknown): RequestInit => ({ body: JSON.stringify(corpo) });
 
 export const api = {
-  riepilogo: (da: string, a: string) => richiedi<Riepilogo>(`/riepilogo${stringaQuery({ da, a })}`),
+  riepilogo: (da: string, a: string, sedi?: string) => richiedi<Riepilogo>(`/riepilogo${stringaQuery({ da, a, sedi })}`),
   movimenti: (f: FiltroMovimenti) => richiedi<ElencoMovimenti>(`/movimenti${stringaQuery({ ...f })}`),
   movimento: (id: number) => richiedi<Movimento>(`/movimenti/${id}`),
   creaMovimento: (corpo: MovimentoInput) => richiedi<Movimento>("/movimenti", { method: "POST", ...json(corpo) }),
@@ -79,9 +83,23 @@ export const api = {
     richiedi<Movimento>(`/movimenti/${id}${stringaQuery({ ambito })}`, { method: "PUT", ...json(corpo) }),
   eliminaMovimento: (id: number, ambito: Ambito) =>
     richiedi<void>(`/movimenti/${id}${stringaQuery({ ambito })}`, { method: "DELETE" }),
+  // Per dividere fra tutte le sedi attive (corpo senza sedeId): risponde con un movimento per sede.
+  // `sedi`: gli id delle sedi fra cui dividere; vuoto o assente = tutte le sedi attive.
+  dividiMovimento: (corpo: MovimentoInput, sedi: number[] = []) =>
+    richiedi<Movimento[]>(`/movimenti/dividi${sedi.length > 0 ? `?sedi=${sedi.join(",")}` : ""}`, { method: "POST", ...json(corpo) }),
+  sedi: () => richiedi<Sede[]>("/sedi"),
+  creaSede: (nome: string) => richiedi<Sede>("/sedi", { method: "POST", ...json({ nome }) }),
+  modificaSede: (id: number, corpo: { nome?: string; archiviata?: boolean }) => richiedi<Sede>(`/sedi/${id}`, { method: "PUT", ...json(corpo) }),
+  // Pizze e ordini: una settimana (un giorno qualsiasi, assente = oggi) e le statistiche di un periodo.
+  settimanaStatistiche: (data?: string) => richiedi<Settimana>(`/statistiche/settimana${stringaQuery({ data })}`),
+  salvaSettimanaStatistiche: (corpo: SettimanaInput) => richiedi<Settimana>("/statistiche/settimana", { method: "PUT", ...json(corpo) }),
+  statistiche: (da: string, a: string, sedi?: string) => richiedi<Statistiche>(`/statistiche${stringaQuery({ da, a, sedi })}`),
   fermaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/ferma`, { method: "POST" }),
   riattivaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/riattiva`, { method: "POST" }),
   categorie: (tipo?: Tipo) => richiedi<Categoria[]>(`/categorie${stringaQuery({ tipo })}`),
+  // Crea (201) o restituisce quella che c'e' gia' con lo stesso nome e tipo (200). Solo le categorie create cosi' sono «personalizzate».
+  // Rinomina una categoria personalizzata (409 se e' predefinita o il nome e' gia' usato nello stesso tipo).
+  rinominaCategoria: (id: number, nome: string) => richiedi<Categoria>(`/categorie/${id}`, { method: "PUT", ...json({ nome }) }),
   fornitori: (q: string) => richiedi<Fornitore[]>(`/fornitori${stringaQuery({ q })}`),
   dipendenti: (q: string) => richiedi<Dipendente[]>(`/dipendenti${stringaQuery({ q })}`),
   rete: () => richiedi<Rete>("/rete"),
@@ -108,7 +126,10 @@ export function urlQr(ip: string): string {
 // Le chiavi della cache di react-query, tutte qui: chi modifica i dati
 // invalida per prefisso (["movimenti"], ["riepilogo"]).
 export const chiavi = {
-  riepilogo: (da: string, a: string) => ["riepilogo", da, a] as const,
+  riepilogo: (da: string, a: string, sedi?: string) => ["riepilogo", da, a, sedi ?? ""] as const,
+  sedi: ["sedi"] as const,
+  statistiche: (da: string, a: string, sedi?: string) => ["statistiche", "periodo", da, a, sedi ?? ""] as const,
+  settimanaStatistiche: (lunedi: string) => ["statistiche", "settimana", lunedi] as const,
   movimenti: (f: FiltroMovimenti) => ["movimenti", f] as const,
   movimento: (id: number) => ["movimento", id] as const,
   categorie: (tipo?: Tipo) => ["categorie", tipo ?? ""] as const,

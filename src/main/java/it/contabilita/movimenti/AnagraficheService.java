@@ -16,8 +16,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * Categorie, fornitori, dipendenti: elenco e "trova o crea" dal solo nome, senza distinguere
@@ -25,6 +27,30 @@ import java.util.Locale;
  */
 @Service
 public class AnagraficheService {
+
+    /**
+     * Il parametro {@code categorie=3,7}: gli id, oppure null se assente o vuoto (= nessun filtro).
+     * Un valore che non e' un numero e' un 400, come per {@code sedi}.
+     */
+    public static Set<Long> idsCategorieDa(String parametro) {
+        if (parametro == null || parametro.isBlank()) {
+            return null;
+        }
+        Set<Long> ids = new LinkedHashSet<>();
+        for (String voce : parametro.split(",")) {
+            String v = voce.trim();
+            if (v.isEmpty()) {
+                continue;
+            }
+            try {
+                ids.add(Long.parseLong(v));
+            } catch (NumberFormatException e) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "categorie: valore non valido: " + v);
+            }
+        }
+        return ids.isEmpty() ? null : ids;
+    }
+
 
     static final int NOME_MASSIMO = 120;
 
@@ -115,7 +141,24 @@ public class AnagraficheService {
         String n = nomeObbligatorio(nome, "della categoria");
         return categorie.findByNomeChiaveAndTipo(chiave(n), tipo)
                 .map(c -> new Esito<>(c, false))
-                .orElseGet(() -> new Esito<>(categorie.save(new Categoria(n, chiave(n), tipo)), true));
+                .orElseGet(() -> new Esito<>(categorie.save(new Categoria(n, chiave(n), tipo, true)), true));
+    }
+
+    /** Rinomina una categoria personalizzata: 404 se non esiste, 409 se e' predefinita o il nome c'e' gia' per quel tipo. */
+    @Transactional
+    public Categoria rinominaCategoria(long id, String nome) {
+        Categoria c = categorie.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Categoria non trovata."));
+        String n = nomeObbligatorio(nome, "della categoria");
+        if (!c.isPersonalizzata()) {
+            throw new ErroreApi(HttpStatus.CONFLICT, "Questa categoria è predefinita e non si rinomina.");
+        }
+        categorie.findByNomeChiaveAndTipo(chiave(n), c.getTipo()).ifPresent(altra -> {
+            if (!altra.getId().equals(c.getId())) {
+                throw new ErroreApi(HttpStatus.CONFLICT, "Esiste già una categoria con questo nome.");
+            }
+        });
+        c.rinomina(n, chiave(n));
+        return categorie.save(c);
     }
 
     @Transactional
@@ -147,7 +190,7 @@ public class AnagraficheService {
     // ---- conversioni ----
 
     public static CategoriaDto dto(Categoria c) {
-        return new CategoriaDto(c.getId(), c.getNome(), c.getTipo());
+        return new CategoriaDto(c.getId(), c.getNome(), c.getTipo(), c.isPersonalizzata());
     }
 
     public static FornitoreDto dto(Fornitore f) {

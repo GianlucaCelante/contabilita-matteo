@@ -24,6 +24,7 @@ import java.util.zip.ZipEntry;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
  * GET /api/esporta (docs/api.md, "Esportazione (fase 3)"). Il set di marzo 2026 e' quello di
@@ -33,7 +34,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 class EsportaApiTest extends ProvaBase {
 
     private static final String INTESTAZIONE_CSV =
-            "Data;Tipo;Documento;Categoria;Fornitore;Dipendente;Descrizione;N. documento;Note;Importo;Origine";
+            "Data;Tipo;Documento;Categoria;Fornitore;Dipendente;Descrizione;N. documento;Note;Importo;Origine;Sede";
 
     private void inserisciSet() throws Exception {
         crea(movimento("2026-03-31", "RICAVO", "RICAVO_EXTRA", 25050));
@@ -90,13 +91,13 @@ class EsportaApiTest extends ProvaBase {
         String[] righe = testo.split("\r\n");
         assertThat(righe[0]).isEqualTo(INTESTAZIONE_CSV);
         // ordinati per data crescente, poi per id
-        assertThat(righe[1]).isEqualTo("2026-03-01;Ricavo;Fatturato;;;;;;;1000,00;A mano");
-        assertThat(righe[2]).isEqualTo("2026-03-05;Costo fisso;-;Affitto;;;;;;-600,00;A mano");
+        assertThat(righe[1]).isEqualTo("2026-03-01;Ricavo;Fatturato;;;;;;;1000,00;A mano;Sede principale");
+        assertThat(righe[2]).isEqualTo("2026-03-05;Costo fisso;-;Affitto;;;;;;-600,00;A mano;Sede principale");
         assertThat(righe[3]).startsWith("2026-03-10;Costo variabile;Fattura;");
-        assertThat(righe[4]).isEqualTo("2026-03-10;Costo variabile;Scontrino;;;;;;;-45,50;A mano");
-        assertThat(righe[5]).isEqualTo("2026-03-27;Costo fisso;Retribuzione regolare;;;Giuseppe Verdi;;;;-800,00;A mano");
-        assertThat(righe[6]).isEqualTo("2026-03-27;Costo fisso;Retribuzione extra;;;;;;;-200,00;A mano");
-        assertThat(righe[7]).isEqualTo("2026-03-31;Ricavo;Extra;;;;;;;250,50;A mano");
+        assertThat(righe[4]).isEqualTo("2026-03-10;Costo variabile;Scontrino;;;;;;;-45,50;A mano;Sede principale");
+        assertThat(righe[5]).isEqualTo("2026-03-27;Costo fisso;Retribuzione regolare;;;Giuseppe Verdi;;;;-800,00;A mano;Sede principale");
+        assertThat(righe[6]).isEqualTo("2026-03-27;Costo fisso;Retribuzione extra;;;;;;;-200,00;A mano;Sede principale");
+        assertThat(righe[7]).isEqualTo("2026-03-31;Ricavo;Extra;;;;;;;250,50;A mano;Sede principale");
         assertThat(righe).hasSize(8);
     }
 
@@ -116,7 +117,7 @@ class EsportaApiTest extends ProvaBase {
         inserisciSet();
         String testo = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31");
         assertThat(testo).contains(
-                "2026-03-10;Costo variabile;Fattura;Materie prime;\"Caffè \"\"Rossi\"\"; Figli\";;\"Riga uno\nriga due\";F/12;Pagato 50 € in contanti;-300,00;A mano\r\n");
+                "2026-03-10;Costo variabile;Fattura;Materie prime;\"Caffè \"\"Rossi\"\"; Figli\";;\"Riga uno\nriga due\";F/12;Pagato 50 € in contanti;-300,00;A mano;Sede principale\r\n");
     }
 
     @Test
@@ -302,6 +303,32 @@ class EsportaApiTest extends ProvaBase {
     }
 
     @Test
+    void ilFoglioRiepilogoHaLeRigheDelleCategoriePersonalizzate() throws Exception {
+        ObjectNode delivery = movimento("2026-03-02", "RICAVO", "RICAVO_EXTRA", 7000);
+        delivery.put("categoria", "Delivery");
+        crea(delivery);
+        crea(movimento("2026-03-03", "RICAVO", "RICAVO_FATTURATO", 10000));
+        ObjectNode imballaggi = movimento("2026-03-04", "COSTO_VARIABILE", "SCONTRINO", 2500);
+        imballaggi.put("categoria", "Imballaggi");
+        crea(imballaggi);
+        Map<String, Cella> f = foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31")), 2);
+        Map<String, Double> perVoce = new LinkedHashMap<>();
+        for (int riga = 1; riga < 60; riga++) {
+            Cella voce = f.get("A" + riga);
+            Cella importo = f.get("B" + riga);
+            if (voce != null && importo != null && importo.numerica()) {
+                perVoce.put(voce.valore(), Double.parseDouble(importo.valore()));
+            }
+        }
+        assertThat(perVoce.get("Delivery")).isEqualTo(70.0);
+        assertThat(perVoce.get("Ricavi extra")).isEqualTo(0.0);
+        assertThat(perVoce.get("Totale ricavi")).isEqualTo(170.0);
+        assertThat(perVoce.get("Imballaggi")).isEqualTo(25.0);
+        assertThat(perVoce.get("Scontrini")).isEqualTo(0.0);
+        assertThat(perVoce.get("Totale costi variabili")).isEqualTo(25.0);
+    }
+
+    @Test
     void xlsxDiUnPeriodoVuotoHaComunqueIDueFogli() throws Exception {
         Map<String, byte[]> zip = apriZip(xlsx("/api/esporta?formato=xlsx&da=2025-01-01&a=2025-01-31"));
         assertThat(nomiFogli(zip)).containsExactly("Movimenti", "Riepilogo");
@@ -309,5 +336,143 @@ class EsportaApiTest extends ProvaBase {
         assertThat(m.get("A1").valore()).isEqualTo("Data");
         assertThat(m).doesNotContainKey("A2");
         assertThat(foglio(zip, 2).get("A1")).isNotNull();
+    }
+
+    // ---------------------------------------------------------------- sedi
+
+    @Test
+    void laColonnaSedeEInFondoEIlFiltroSediRestringeIMovimenti() throws Exception {
+        long mare = creaSede("Sede Mare");
+        crea(inSede(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 100000), 1));
+        crea(inSede(movimento("2026-03-02", "RICAVO", "RICAVO_FATTURATO", 70000), mare));
+        crea(inSede(movimento("2026-03-03", "COSTO_VARIABILE", "SCONTRINO", 3000), mare));
+
+        String tutte = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31");
+        String[] righe = tutte.substring(1).split("\r\n"); // via il BOM
+        assertThat(righe[0]).endsWith(";Origine;Sede");
+        assertThat(righe[1]).isEqualTo("2026-03-01;Ricavo;Fatturato;;;;;;;1000,00;A mano;Sede principale");
+        assertThat(righe[2]).isEqualTo("2026-03-02;Ricavo;Fatturato;;;;;;;700,00;A mano;Sede Mare");
+        assertThat(righe).hasSize(4);
+
+        String soloMare = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31&sedi=" + mare);
+        assertThat(soloMare.substring(1).split("\r\n")).hasSize(3)
+                .allSatisfy(r -> assertThat(r).doesNotContain("Sede principale"));
+
+        // il foglio: colonna L, e il Riepilogo segue il filtro (700 - 30)
+        Map<String, byte[]> zip = apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31&sedi=" + mare));
+        Map<String, Cella> m = foglio(zip, 1);
+        assertThat(m.get("L1").valore()).isEqualTo("Sede");
+        assertThat(m.get("L2").valore()).isEqualTo("Sede Mare");
+        assertThat(m).doesNotContainKey("A4");
+        Map<String, Cella> r = foglio(zip, 2);
+        assertThat(r.values().stream().map(Cella::valore)).contains("670.0");
+
+        errore(get("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31&sedi=abc"), null, 400);
+    }
+
+    // ---------------------------------------------------------------- statistiche e colonne per sede
+
+    private void inserisciStatistiche() throws Exception {
+        ObjectNode voce = json.createObjectNode().put("sedeId", 1).put("pizze", 120).put("ordini", 40);
+        ObjectNode corpo = json.createObjectNode().put("settimana", "2026-03-02");
+        corpo.putArray("voci").add(voce);
+        invia(put("/api/statistiche/settimana"), corpo, 200);
+    }
+
+    @Test
+    void statisticheFalseTogliePerSempreIlFoglioStatistiche() throws Exception {
+        inserisciSet();
+        inserisciStatistiche();
+        String periodo = "formato=xlsx&da=2026-03-01&a=2026-03-31";
+        assertThat(nomiFogli(apriZip(xlsx("/api/esporta?" + periodo)))).containsExactly("Movimenti", "Riepilogo", "Statistiche");
+        assertThat(nomiFogli(apriZip(xlsx("/api/esporta?" + periodo + "&statistiche=true")))).containsExactly("Movimenti", "Riepilogo", "Statistiche");
+        assertThat(nomiFogli(apriZip(xlsx("/api/esporta?" + periodo + "&statistiche=false")))).containsExactly("Movimenti", "Riepilogo");
+        // il CSV non cambia
+        assertThat(csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31&statistiche=false"))
+                .isEqualTo(csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31"));
+    }
+
+    /** Le righe del Riepilogo: nome voce -> importi delle colonne B, C, ... (fino all'ultima con un numero). */
+    private Map<String, List<Double>> righeRiepilogo(Map<String, Cella> f) {
+        Map<String, List<Double>> out = new LinkedHashMap<>();
+        for (int riga = 4; riga < 60; riga++) {
+            Cella voce = f.get("A" + riga);
+            if (voce == null) {
+                continue;
+            }
+            List<Double> valori = new ArrayList<>();
+            for (char col = 'B'; f.get(col + "" + riga) != null; col++) {
+                valori.add(Double.parseDouble(f.get(col + "" + riga).valore()));
+            }
+            out.put(voce.valore(), valori);
+        }
+        return out;
+    }
+
+    private long inserisciDueSedi() throws Exception {
+        long mare = creaSede("Sede Mare");
+        crea(inSede(movimento("2026-03-01", "RICAVO", "RICAVO_FATTURATO", 100000), 1));
+        crea(inSede(movimento("2026-03-02", "RICAVO", "RICAVO_FATTURATO", 70000), mare));
+        ObjectNode tua = inSede(movimento("2026-03-03", "RICAVO", "RICAVO_EXTRA", 7000), mare);
+        tua.put("categoria", "Tua");
+        crea(tua);
+        crea(inSede(movimento("2026-03-04", "COSTO_VARIABILE", "FATTURA", 30000), 1));
+        crea(inSede(movimento("2026-03-05", "COSTO_VARIABILE", "SCONTRINO", 3000), mare));
+        ObjectNode affitto = inSede(movimento("2026-03-06", "COSTO_FISSO", "NESSUNO", 60000), 1);
+        affitto.put("categoria", "Affitto");
+        crea(affitto);
+        crea(inSede(movimento("2026-03-07", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 50000), mare));
+        return mare;
+    }
+
+    @Test
+    void colonnePerSedeHaUnaColonnaPerSedeEIlTotaleCheLeSomma() throws Exception {
+        inserisciDueSedi();
+        Map<String, Cella> f = foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31&colonnePerSede=true")), 2);
+        assertThat(f.get("A3").valore()).isEqualTo("Voce");
+        assertThat(f.get("B3").valore()).isEqualTo("Sede principale");
+        assertThat(f.get("C3").valore()).isEqualTo("Sede Mare");
+        assertThat(f.get("D3").valore()).isEqualTo("Totale");
+        assertThat(f).doesNotContainKey("E3");
+
+        Map<String, List<Double>> righe = righeRiepilogo(f);
+        assertThat(righe).containsKeys("Ricavi fatturati", "Tua", "Affitto", "Risultato");
+        righe.forEach((nome, v) -> {
+            assertThat(v).as(nome).hasSize(3);
+            assertThat(v.get(0) + v.get(1)).as(nome).isCloseTo(v.get(2), org.assertj.core.data.Offset.offset(0.001));
+        });
+        // «Tua» esiste solo in Sede Mare: 0 nell'altra
+        assertThat(righe.get("Tua")).containsExactly(0.0, 70.0, 70.0);
+        assertThat(righe.get("Affitto")).containsExactly(600.0, 0.0, 600.0);
+        assertThat(righe.get("Ricavi fatturati")).containsExactly(1000.0, 700.0, 1700.0);
+        assertThat(righe.get("Risultato")).containsExactly(100.0, 240.0, 340.0);
+
+        // la colonna Totale coincide con /api/riepilogo
+        JsonNode r = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31");
+        assertThat(righe.get("Risultato").get(2)).isEqualTo(r.get("risultatoCent").asLong() / 100.0);
+    }
+
+    @Test
+    void colonnePerSedeConUnaSolaSedeOSenzaParametroResta1Colonna() throws Exception {
+        long mare = inserisciDueSedi();
+        String periodo = "formato=xlsx&da=2026-03-01&a=2026-03-31";
+        Map<String, Cella> predefinito = foglio(apriZip(xlsx("/api/esporta?" + periodo)), 2);
+        assertThat(predefinito.get("B3").valore()).isEqualTo("Importo");
+        assertThat(predefinito).doesNotContainKey("C3");
+        assertThat(foglio(apriZip(xlsx("/api/esporta?" + periodo + "&colonnePerSede=false")), 2)).isEqualTo(predefinito);
+
+        Map<String, Cella> unaSede = foglio(apriZip(xlsx("/api/esporta?" + periodo + "&colonnePerSede=true&sedi=" + mare)), 2);
+        assertThat(unaSede.get("B3").valore()).isEqualTo("Importo");
+        assertThat(unaSede).doesNotContainKey("C3");
+        assertThat(righeRiepilogo(unaSede).get("Risultato")).containsExactly(240.0);
+    }
+
+    @Test
+    void colonnePerSedeNonCambiaIlCsvNeIlFoglioMovimenti() throws Exception {
+        inserisciDueSedi();
+        String csvBase = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31");
+        assertThat(csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31&colonnePerSede=true")).isEqualTo(csvBase);
+        assertThat(foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31&colonnePerSede=true")), 1))
+                .isEqualTo(foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31")), 1));
     }
 }

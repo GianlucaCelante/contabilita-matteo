@@ -16,11 +16,11 @@ Convenzioni usate qui:
 
 ### Navigazione computer (barra laterale a sinistra, stretta, con icona e etichetta)
 
-In ordine: **Riepilogo**, **Movimenti**, **Esporta**, **Impostazioni**. In cima c'è il logo (solo icona, non cliccabile nel mockup). Non esiste la sezione "Fissi": è stata eliminata (vedi "Incoerenze trovate" per un file residuo).
+In ordine: **Riepilogo**, **Movimenti**, **Statistiche**, **Esporta**, **Impostazioni**. In cima c'è il logo (solo icona, non cliccabile nel mockup). Non esiste la sezione "Fissi": è stata eliminata (vedi "Incoerenze trovate" per un file residuo).
 
 ### Navigazione telefono (barra in basso)
 
-In ordine: **Riepilogo**, **Movimenti**, **Esporta**. Non c'è Impostazioni sul telefono. Sopra la barra, nelle schermate Riepilogo e Movimenti, c'è un pulsante tondo flottante "+" che porta a Nuovo movimento (telefono).
+In ordine: **Riepilogo**, **Movimenti**, **Statistiche**, **Esporta**. Non c'è Impostazioni sul telefono. Sopra la barra, nelle schermate Riepilogo e Movimenti, c'è un pulsante tondo flottante "+" che porta a Nuovo movimento (telefono).
 
 ### Filtro di periodo (ricorrente)
 
@@ -61,7 +61,7 @@ File: `Movimenti.dc.html`
 **Sezioni.**
 
 1. Intestazione: titolo "Movimenti" e pulsante **Nuovo movimento** (porta a Nuovo movimento).
-2. Filtri: periodo (Settimana, Mese selezionato, Anno, Periodo); tipo (Tutti, Ricavi, Costi variabili, Costi fissi); casella di ricerca "Cerca fornitore o nota…".
+2. Filtri: periodo (Settimana, Mese selezionato, Anno, Periodo); tipo (Tutti, Ricavi, Costi variabili, Costi fissi); casella di ricerca "Cerca fornitore o nota…". Accanto alla ricerca il pulsante **Categoria** (anche più categorie insieme): apre un riquadro ancorato al pulsante, con campo di ricerca e caselle raggruppate in Ricavi, Costi variabili e Costi fissi, che applica a ogni spunta e si chiude con Esc o con un clic fuori. Con una scelta il pulsante dice «Categoria: nome», con più scelte «Categorie (2)», e ha una ✕ per toglierle. Se in alto è scelto un tipo si propongono solo le categorie di quel tipo (scegliendo un tipo le categorie di altri tipi escono dal filtro). Il filtro sta nell'indirizzo (`?categorie=3,7`) e si ricorda come l'ultimo tipo scelto; una categoria che non esiste più si ignora. I movimenti senza categoria (retribuzioni) restano fuori mentre il filtro è attivo.
 3. Tabella con colonne: Data, Tipo, Fornitore / descrizione (con sottotitolo, per esempio la categoria o la nota), Documento, Importo, e una colonna finale con l'origine del movimento. Le righe sono raggruppate per giorno, con l'intestazione del giorno (es. "Mercoledì 21 ottobre").
 4. Piè di pagina: numero di movimenti mostrati e periodo, poi tre totali: **Ricavi**, **Costi**, **Saldo**.
 
@@ -94,10 +94,10 @@ File: `NuovoMovimento.dc.html` (mostrato con "Costo variabile" + "Fattura").
 
 | Campo | Controllo | Obbligatorio | Note |
 |---|---|---|---|
-| Cosa registri | tre scelte esclusive: Ricavo, Costo variabile, Costo fisso | sì | Cambia i campi sottostanti |
+| Che cos'è | tre scelte esclusive: Ricavo, Costo variabile, Costo fisso | sì | Cambia i campi sottostanti |
 | Documento | due scelte esclusive: Fattura, Scontrino | sì (per costo variabile) | |
 | Data | campo data | sì | Formato gg/mm/aaaa |
-| Importo totale | campo numerico con simbolo € | sì | |
+| Importo | campo numerico con simbolo € | sì | |
 | N. fattura | campo testo | solo per Fattura | Non c'è per Scontrino nel mockup (non verificabile) |
 | Fornitore | campo con ricerca e creazione al volo | sì | Se il nome non esiste mostra "Nessun fornitore con questo nome" e il comando **Crea fornitore «nome»** |
 | Categoria | campo con ricerca e creazione al volo | sì | Una categoria nuova è segnalata con l'etichetta "Nuova" |
@@ -127,7 +127,7 @@ Struttura come 2.3 (intestazione, selettore A mano / Importa, modulo, riquadro l
 
 | Campo | Controllo | Obbligatorio | Note |
 |---|---|---|---|
-| Cosa registri | Ricavo / Costo variabile / Costo fisso | sì | Qui è "Costo fisso" |
+| Che cos'è | Ricavo / Costo variabile / Costo fisso | sì | Qui è "Costo fisso" |
 | Voce fissa | campo unico con suggerimenti: Retribuzione, Affitto, Utenze e le voci già create (le categorie dei costi fissi); un nome nuovo si scrive nello stesso campo («Crea voce …») | sì | Le voci proprie compaiono una per una nel Riepilogo |
 | Tipo di retribuzione | due scelte esclusive: **Regolare**, **Extra** | sì | Regolare = in busta; Extra = fuori busta |
 | Dipendente | campo con ricerca, "(facoltativo)" | facoltativo | Se vuoto il costo conta nel totale ma non nel dettaglio per persona |
@@ -261,7 +261,7 @@ File: `RiepilogoMobile.dc.html`
 
 File: `MovimentiMobile.dc.html`
 
-**Sezioni.** Titolo; filtro tipo **Tutti / Ricavi / Variabili / Fissi**; casella di ricerca "Cerca fornitore o nota…"; elenco raggruppato per giorno. Ogni riga: nome (fornitore o descrizione), sottotitolo "documento · tipo" e importo con segno. Pulsante "+" flottante e barra inferiore.
+**Sezioni.** Titolo; filtro tipo **Tutti / Ricavi / Variabili / Fissi**; casella di ricerca "Cerca fornitore o nota…" con accanto il pulsante **Categoria** (sulla stessa riga, anche a 320 px): un tocco apre un foglio dal basso "Filtra per categoria" con ricerca, caselle da 48 px per Ricavi / Costi variabili / Costi fissi e i pulsanti **Azzera** e **Applica**; chiudendo senza applicare il filtro resta com'era. Con filtro attivo il pulsante è verde, mostra «Categoria: nome» (con ellissi se lungo) o «Categorie (n)» e ha una ✕ da 44 px; elenco raggruppato per giorno. Ogni riga: nome (fornitore o descrizione), sottotitolo "documento · tipo" e importo con segno. Pulsante "+" flottante e barra inferiore.
 
 **Azioni.** Toccando una riga si apre il dettaglio (nel mockup è attiva solo la prima riga, che porta a Dettaglio movimento telefono). "+" porta a Nuovo movimento telefono.
 
@@ -275,7 +275,7 @@ File: `NuovoMovimentoMobile.dc.html` (stato "Costo variabile" + "Fattura").
 
 | Campo | Controllo | Obbligatorio | Note |
 |---|---|---|---|
-| Cosa registri | Ricavo / Costo variabile / Costo fisso | sì | |
+| Che cos'è | Ricavo / Costo variabile / Costo fisso | sì | |
 | Documento | Fattura / Scontrino | sì (per costo variabile) | |
 | Data | campo data | sì | |
 | Importo | campo numerico con € | sì | |
@@ -301,6 +301,8 @@ File: `DettaglioMovimentoMobile.dc.html` (movimento variabile importato da XML).
 ## 4. Regole e decisioni
 
 Regole di prodotto decise. Dove una schermata le rispecchia è indicato; le incongruenze sono nella sezione 6.
+
+- **Ritorno alla lista.** Uscendo dal dettaglio (o da «Nuovo movimento») con Annulla, la freccia indietro, il salvataggio o il tasto indietro del browser, la lista dei Movimenti riparte dalla stessa posizione di scorrimento e con la stessa ricerca (`util/posizioneLista.ts`, ripristino in `Guscio`). Andando in un’altra sezione e tornando, riparte dall’inizio.
 
 1. **Navigazione.** Barra laterale: Riepilogo, Movimenti, Esporta, Impostazioni. Nessuna sezione Fissi (eliminata). Barra del telefono: Riepilogo, Movimenti, Esporta. Verificato nei file (con l'eccezione descritta in 6).
 2. **Un solo registro di movimenti**, con: data, importo, direzione costo/ricavo, categoria, tipo documento (fattura / scontrino / regolare / extra), fornitore, dipendente facoltativo, note, allegato facoltativo, ripetizione facoltativa.
@@ -370,3 +372,42 @@ Controllo delle schermate rispetto alle regole di prodotto e tra loro.
 13. **File residuo.** Nella cartella del canvas esiste `CostiFissi.dc.html` (schermata dei costi fissi), ma non è elencato in `canvas.json` e la sezione Fissi è stata eliminata: va considerato scartato e non va implementato.
 14. **Importazione: navigazione.** Nella schermata di importazione la voce evidenziata della barra è Movimenti (corretto), ma il titolo resta "Nuovo movimento"; il selettore A mano / Importa è l'unico punto d'accesso (nessun pulsante di importazione in Movimenti).
 15. **Verifica sul portale non fatta.** Le diciture del riquadro "Dove trovo le fatture?" (Fatture e Corrispettivi, fatture ricevute, esportazione, zip) non sono state controllate sul sito dell'Agenzia delle Entrate.
+
+---
+
+## 7. Più sedi (vista singola o mista)
+
+**Soglia del layout.** Barra laterale e tabelle «da computer» partono da **1024 px** (`--breakpoint-md` in `index.css`, `useSchermoGrande`); sotto, anche sul tablet in verticale, vale il layout da telefono (barra in basso, schede), che a 768 px reggeva meglio dei layout a più colonne.
+
+Regola chiave: con **una sola sede attiva** l'interfaccia è quella di prima (nessun selettore, badge o scheda «Per sede»). Le novità compaiono solo con almeno due sedi attive. Contratto: [`api.md`](api.md), sezione «Sedi».
+
+- **Selezione.** Stato globale (`ProviderSedi`, `useSedi`), ricordato in `localStorage` (`contabilita.sedi.v1`); di partenza tutte le attive. Riepilogo, Movimenti ed Esporta hanno il selettore: sul telefono un chip che apre un foglio dal basso (caselle, «Solo», «Tutte le sedi», collegamento a Impostazioni), sul computer una barra di pillole (l'ultima sede accesa non si spegne). Se sono selezionate tutte le attive il filtro `sedi` non si manda (il servizio include anche le archiviate).
+- **Riconoscere la sede.** Una lettera in riquadro colorato (non solo il colore), palette ciclica per ordine della sede: verde `#E3EAD1`/`#4B6313`, ambra `#F7EBD3`/`#845A08`, blu `#DCE9F1`/`#2F5D7A`, rosa `#F2DDE6`/`#8A3358` (contrasto ≥ 4,5:1, verificato nei test). Due sedi con la stessa iniziale si distinguono con due lettere («VM»). Logica in `util/sedi.ts`.
+- **Riepilogo.** Con almeno due sedi selezionate compare «Per sede» (ricavi, costi, risultato e barra proporzionale ai ricavi, da `perSede`). Se le sedi scelte non sono tutte, il titolo dice quali: «Risultato della settimana · Via Roma + Lungomare» (con tutte: «… · tutte le sedi»; la scheda scontrino medio ha lo stesso suffisso).
+- **Movimenti.** Filtro per sedi, badge-lettera sulla riga, sede nel dettaglio (scheda «Registrato») e nel modulo.
+- **Nuovo movimento / Dettaglio.** «Di quale sede (una o più)»: pillole con lettera; preselezione = la sede singola selezionata, altrimenti nessuna (messaggio «Scegli una o più sedi.»). Solo in creazione le pillole si possono scegliere insieme: una = quella sede, due o più (anche 2 su 3) = l'importo si divide fra quelle (`POST /api/movimenti/dividi?sedi=1,3`), «Tutte, dividi» le sceglie tutte in un colpo; riga di anteprima («Diviso fra Via Roma e Mercato: 500,00 / 500,00 €»). «Ripeti» vale anche con più sedi (un costo fisso condiviso, come l'affitto): ogni sede ripete la sua parte («Ogni sede ripete la sua parte: i mesi dopo escono già divisi.»). Con «Tutte, dividi» l'allegato va sul primo movimento creato. In modifica la sede si manda solo se è cambiata.
+- **Importa fatture.** Scelta della sede (stessa preselezione), passata a `conferma` come `sedeId`. **Esporta**: rispetta le sedi selezionate (nessuna frase di spiegazione: lo dice il selettore); l'anteprima mostra la colonna «Sede».
+- **Impostazioni → Sedi.** Elenco con numero di movimenti, rinomina, archivia (con conferma; l'ultima sede attiva non si archivia) e riattiva, aggiunta. È l'unico punto dove si aggiunge una sede: sul telefono Impostazioni si raggiunge dal foglio delle sedi.
+
+## 8. Statistiche e «Pizze e ordini»
+
+Matteo scrive **una volta a settimana, per sede, quante pizze e quanti ordini**; l'app calcola lo **scontrino medio** (ricavi ÷ ordini) e le **pizze per ordine**. Contratto: [`api.md`](api.md), sezione «Statistiche». Riferimento visivo: i prototipi approvati (telefono interattivo e quattro schermate per il computer). Logica pura (calcoli, validazione, settimana, grafico) in `ui/src/util/statistiche.ts`, con i test accanto.
+
+- **Navigazione.** Nuova voce **Statistiche** (icona linea in salita) tra Movimenti ed Esporta: barra in basso del telefono (quattro voci) e barra laterale del computer. Rotte `/statistiche` e `/statistiche/pizze-ordini` (con `?s=yyyy-MM-dd`, un giorno qualsiasi della settimana); la voce resta evidenziata anche dentro «Pizze e ordini».
+- **Statistiche** (`viste/Statistiche.tsx`). Stesso selettore sedi e stesso periodo (`usePeriodo`) di Riepilogo. In cima, se manca qualcosa, il banner ambra «Settimana 26 ott – 1 nov: mancano pizze e ordini di Mercato» (si guardano le ultime quattro settimane, tutte le sedi; con una sola sede niente nomi) che porta a «Pizze e ordini» di quella settimana. Poi lo **scontrino medio** in grande, tre numeri (ordini, pizze, pizze per ordine), «Ogni pizza porta in media …» (sul computer è un quarto riquadro, «Ricavo per pizza»). Lo scontrino conta solo le coppie sede-settimana con dati inseriti e ordini > 0, senza note esplicative. Con almeno due sedi selezionate: **Per sede** («Confronto tra sedi» sul computer; barra da zero, ordini, pizze, pizze a ordine) con in fondo il totale («Tutte le sedi» o «Sedi scelte»); sul computer è una tabella con intestazioni. **Ultime 8 settimane**: barre dello scontrino medio (le altezze vanno dal minimo al massimo, non da zero; i valori sono scritti; l'ultima è scura, le settimane a cui manca una sede sono a righe; l'elenco completo è per gli screen reader). Il pulsante sta nella testata («Inserisci pizze e ordini», computer) o in fondo («Inserisci dati della settimana», telefono). Il grafico non ha legenda scritta. Senza dati: «Ancora nessun dato di pizze e ordini»; un periodo senza lunedì (un solo giorno): «Il periodo non comprende una settimana intera».
+- **Pizze e ordini** (`viste/PizzeOrdini.tsx`). Frecce settimana precedente/successiva (lunedì–domenica; non si va oltre la settimana in corso), una **scheda per sede** (telefono e tablet) o una **tabella dai 1024 px** con colonne Pizze, Ordini, Ricavi, Scontrino medio, Pizze / ordine, Stato e la riga «Tutte le sedi · parziale … n su m». I campi sono numerici (`inputMode="numeric"`, anche il punto delle migliaia): interi ≥ 0, entrambi o nessuno, con 0 ordini le pizze sono 0, al massimo 1.000.000; gli errori compaiono dopo il primo «Salva» e il fuoco va al primo campo sbagliato. Lo **scontrino medio si aggiorna mentre scrivi** (ricavi della settimana ÷ ordini, mezzo centesimo in su come il servizio). Stato «Completa» / «Da inserire». «Salva la settimana» manda solo le sedi cambiate a `PUT /api/statistiche/settimana`; i due campi svuotati cancellano il dato. Dopo il salvataggio si torna a Statistiche. In fondo «Settimane già inserite» (ultime 8, con «n su m» e «Modifica»). Le modifiche non salvate sono protette come nel resto dell'app (`useBloccoUscita`, `ConfermaUscita`: vale anche per le frecce della settimana). Le sedi archiviate non si compilano.
+- **Riepilogo.** Sotto il risultato (e accanto a «Per sede» sul computer) la scheda **Scontrino medio** del periodo con «N ordini · M pizze» e «Vai alle statistiche»; compare solo se nel periodo ci sono ordini.
+- **Una sola sede attiva.** Niente selettore, badge né «Per sede»; restano scontrino, numeri, grafico e «Pizze e ordini» con un solo gruppo di campi.
+- **Esporta.** Nessuna modifica: il foglio «Statistiche» dell'Excel lo produce il servizio.
+
+## Categorie personalizzate
+
+Le categorie si creano **solo dentro il movimento** (nessuna schermata Categorie in Impostazioni). Prototipo approvato: `Main.dc.html`, `Desktop-NuovoMovimento.dc.html`, `Desktop-Riepilogo.dc.html`.
+
+- **Nuovo e Modifica movimento** (`componenti/GestioneCategoria.tsx`, sotto il campo Categoria o Voce fissa). Il campo resta con ricerca e creazione al volo (la categoria nata scrivendo il nome è personalizzata); le categorie personalizzate non hanno nessuna etichetta che le distingua (solo la matita per rinominarle). **Non c'è un pulsante «Nuova categoria»**: il nome nuovo si scrive nel campo e si sceglie «Crea categoria «…»» (il tipo è quello del movimento). La tendina, anche vuota, mostra «Ancora nessuna categoria · Scrivi un nome per crearla»; la freccia del campo la apre e la chiude.
+- **Validazione.** Nome non vuoto, al massimo 120 caratteri (spazi ridotti a uno); un nome già esistente nello stesso tipo (senza distinguere maiuscole) non dà errore: si usa quella che c'è, con l'avviso «… esiste già: l'ho scelta per te».
+- **Rinomina.** Con una categoria personalizzata scelta compare sotto il campo una **matita** (44 × 44 px, `aria-label` «Rinomina la categoria «…»») che apre lo stesso foglio/riquadro. Le predefinite non hanno la matita. Sul 409 si mostra il messaggio del servizio (nome già usato) sotto il campo. La rinomina aggiorna cache di categorie, movimenti e Riepilogo.
+- **Riepilogo.** `ricavi.altreVoci` e `costiVariabili.altreVoci` sono righe proprie, senza etichetta, nell'ordine dell'API (una nota di credito può rendere negativa una riga). Fra i costi fissi le voci personalizzate (riconosciute dall'elenco categorie) sul telefono hanno la loro riga e il resto resta in «Affitto, utenze, altre». Senza categorie personalizzate il Riepilogo è identico a prima. Il riquadro «Dove finisce» mostra ora la categoria anche per ricavi e costi variabili. Esporta e Statistiche non usano le righe del Riepilogo: nessuna modifica.
+- **Limite noto.** La matita compare solo con la categoria scelta e il campo non in digitazione (l'elenco dei suggerimenti aperto la copre finché non si sceglie o si preme Esc).
+
+**Aggiornamenti (allineamento al mockup).** Esporta: scheda «Cosa esportare» con «<periodo> · <sedi>» e le opzioni «Una colonna per sede» (solo con almeno due sedi attive, acceso se ne sono scelte almeno due) e «Pizze, ordini e scontrino medio» (acceso), valide solo per Excel (con CSV spente: «Solo nel file Excel»); il pulsante dice «Scarica Excel» o «Scarica CSV». Nuovo movimento: le etichette sono «Che cos'è» e «Importo» (con «Tutte, dividi» sotto il campo compare «Totale da dividere»). L'avviso «Controlla i campi segnati in rosso» sta in cima allo schermo e il primo campo sbagliato viene portato in vista, sopra le barre fisse.

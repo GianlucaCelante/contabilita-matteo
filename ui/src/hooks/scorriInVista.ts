@@ -64,3 +64,18 @@ export function scorriInVista(nodo: HTMLElement, soloSeServe = true) {
   const delta = scostamentoPerCentrare(nodo, alto, basso);
   if (Math.abs(delta) > 1) contenitore.scrollBy({ top: delta, behavior: comportamento });
 }
+
+// Dopo un errore di validazione: porta il primo campo sbagliato (con il suo
+// messaggio) al centro dell'area libera, sopra le barre fisse. Va chiamata
+// dopo che React ha disegnato i messaggi.
+const SELETTORE_ERRORE = '[aria-invalid="true"], [role="radiogroup"][aria-describedby$="-e"]';
+
+export function mostraPrimoErrore(radice: ParentNode = document) {
+  window.setTimeout(() => {
+    const primo = radice.querySelector<HTMLElement>(SELETTORE_ERRORE);
+    if (!primo) return;
+    // Il blocco intero (etichetta, campo, messaggio): e' il genitore del campo o del gruppo di scelte.
+    const blocco = (primo.closest(".campo")?.parentElement ?? primo.parentElement ?? primo) as HTMLElement;
+    scorriInVista(blocco, false);
+  }, 60);
+}

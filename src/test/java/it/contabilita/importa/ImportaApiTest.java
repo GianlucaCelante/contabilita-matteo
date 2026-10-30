@@ -391,4 +391,34 @@ class ImportaApiTest extends ProvaBase {
     void corpoDellaConfermaNonValido400() throws Exception {
         errore(post("/api/importa/conferma"), "{\"righe\":[]}", 400);
     }
+
+    @Test
+    void laConfermaAssegnaLaSedeATutteLeRigheESenzaSedeConPiuSediDa400() throws Exception {
+        long mare = creaSede("Sede Mare");
+        JsonNode a = anteprima(f("forno.xml", forno), f("mario.xml", mario));
+        String id = a.get("importazioneId").asText();
+
+        // due sedi attive e nessuna sedeId: errore, e non si salva niente
+        errore(post("/api/importa/conferma"), conferma(id, 0, null), 400);
+        assertThat(leggi("/api/movimenti").get("elementi")).isEmpty();
+
+        ObjectNode corpo = conferma(id, 0, null, 1, null);
+        corpo.put("sedeId", mare);
+        JsonNode esito = invia(post("/api/importa/conferma"), corpo, 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(2);
+        JsonNode elementi = leggi("/api/movimenti").get("elementi");
+        assertThat(elementi).hasSize(2).allSatisfy(m -> {
+            assertThat(m.get("origine").asText()).isEqualTo("XML");
+            assertThat(m.get("sede").get("id").asLong()).isEqualTo(mare);
+            assertThat(m.get("sede").get("nome").asText()).isEqualTo("Sede Mare");
+        });
+        assertThat(leggi("/api/movimenti?sedi=1").get("elementi")).isEmpty();
+    }
+
+    @Test
+    void laConfermaSenzaSedeConUnaSolaSedeAttivaUsaQuella() throws Exception {
+        JsonNode a = anteprima(f("forno.xml", forno));
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null), 200);
+        assertThat(leggi("/api/movimenti").get("elementi").get(0).get("sede").get("nome").asText()).isEqualTo("Sede principale");
+    }
 }

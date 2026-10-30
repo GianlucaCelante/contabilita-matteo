@@ -8,3 +8,12 @@ databaseChangeLog:
   - include:
       file: v3-ripetizioni.yaml
       relativeToChangelogFile: true
+  - include:
+      file: v4-sedi.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v5-statistiche.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v6-categorie.yaml
+      relativeToChangelogFile: true

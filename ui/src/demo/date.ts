@@ -20,6 +20,11 @@ export function aggiungiGiorni(s: string, n: number): string {
   return iso(d);
 }
 
+// Il lunedi' della settimana che contiene il giorno.
+export function lunediDi(s: string): string {
+  return aggiungiGiorni(s, -((daIso(s).getDay() + 6) % 7));
+}
+
 function giorniDelMese(anno: number, mese0: number): number {
   return new Date(anno, mese0 + 1, 0).getDate();
 }

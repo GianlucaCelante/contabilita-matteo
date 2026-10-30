@@ -43,6 +43,14 @@ export function IconaMovimenti(p: ProprietaIcona) {
     </IconaBase>
   );
 }
+export function IconaStatistiche(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <path d="M3 17l6-6 4 4 8-9" />
+      <path d="M15 6h6v6" />
+    </IconaBase>
+  );
+}
 export function IconaEsporta(p: ProprietaIcona) {
   return (
     <IconaBase {...p}>
@@ -86,6 +94,21 @@ export function IconaDestra(p: ProprietaIcona) {
   return (
     <IconaBase {...p}>
       <path d="M9 6l6 6-6 6" />
+    </IconaBase>
+  );
+}
+export function IconaSede(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <path d="M3 10l9-6 9 6v10H3z" />
+      <path d="M9 20v-6h6v6" />
+    </IconaBase>
+  );
+}
+export function IconaMatita(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" />
     </IconaBase>
   );
 }

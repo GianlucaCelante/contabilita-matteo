@@ -33,7 +33,7 @@ class MigrazioneRipetizioniTest {
     void leRipetizioniMensiliDiPrimaDiventanoPersonalizzabiliSenzaCambiareLaProssimaScadenza() throws Exception {
         Path file = Files.createTempFile("contabilita-migrazione-", ".db");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + file); Statement st = c.createStatement()) {
-            aggiorna(c, new Contexts("!ripetizioni")); // lo schema com'era prima
+            aggiorna(c, new Contexts("prima")); // lo schema com'era prima: solo i changeset senza contesto (le ripetizioni e le sedi hanno il loro)
             st.executeUpdate("INSERT INTO ricorrenza (giorno, attiva, tipo, documento, importo_cent, ultimo_mese, creata_il) VALUES "
                     + "(31, 1, 'COSTO_FISSO', 'NESSUNO', 50000, '2026-01', '2026-01-31T10:00:00'),"   // il 31 di gennaio: la prossima e' il 28 febbraio
                     + "(5, 1, 'COSTO_FISSO', 'NESSUNO', 60000, '2025-12', '2025-12-05T10:00:00'),"    // il 5: la prossima e' il 5 gennaio (passaggio d'anno)

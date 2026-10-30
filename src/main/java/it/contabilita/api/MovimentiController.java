@@ -8,6 +8,8 @@ import it.contabilita.dati.Ambito;
 import it.contabilita.dati.Tipo;
 import it.contabilita.movimenti.MovimentiService;
 import it.contabilita.movimenti.RiepilogoService;
+import it.contabilita.movimenti.AnagraficheService;
+import it.contabilita.movimenti.SediService;
 import it.contabilita.ricorrenze.RicorrenzeService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /** Movimenti, ricorrenze e riepilogo (docs/api.md). */
 @RestController
@@ -45,8 +48,10 @@ public class MovimentiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
             @RequestParam(required = false) Tipo tipo,
             @RequestParam(required = false) String q,
-            @RequestParam(required = false) Long dipendente) {
-        return movimenti.elenca(da, a, tipo, q, dipendente);
+            @RequestParam(required = false) Long dipendente,
+            @RequestParam(required = false) String sedi,
+            @RequestParam(required = false) String categorie) {
+        return movimenti.elenca(da, a, tipo, q, dipendente, SediService.idsDa(sedi), AnagraficheService.idsCategorieDa(categorie));
     }
 
     @GetMapping("/movimenti/{id}")
@@ -58,6 +63,16 @@ public class MovimentiController {
     @ResponseStatus(HttpStatus.CREATED)
     public MovimentoDto crea(@RequestBody MovimentoInput corpo) {
         return movimenti.crea(corpo);
+    }
+
+    /**
+     * «Dividi»: un movimento per ogni sede attiva, o solo per quelle di {@code sedi=1,2} (almeno due), con l'importo
+     * diviso in parti uguali.
+     */
+    @PostMapping("/movimenti/dividi")
+    @ResponseStatus(HttpStatus.CREATED)
+    public List<MovimentoDto> dividi(@RequestBody MovimentoInput corpo, @RequestParam(required = false) String sedi) {
+        return movimenti.dividi(corpo, SediService.idsDa(sedi));
     }
 
     @PutMapping("/movimenti/{id}")
@@ -87,7 +102,8 @@ public class MovimentiController {
     @GetMapping("/riepilogo")
     public Riepilogo riepilogo(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a) {
-        return riepilogo.calcola(da, a);
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
+            @RequestParam(required = false) String sedi) {
+        return riepilogo.calcola(da, a, SediService.idsDa(sedi));
     }
 }

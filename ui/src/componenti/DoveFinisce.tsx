@@ -2,10 +2,11 @@ import { useQuery } from "@tanstack/react-query";
 import { api, chiavi } from "../api/client";
 import type { Tipo } from "../api/tipi";
 import { useDebounced } from "../hooks/useDebounced";
+import { useSedi } from "../hooks/useSedi";
 import { NOME_DOCUMENTO } from "../util/etichette";
 import { dataValida, euro, intervalloDi, leggiEuro, nomeMese, settimanaBreve } from "../util/formato";
 import SchedaLaterale, { Riga } from "./SchedaLaterale";
-import { categoriaDi, documentoDi, testoRipetizione, type CampiForm } from "../util/modelloMovimento";
+import { categoriaDi, documentoDi, sediDelleDivisione, testoRipetizione, type CampiForm } from "../util/modelloMovimento";
 
 const VOCE_TIPO: Record<Tipo, string> = { RICAVO: "Ricavi", COSTO_VARIABILE: "Costi variabili", COSTO_FISSO: "Costi fissi" };
 
@@ -79,6 +80,9 @@ export default function DoveFinisce({ campi }: { campi: CampiForm }) {
   const doc = NOME_DOCUMENTO[documentoDi(campi)];
   const categoria = categoriaDi(campi);
   const ripetizione = testoRipetizione(campi);
+  const sedi = useSedi();
+  const nDivise = sediDelleDivisione(campi, sedi.attive.map((s) => s.id)).length;
+  const nomeSede = campi.dividi ? (nDivise === sedi.attive.length ? `Tutte, divise (${nDivise})` : `Divise fra ${nDivise} sedi`) : (sedi.attive.find((s) => s.id === campi.sedeId)?.nome ?? "Da scegliere");
 
   return (
     <div className="hidden w-[320px] shrink-0 flex-col gap-4 self-start lg:flex">
@@ -86,12 +90,17 @@ export default function DoveFinisce({ campi }: { campi: CampiForm }) {
         <Riga nome="Voce" primo>
           <b>{VOCE_TIPO[campi.tipo]}</b>
         </Riga>
+        {sedi.piu && (
+          <Riga nome="Sede">
+            <b>{nomeSede}</b>
+          </Riga>
+        )}
         {!retribuzione && (
           <Riga nome="Periodo">
             <b>{settimana ? settimanaBreve(settimana) : "–"}</b>
           </Riga>
         )}
-        {campi.tipo === "COSTO_FISSO" && categoria && (
+        {categoria && (
           <Riga nome="Categoria">
             <b>{categoria}</b>
           </Riga>

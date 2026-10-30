@@ -12,6 +12,8 @@ export interface FiltriSalvati {
   a?: string;
   // «» = Tutti
   tipo?: Tipo | "";
+  // Gli id delle categorie scelte nel filtro di Movimenti; [] = nessuna.
+  categorie?: number[];
 }
 
 interface Magazzino {
@@ -53,6 +55,9 @@ export function leggiFiltri(magazzino: Magazzino | null = magazzinoBrowser()): F
   }
   const tipo = TIPI.find((t) => t === o.tipo);
   if (tipo !== undefined) filtri.tipo = tipo;
+  if (Array.isArray(o.categorie)) {
+    filtri.categorie = o.categorie.filter((n): n is number => typeof n === "number" && Number.isSafeInteger(n) && n > 0);
+  }
   return filtri;
 }
 

@@ -1,21 +1,23 @@
-import { useEffect, useRef, type ComponentType, type MouseEvent } from "react";
+import { useEffect, useRef, type ComponentType, type MouseEvent, type UIEvent } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useBarreFisse } from "../hooks/useBarreFisse";
 import { useTastieraVirtuale } from "../hooks/useTastieraVirtuale";
+import { azzeraPosizioneLista, inMovimenti, posizioneLista } from "../util/posizioneLista";
 import ErroreVista from "./ErroreVista";
-import { IconaEsporta, IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, type ProprietaIcona } from "./Icone";
+import { IconaEsporta, IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, IconaStatistiche, type ProprietaIcona } from "./Icone";
 
 interface Voce {
   percorso: string;
   etichetta: string;
   Icona: ComponentType<ProprietaIcona>;
-  // Solo sul computer: sul telefono la barra ha tre voci.
+  // Solo sul computer: sul telefono la barra ha quattro voci.
   soloComputer?: boolean;
 }
 
 const VOCI: Voce[] = [
   { percorso: "/riepilogo", etichetta: "Riepilogo", Icona: IconaRiepilogo },
   { percorso: "/movimenti", etichetta: "Movimenti", Icona: IconaMovimenti },
+  { percorso: "/statistiche", etichetta: "Statistiche", Icona: IconaStatistiche },
   { percorso: "/esporta", etichetta: "Esporta", Icona: IconaEsporta },
   { percorso: "/impostazioni", etichetta: "Impostazioni", Icona: IconaImpostazioni, soloComputer: true },
 ];
@@ -25,6 +27,8 @@ const TITOLI_PAGINA: [string, string][] = [
   ["/movimenti/importa", "Importa fatture"],
   ["/movimenti/", "Movimento"],
   ["/movimenti", "Movimenti"],
+  ["/statistiche/pizze-ordini", "Pizze e ordini"],
+  ["/statistiche", "Statistiche"],
   ["/riepilogo", "Riepilogo"],
   ["/esporta", "Esporta"],
   ["/impostazioni", "Impostazioni"],
@@ -37,12 +41,13 @@ function titoloPer(percorso: string): string {
 // Impianto della pagina: barra laterale larga 88 px sul computer, barra in
 // basso sul telefono (la scelta la fa il CSS con la media query "md"), con il
 // pulsante tondo «+» per il nuovo movimento in Riepilogo e Movimenti.
-// Il nuovo movimento e il suo dettaglio stanno sotto /movimenti: la voce
-// Movimenti resta evidenziata (NavLink senza "end").
+// Il nuovo movimento e il suo dettaglio stanno sotto /movimenti, «Pizze e ordini» sotto /statistiche: la voce
+// Movimenti (o Statistiche) resta evidenziata (NavLink senza "end").
 export default function Guscio() {
   const posizione = useLocation();
   const rifPrincipale = useRef<HTMLElement | null>(null);
   const percorsoPrecedente = useRef(posizione.pathname);
+  const ripristinando = useRef(false);
   const titolo = titoloPer(posizione.pathname);
   // Le barre fisse in basso (Annulla/Salva, totali) e la tastiera virtuale del
   // telefono: il fuoco non finisce sotto le une ne' sotto l'altra (hooks/).
@@ -57,10 +62,31 @@ export default function Guscio() {
   // riparte dal primo controllo della vista nuova. Non alla prima apertura.
   useEffect(() => {
     if (percorsoPrecedente.current === posizione.pathname) return;
+    const prima = percorsoPrecedente.current;
     percorsoPrecedente.current = posizione.pathname;
-    rifPrincipale.current?.focus({ preventScroll: true });
-    rifPrincipale.current?.scrollTo({ top: 0 });
+    const principale = rifPrincipale.current;
+    principale?.focus({ preventScroll: true });
+    if (!inMovimenti(posizione.pathname)) azzeraPosizioneLista();
+    // Si torna alla lista dal dettaglio: si riparte da dove eri, appena la lista ha la sua altezza.
+    if (principale && posizione.pathname === "/movimenti" && prima.startsWith("/movimenti/")) {
+      const meta = posizioneLista.scroll;
+      let tentativi = 0;
+      ripristinando.current = true;
+      const prova = () => {
+        principale.scrollTop = meta;
+        if (Math.abs(principale.scrollTop - meta) > 1 && tentativi++ < 40) requestAnimationFrame(prova);
+        else ripristinando.current = false;
+      };
+      requestAnimationFrame(prova);
+      return;
+    }
+    principale?.scrollTo({ top: 0 });
   }, [posizione.pathname]);
+
+  // La lista dei Movimenti ricorda dove sei arrivato scorrendo.
+  const ricordaScorrimento = (evento: UIEvent<HTMLElement>) => {
+    if (posizione.pathname === "/movimenti" && !ripristinando.current) posizioneLista.scroll = evento.currentTarget.scrollTop;
+  };
 
   const saltaAlContenuto = (evento: MouseEvent<HTMLAnchorElement>) => {
     evento.preventDefault();
@@ -101,7 +127,7 @@ export default function Guscio() {
         ))}
       </nav>
 
-      <main id="contenuto" ref={rifPrincipale} tabIndex={-1} aria-label={titolo} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto outline-none">
+      <main id="contenuto" ref={rifPrincipale} onScroll={ricordaScorrimento} tabIndex={-1} aria-label={titolo} className="relative min-h-0 min-w-0 flex-1 overflow-y-auto outline-none">
         <ErroreVista key={posizione.pathname}>
           <Outlet />
         </ErroreVista>

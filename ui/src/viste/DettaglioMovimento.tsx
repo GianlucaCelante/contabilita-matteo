@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, ErroreRichiesta, messaggioErrore } from "../api/client";
 import type { Ambito, Movimento } from "../api/tipi";
+import BadgeSede from "../componenti/BadgeSede";
 import { IconaDocumento } from "../componenti/IconeMovimento";
 import SchedaAllegato from "../componenti/SchedaAllegato";
 import SchedaLaterale, { Riga } from "../componenti/SchedaLaterale";
@@ -15,20 +16,23 @@ import FormMovimento from "../componenti/FormMovimento";
 import { IconaCestino } from "../componenti/Icone";
 import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
+import { mostraPrimoErrore } from "../hooks/scorriInVista";
 import { useAvviso } from "../hooks/useAvviso";
 import { useBloccoUscita } from "../hooks/useBloccoUscita";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { useSedi } from "../hooks/useSedi";
 import { CLASSE_TIPO, NOME_ORIGINE, TIPO_BREVE } from "../util/etichette";
 import { dataBreve, euro } from "../util/formato";
 import { daMovimento, frequenzaCambiata, modificheDelModello, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
 
-const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "dipendenti"];
+const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "dipendenti", "sedi"];
 
 function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   const navigate = useNavigate();
   const grande = useSchermoGrande();
   const avvisa = useAvviso();
   const client = useQueryClient();
+  const { piu } = useSedi();
   const iniziali = useRef<CampiForm>(daMovimento(movimento));
   const [campi, setCampi] = useState<CampiForm>(iniziali.current);
   const [errori, setErrori] = useState<Errori>({});
@@ -110,10 +114,13 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
     const { errori: nuovi, input } = preparaInput({ ...campi, ripeti: frequenza }, true);
     setErrori(nuovi);
     if (!input) {
-      avvisa("Controlla i campi segnati in rosso.", { tipo: "errore" });
+      avvisa("Controlla i campi segnati in rosso.", { tipo: "errore", posizione: "alto" });
+      mostraPrimoErrore();
       return;
     }
     if (!frequenza) delete input.ricorrenza;
+    // La sede si manda solo se e' cambiata (una sede archiviata non accetta piu' movimenti, ma quelli che ha restano com'e').
+    if (campi.sedeId === iniziali.current.sedeId || !piu) delete input.sedeId;
     if (attiva && modificheDelModello(iniziali.current, campi)) {
       setDaSalvare(input);
       return;
@@ -212,6 +219,14 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
             <Riga nome="Origine">
               <span>{movimento.origine === "RICORRENZA" ? "Ripetizione" : NOME_ORIGINE[movimento.origine]}</span>
             </Riga>
+            {piu && (
+              <Riga nome="Sede">
+                <span className="inline-flex items-center gap-2">
+                  <BadgeSede id={movimento.sede.id} taglia="piccolo" decorativo />
+                  {movimento.sede.nome}
+                </span>
+              </Riga>
+            )}
             <Riga nome="Ultima modifica">
               <span>{movimento.modificatoIl ? dataBreve(movimento.modificatoIl.slice(0, 10)) : "Mai"}</span>
             </Riga>

@@ -26,7 +26,7 @@ import { scorriInVista } from "./scorriInVista";
 //
 // Sulla larghezza da computer non fa niente (nessuna tastiera virtuale).
 
-const LARGHEZZA_TELEFONO = "(max-width: 767.98px)";
+const LARGHEZZA_TELEFONO = "(max-width: 1023.98px)";
 
 function campoDiTesto(nodo: Element | null): nodo is HTMLElement {
   if (!(nodo instanceof HTMLElement)) return false;
