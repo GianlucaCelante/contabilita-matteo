@@ -27,7 +27,7 @@ describe("descriviFrequenza", () => {
 const fisso = (extra: Partial<CampiForm> = {}): CampiForm => ({
   ...campiVuoti(),
   tipo: "COSTO_FISSO",
-  voceFissa: "AFFITTO",
+  categoria: "Affitto",
   data: "2026-10-05",
   importo: "950",
   ripeti: true,
@@ -113,7 +113,7 @@ describe("testoRipetizione (riquadro «Dove finisce»)", () => {
 describe("modificheDelModello: serve chiedere «solo questo o anche i prossimi»?", () => {
   const base = fisso();
   it("sì se cambiano importo, voce, categoria, fornitore, dipendente, descrizione o note", () => {
-    for (const cambio of [{ importo: "1000" }, { voceFissa: "UTENZE" as const }, { categoria: "Altro" }, { fornitore: "Rossi" }, { dipendente: "Mario" }, { descrizione: "Nuovo contratto" }, { note: "x" }, { retribuzione: "EXTRA" as const }]) {
+    for (const cambio of [{ importo: "1000" }, { eRetribuzione: true }, { categoria: "Altro" }, { fornitore: "Rossi" }, { dipendente: "Mario" }, { descrizione: "Nuovo contratto" }, { note: "x" }, { retribuzione: "EXTRA" as const }]) {
       expect(modificheDelModello(base, { ...base, ...cambio })).toBe(true);
     }
   });

@@ -1,5 +1,5 @@
 // Lo stato della demo: dati di prova inventati, tenuti nel browser (niente servizio, niente dati veri).
-import type { Categoria, Dipendente, Fornitore, Movimento, MovimentoInput, Tipo } from "../api/tipi";
+import type { Categoria, Dipendente, Fornitore, Movimento, MovimentoInput, StatoFattura, Tipo } from "../api/tipi";
 import type { UnitaRipetizione } from "../util/ripetizione";
 import { aggiungiGiorni, daIso, iso, lunediDi, oggiIso, successiva } from "./date";
 
@@ -29,19 +29,47 @@ export interface StatisticaDemo {
   ordini: number;
 }
 
+// Fatture da fare (docs/api.md): le caselle dell'utente e lo stato salvato per (casella, mese). Un mese senza riga e' «Da fare».
+export interface CasellaFatturaDemo {
+  id: number;
+  nome: string;
+  // Il mese (yyyy-MM) di creazione: i mesi prima non contano. Il giorno entro cui fare la fattura (1-31) o null.
+  dalMese: string;
+  giornoScadenza: number | null;
+}
+export interface MeseFatturaDemo {
+  casellaId: number;
+  mese: string;
+  stato: StatoFattura;
+  importoCent: number | null;
+  nota: string | null;
+}
+export interface FattureDemo {
+  caselle: CasellaFatturaDemo[];
+  mesi: MeseFatturaDemo[];
+}
+
+// Le voci salvate nella demo: `usi` non si salva, lo calcola il servizio finto a ogni lettura (demo/voci.ts).
+export type CategoriaDemo = Omit<Categoria, "usi">;
+export type FornitoreDemo = Omit<Fornitore, "usi">;
+export type DipendenteDemo = Omit<Dipendente, "usi">;
+
 export interface StatoDemo {
   giorno: string; // quando e' stato generato: il giorno dopo si rigenera, cosi' «oggi» ha sempre dei dati
   prossimoId: number;
   movimenti: Movimento[];
   ricorrenze: RicorrenzaDemo[];
-  categorie: Categoria[];
-  fornitori: Fornitore[];
-  dipendenti: Dipendente[];
+  categorie: CategoriaDemo[];
+  fornitori: FornitoreDemo[];
+  dipendenti: DipendenteDemo[];
   sedi: SedeDemo[];
   statistiche: StatisticaDemo[];
+  fatture: FattureDemo;
 }
 
-const CHIAVE = "contabilita-demo-v5";
+const CHIAVE = "contabilita-demo-v8";
+// La memoria della versione prima (senza «pagata» e senza scadenze): se c'e' ancora, si legge e si porta alla forma nuova.
+const CHIAVE_PRECEDENTE = "contabilita-demo-v7";
 
 // Generatore pseudo-casuale con seme fisso: la demo e' sempre uguale.
 function casuale(seme: number): () => number {
@@ -53,14 +81,14 @@ function casuale(seme: number): () => number {
 }
 
 const FORNITORI: { nome: string; iva: string; categoria: string; da: number; a: number }[] = [
-  { nome: "Molino Bianchi Farine", iva: "01234500011", categoria: "Farine", da: 18000, a: 95000 },
-  { nome: "Caseificio Valle Chiara", iva: "01234500022", categoria: "Latticini", da: 12000, a: 80000 },
-  { nome: "Ortofrutta Il Campo", iva: "01234500033", categoria: "Verdure", da: 6000, a: 38000 },
-  { nome: "Conserve del Sud", iva: "01234500044", categoria: "Pomodoro e conserve", da: 9000, a: 52000 },
+  { nome: "Molino Bianchi Farine", iva: "01234500011", categoria: "Ingredienti", da: 18000, a: 95000 },
+  { nome: "Caseificio Valle Chiara", iva: "01234500022", categoria: "Ingredienti", da: 12000, a: 80000 },
+  { nome: "Ortofrutta Il Campo", iva: "01234500033", categoria: "Ingredienti", da: 6000, a: 38000 },
+  { nome: "Conserve del Sud", iva: "01234500044", categoria: "Ingredienti", da: 9000, a: 52000 },
   { nome: "Bevande Colli Srl", iva: "01234500055", categoria: "Bevande", da: 15000, a: 110000 },
-  { nome: "Salumi Dal Borgo", iva: "01234500066", categoria: "Salumi", da: 8000, a: 46000 },
+  { nome: "Salumi Dal Borgo", iva: "01234500066", categoria: "Ingredienti", da: 8000, a: 46000 },
   { nome: "Imballaggi Rapidi", iva: "01234500077", categoria: "Carta e contenitori", da: 5000, a: 30000 },
-  { nome: "Pulizie Brillante", iva: "01234500088", categoria: "Detersivi", da: 3500, a: 18000 },
+  { nome: "Pulizie Brillante", iva: "01234500088", categoria: "Pulizia", da: 3500, a: 18000 },
   { nome: "Tecnoforni Assistenza", iva: "01234500099", categoria: "Manutenzione", da: 9000, a: 60000 },
 ];
 const DIPENDENTI = ["Luca Ferri", "Sara Gentile", "Paolo Moretti", "Elena Riva", "Marco Bellini", "Giulia Conti"];
@@ -72,7 +100,11 @@ const SEDI_DEMO = [
   { id: 2, nome: "Lungomare", peso: 0.72, fatture: 0.85, chiusa: 3, scontrinoCent: 2410, pizzePerOrdine: 3.4 },
   { id: 3, nome: "Mercato", peso: 0.42, fatture: 0.55, chiusa: 0, scontrinoCent: 1660, pizzePerOrdine: 2.6 },
 ];
-const CATEGORIE_FISSE = ["Affitto", "Luce", "Gas", "Internet", "Assicurazioni", "Pulizie"];
+// Le categorie di partenza dei costi fissi: sono ordinarie come tutte (si rinominano e si eliminano). Quella con il flag e' «Retribuzione»,
+// ma il nome non conta: conta il flag. Le altre categorie nascono dai movimenti di prova qui sotto.
+const CATEGORIE_FISSE = ["Affitto", "Luce", "Gas", "Internet", "Assicurazioni", "Pulizie", "Commercialista"];
+const RICAVI_CATEGORIE = ["Sala", "Asporto", "Delivery", "Eventi"];
+const VARIABILI_CATEGORIE = ["Ingredienti", "Bevande", "Carta e contenitori", "Imballaggi", "Pulizia"];
 
 function mov(stato: StatoDemo, d: string, i: MovimentoInput, origine: Movimento["origine"], ricorrenza: Movimento["ricorrenza"] = null): Movimento {
   const m: Movimento = {
@@ -89,6 +121,7 @@ function mov(stato: StatoDemo, d: string, i: MovimentoInput, origine: Movimento[
     numeroDocumento: i.numeroDocumento ?? null,
     note: i.note ?? null,
     origine,
+    pagata: i.documento === "FATTURA" && i.pagata === true,
     ricorrenza,
     allegatoNome: null,
     creatoIl: `${d}T09:00:00`,
@@ -104,14 +137,19 @@ export function rifSede(stato: StatoDemo, id: number | undefined): { id: number;
   return { id: s.id, nome: s.nome };
 }
 
-// «Trova o crea» dal solo nome, senza badare alle maiuscole (come il servizio). Una categoria creata cosi' e' «personalizzata»
-// (docs/api.md): solo i dati di partenza passano `false` per le categorie predefinite.
-export function trova(lista: Categoria[], nome: string, tipo: Tipo, personalizzata = true): number {
+// «Trova o crea» dal solo nome, senza badare alle maiuscole (come il servizio). Non esistono categorie predefinite: sono tutte
+// dell'utente. `retribuzione` conta solo alla creazione (per una categoria che c'e' gia' il flag non cambia).
+export function trova(lista: CategoriaDemo[], nome: string, tipo: Tipo, retribuzione = false): number {
   const trovata = lista.find((c) => c.tipo === tipo && c.nome.toLowerCase() === nome.toLowerCase());
   if (trovata) return trovata.id;
-  const nuova: Categoria = { id: Math.max(0, ...lista.map((c) => c.id)) + 1, nome, tipo, personalizzata };
+  const nuova: CategoriaDemo = { id: Math.max(0, ...lista.map((c) => c.id)) + 1, nome, tipo, retribuzione: tipo === "COSTO_FISSO" && retribuzione };
   lista.push(nuova);
   return nuova.id;
+}
+
+// Un movimento che e' una retribuzione (regolare o extra): vuole una categoria con il flag retribuzione.
+export function eDocumentoRetribuzione(documento: string): boolean {
+  return documento === "RETRIBUZIONE_REGOLARE" || documento === "RETRIBUZIONE_EXTRA";
 }
 export function trovaFornitore(stato: StatoDemo, nome: string, partitaIva: string | null = null): number {
   const trovato = stato.fornitori.find((f) => f.nome.toLowerCase() === nome.toLowerCase());
@@ -190,13 +228,15 @@ function generaDaZero(oggi: string): StatoDemo {
     dipendenti: [],
     sedi: SEDI_DEMO.map((s) => ({ id: s.id, nome: s.nome, archiviata: false, ordine: s.id })),
     statistiche: [],
+    fatture: { caselle: [], mesi: [] },
   };
   for (const f of FORNITORI) {
     trovaFornitore(stato, f.nome, f.iva);
-    trova(stato.categorie, f.categoria, "COSTO_VARIABILE", false);
   }
-  for (const c of CATEGORIE_FISSE) trova(stato.categorie, c, "COSTO_FISSO", false);
-  trova(stato.categorie, "Retribuzione", "COSTO_FISSO", false);
+  for (const c of RICAVI_CATEGORIE) trova(stato.categorie, c, "RICAVO");
+  for (const c of VARIABILI_CATEGORIE) trova(stato.categorie, c, "COSTO_VARIABILE");
+  for (const c of CATEGORIE_FISSE) trova(stato.categorie, c, "COSTO_FISSO");
+  trova(stato.categorie, "Retribuzione", "COSTO_FISSO", true);
   for (const d of DIPENDENTI) trovaDipendente(stato, d);
 
   const inizio = aggiungiGiorni(oggi, -150);
@@ -210,8 +250,8 @@ function generaDaZero(oggi: string): StatoDemo {
       const chiusa = giornoSett === s.chiusa;
       if (!chiusa) {
         const festivo = giornoSett === 0 || giornoSett === 5 || giornoSett === 6;
-        mov(stato, d, { data: d, tipo: "RICAVO", documento: "RICAVO_FATTURATO", importoCent: scala(festivo ? tra(70000, 112000) : tra(36000, 62000)), descrizione: "Incasso del giorno", sedeId }, "MANO");
-        mov(stato, d, { data: d, tipo: "RICAVO", documento: "RICAVO_EXTRA", importoCent: scala(tra(5000, 21000)), descrizione: "Asporto e consegne", sedeId }, "MANO");
+        mov(stato, d, { data: d, tipo: "RICAVO", documento: "RICAVO_FATTURATO", importoCent: scala(festivo ? tra(70000, 112000) : tra(36000, 62000)), categoria: "Sala", descrizione: "Incasso del giorno", sedeId }, "MANO");
+        mov(stato, d, { data: d, tipo: "RICAVO", documento: "RICAVO_EXTRA", importoCent: scala(tra(5000, 21000)), ...(daIso(d).getDate() === 13 ? {} : { categoria: "Asporto" }), descrizione: "Asporto e consegne", sedeId }, "MANO");
       }
       if (rnd() < s.fatture) {
         const f = FORNITORI[Math.floor(rnd() * FORNITORI.length)]!;
@@ -223,8 +263,8 @@ function generaDaZero(oggi: string): StatoDemo {
       }
     }
   }
-  // Le categorie «Tua» di partenza (create da chi usa l'app, non predefinite): Delivery ed Eventi fra i ricavi, Imballaggi e Pulizia fra i
-  // costi variabili (Commercialista, fra i fissi, e' piu' sotto). Hanno un generatore a parte: i dati di prima non cambiano.
+  // Altre categorie di partenza: Delivery ed Eventi fra i ricavi, Imballaggi e Pulizia fra i costi variabili (Commercialista, fra i fissi,
+  // e' piu' sotto). Hanno un generatore a parte: i dati di prima non cambiano.
   // Gli importi sono piccoli rispetto agli incassi, cosi' i risultati restano positivi.
   const rndTue = casuale(20261030);
   const traTue = (a: number, b: number) => Math.round(a + rndTue() * (b - a));
@@ -258,7 +298,7 @@ function generaDaZero(oggi: string): StatoDemo {
   const SEDE_DI: Record<string, number> = { "Luca Ferri": 1, "Elena Riva": 1, "Marco Bellini": 1, "Sara Gentile": 2, "Giulia Conti": 2, "Paolo Moretti": 3 };
   for (const [n, dip] of [[0, DIPENDENTI[0]!], [1, DIPENDENTI[2]!], [2, DIPENDENTI[1]!], [3, DIPENDENTI[0]!]] as const) {
     const d = aggiungiGiorni(inizio, 12 + n * 31);
-    if (d <= oggi) mov(stato, d, { data: d, tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_EXTRA", importoCent: tra(6000, 22000), dipendente: dip, descrizione: "Serata extra", sedeId: SEDE_DI[dip] }, "MANO");
+    if (d <= oggi) mov(stato, d, { data: d, tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_EXTRA", importoCent: tra(6000, 22000), categoria: "Retribuzione", dipendente: dip, descrizione: "Serata extra", sedeId: SEDE_DI[dip] }, "MANO");
   }
   const f = FORNITORI[0]!;
   mov(stato, aggiungiGiorni(inizio, 40), { data: aggiungiGiorni(inizio, 40), tipo: "COSTO_VARIABILE", documento: "NOTA_DI_CREDITO", importoCent: 12400, fornitore: f.nome, categoria: f.categoria, numeroDocumento: "NC-12", sedeId: 1 }, "MANO");
@@ -274,7 +314,7 @@ function generaDaZero(oggi: string): StatoDemo {
     mov(stato, primo, { ...i, data: primo }, "MANO", riferimentoRicorrenza(r));
   };
   const fisso = (sedeId: number, importoCent: number, categoria: string, descrizione?: string): MovimentoInput => ({ data: "", tipo: "COSTO_FISSO", documento: "NESSUNO", importoCent, categoria, descrizione, sedeId });
-  const paga = (dipendente: string, importoCent: number): MovimentoInput => ({ data: "", tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_REGOLARE", importoCent, dipendente, sedeId: SEDE_DI[dipendente] });
+  const paga = (dipendente: string, importoCent: number): MovimentoInput => ({ data: "", tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_REGOLARE", importoCent, categoria: "Retribuzione", dipendente, sedeId: SEDE_DI[dipendente] });
   // Le retribuzioni sono settimanali (il sabato): cosi' ogni settimana porta la sua parte di costo e il risultato della settimana e'
   // realistico, non gonfiato dalle settimane senza paghe e non in rosso in quella in cui cadono. Per ogni sede, importi mensili / 52 x 12.
   let giornoPaghe = inizio;
@@ -297,7 +337,7 @@ function generaDaZero(oggi: string): StatoDemo {
   ripeti(primoGiorno(gLuce), fisso(1, 61000, "Luce", "Bolletta bimestrale"), gLuce, "MESI", 2);
   ripeti(primoGiorno(gLuce), fisso(2, 43500, "Luce", "Bolletta bimestrale"), gLuce, "MESI", 2);
   ripeti(primoGiorno(gLuce), fisso(3, 23800, "Luce", "Bolletta bimestrale"), gLuce, "MESI", 2);
-  // Commercialista: voce fissa «Tua», mensile, un giorno scelto come le altre (almeno 19 giorni fa).
+  // Commercialista: voce fissa come le altre, mensile, un giorno scelto come le altre (almeno 19 giorni fa).
   const gCommercialista = giornoDelMese(19);
   ripeti(primoGiorno(gCommercialista), fisso(1, 18000, "Commercialista", "Contabilità e dichiarazioni"), gCommercialista, "MESI", 1);
   ripeti(primoGiorno(gInternet), fisso(1, 6500, "Internet"), gInternet, "MESI", 1);
@@ -306,7 +346,62 @@ function generaDaZero(oggi: string): StatoDemo {
   ripeti(aggiungiGiorni(inizio, 5), fisso(2, 7000, "Pulizie", "Pulizia settimanale"), daIso(aggiungiGiorni(inizio, 5)).getDate(), "SETTIMANE", 1);
   generaScadenze(stato, oggi);
   generaStatistiche(stato, oggi);
+  generaFatture(stato, oggi);
+  generaPagate(stato, oggi);
   return stato;
+}
+
+// Fatture ricevute di prova: quelle di oltre 45 giorni fa sono pagate; le piu' recenti sono miste (una su tre ancora da pagare),
+// cosi' «Ricevute» e le statistiche per fornitore si vedono con entrambi gli stati.
+function generaPagate(stato: StatoDemo, oggi: string): void {
+  const limite = aggiungiGiorni(oggi, -45);
+  for (const m of stato.movimenti) {
+    if (m.documento !== "FATTURA") continue;
+    m.pagata = m.data < limite || m.id % 3 !== 0;
+  }
+}
+
+// Fatture da fare di prova: tre caselle inventate. I mesi passati sono quasi tutti pagati (una ancora da incassare, una dimenticata);
+// il mese in corso ha due «Da fare» e una gia' emessa, cosi' la scheda del Riepilogo e i contatori si vedono subito.
+function generaFatture(stato: StatoDemo, oggi: string): void {
+  const f = stato.fatture;
+  const adesso = oggi.slice(0, 7);
+  // Le scadenze: Eventi il 28; Catering Rossi fra due giorni (cosi' la Home mostra sempre una riga in evidenza, qualunque sia oggi); Euro Service il 5.
+  const giornoOggi = Number(oggi.slice(8, 10));
+  const ultimoGiorno = new Date(Number(adesso.slice(0, 4)), Number(adesso.slice(5, 7)), 0).getDate();
+  const fra2Giorni = Math.min(giornoOggi + 2, ultimoGiorno);
+  const [aa, mm] = adesso.split("-").map(Number);
+  const indiceDal = (aa ?? 1970) * 12 + ((mm ?? 1) - 1) - 5;
+  const dalMese = `${Math.floor(indiceDal / 12)}-${String((indiceDal % 12) + 1).padStart(2, "0")}`;
+  f.caselle.push(
+    { id: 1, nome: "Fatture eventi", dalMese, giornoScadenza: 28 },
+    { id: 2, nome: "Fatture catering Rossi", dalMese, giornoScadenza: fra2Giorni },
+    { id: 3, nome: "Fatture Euro Service", dalMese, giornoScadenza: 5 },
+  );
+  const meseA = (indietro: number) => {
+    const [a, m] = adesso.split("-").map(Number);
+    const indice = (a ?? 1970) * 12 + ((m ?? 1) - 1) - indietro;
+    return `${Math.floor(indice / 12)}-${String((indice % 12) + 1).padStart(2, "0")}`;
+  };
+  const metti = (casellaId: number, indietro: number, stato: StatoFattura, importoCent: number | null, nota: string | null) =>
+    f.mesi.push({ casellaId, mese: meseA(indietro), stato, importoCent, nota });
+  // Eventi: ogni mese una fattura, pagata; quella del mese scorso e' ancora da incassare.
+  metti(1, 5, "PAGATA", 180000, "N. 31");
+  metti(1, 4, "PAGATA", 240000, "N. 36");
+  metti(1, 3, "PAGATA", 95000, "N. 40");
+  metti(1, 2, "PAGATA", 310000, "N. 44");
+  metti(1, 1, "EMESSA", 265000, "N. 49, bonifico a 30 giorni");
+  metti(1, 0, "EMESSA", 120000, "N. 53");
+  // Catering Rossi: due mesi senza (tornano «Da fare»: dimenticate), il resto pagato.
+  metti(2, 5, "PAGATA", 82000, null);
+  metti(2, 3, "PAGATA", 76000, null);
+  metti(2, 1, "PAGATA", 91000, "N. 48");
+  // Euro Service: mensile, di solito pagata dopo un mese.
+  metti(3, 5, "PAGATA", 125000, "N. 30");
+  metti(3, 4, "PAGATA", 125000, "N. 35");
+  metti(3, 3, "PAGATA", 125000, "N. 39");
+  metti(3, 2, "PAGATA", 125000, "N. 43");
+  metti(3, 1, "EMESSA", 125000, "N. 50");
 }
 
 // Pizze e ordini di prova: le ultime sette settimane intere per tutte le sedi (una settimana con una sede mancante, per vedere «2 su 3»)
@@ -336,29 +431,75 @@ function generaStatistiche(stato: StatoDemo, oggi: string): void {
 
 let corrente: StatoDemo | null = null;
 
+// Demo «vuota» (indirizzo con ?vuoto): si parte come un'installazione nuova, senza dati di prova, con la sola «Sede principale».
+// Ha una memoria sua: non tocca i dati di prova e, a differenza di questi, non si rigenera il giorno dopo.
+let vuota = false;
+const chiave = () => (vuota ? `${CHIAVE}-vuoto` : CHIAVE);
+const chiavePrecedente = () => (vuota ? `${CHIAVE_PRECEDENTE}-vuoto` : CHIAVE_PRECEDENTE);
+
+// Porta alla forma di adesso uno stato salvato dalle versioni prima: le fatture gia' presenti risultano pagate (come la migrazione del
+// servizio, per non riempire di arretrati chi usa gia' l'app); le caselle ricevono `dalMese` (il primo mese con uno stato salvato, altrimenti
+// questo) e nessuna scadenza. Si puo' ripetere: non cambia uno stato gia' aggiornato.
+export function migraStato(letto: unknown): StatoDemo {
+  const st = letto as StatoDemo;
+  for (const m of st.movimenti) {
+    if (typeof m.pagata !== "boolean") m.pagata = m.documento === "FATTURA";
+  }
+  const adesso = oggiIso().slice(0, 7);
+  for (const c of st.fatture.caselle) {
+    if (typeof c.dalMese !== "string") {
+      const salvati = st.fatture.mesi.filter((x) => x.casellaId === c.id).map((x) => x.mese);
+      c.dalMese = salvati.length > 0 ? salvati.reduce((a, b) => (b < a ? b : a)) : adesso;
+    }
+    if (c.giornoScadenza === undefined) c.giornoScadenza = null;
+  }
+  return st;
+}
+
+export function modalitaVuota(attiva: boolean): void {
+  if (vuota === attiva) return;
+  vuota = attiva;
+  corrente = null;
+}
+
+function generaVuoto(oggi: string): StatoDemo {
+  return {
+    giorno: oggi,
+    prossimoId: 1,
+    movimenti: [],
+    ricorrenze: [],
+    categorie: [],
+    fornitori: [],
+    dipendenti: [],
+    sedi: [{ id: 1, nome: "Sede principale", archiviata: false, ordine: 1 }],
+    statistiche: [],
+    fatture: { caselle: [], mesi: [] },
+  };
+}
+
 export function stato(): StatoDemo {
   if (corrente) return corrente;
   const oggi = oggiIso();
   try {
-    const salvato = localStorage.getItem(CHIAVE);
+    const salvato = localStorage.getItem(chiave()) ?? localStorage.getItem(chiavePrecedente());
     if (salvato) {
-      const letto = JSON.parse(salvato) as StatoDemo;
-      if (letto.giorno === oggi) {
+      const letto = migraStato(JSON.parse(salvato));
+      if (vuota || letto.giorno === oggi) {
         corrente = letto;
         return letto;
       }
     }
   } catch {
-    // niente memoria del browser: si riparte dai dati di prova
+    // niente memoria del browser: si riparte dai dati di partenza
   }
-  corrente = generaDaZero(oggi);
+  corrente = vuota ? generaVuoto(oggi) : generaDaZero(oggi);
   salva();
   return corrente;
 }
 
 export function salva(): void {
   try {
-    if (corrente) localStorage.setItem(CHIAVE, JSON.stringify(corrente));
+    if (corrente) localStorage.setItem(chiave(), JSON.stringify(corrente));
   } catch {
     // memoria piena o bloccata (navigazione privata): la demo funziona lo stesso, senza ricordare
   }
@@ -367,7 +508,8 @@ export function salva(): void {
 export function ricomincia(): void {
   corrente = null;
   try {
-    localStorage.removeItem(CHIAVE);
+    localStorage.removeItem(chiave());
+    localStorage.removeItem(chiavePrecedente());
   } catch {
     // niente
   }

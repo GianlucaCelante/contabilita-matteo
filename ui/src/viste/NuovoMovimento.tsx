@@ -15,6 +15,8 @@ import { useAvviso } from "../hooks/useAvviso";
 import { useBloccoUscita } from "../hooks/useBloccoUscita";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { useSedi } from "../hooks/useSedi";
+import { etichettaIntervallo, intervalloDi, oggiIso } from "../util/formato";
+import { leggiFiltri, magazzinoBrowser, periodoDopoSalvataggio, salvaFiltri } from "../util/filtriSalvati";
 import { campiVuoti, preparaInput, type CampiForm, type Errori } from "../util/modelloMovimento";
 
 // Aspetta l'elenco delle sedi, cosi' il modulo parte con la sede giusta gia' scelta (la sola selezionata, altrimenti nessuna).
@@ -46,7 +48,10 @@ function ModuloNuovo({ sedeIniziale }: { sedeIniziale: number | null }) {
 
   // Con due o piu' sedi scelte si crea un movimento per sede (una sola chiamata, tutto o niente); altrimenti ne crea uno.
   const salva = useMutation({
-    mutationFn: async (corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>) => (campi.dividi ? api.dividiMovimento(corpo, campi.sediDivise) : [await api.creaMovimento(corpo)]),
+    mutationFn: async (corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>) => {
+      await api.assicuraCategoriaRetribuzione(corpo);
+      return campi.dividi ? api.dividiMovimento(corpo, campi.sediDivise) : [await api.creaMovimento(corpo)];
+    },
     onSuccess: () => {
       for (const k of ["movimenti", "riepilogo", "fornitori", "categorie", "dipendenti", "sedi"]) void client.invalidateQueries({ queryKey: [k] });
     },
@@ -88,12 +93,16 @@ function ModuloNuovo({ sedeIniziale }: { sedeIniziale: number | null }) {
         allegatoOk = false;
       }
     }
-    if (allegatoOk) avvisa(creati.length > 1 ? `Movimento diviso fra ${creati.length} sedi.` : "Movimento salvato.");
+    // Se il movimento e' di un periodo diverso da quello mostrato, l'elenco passa al suo mese: altrimenti sembrerebbe vuoto.
+    const cambio = periodoDopoSalvataggio(campi.data, leggiFiltri(), oggiIso());
+    if (cambio) salvaFiltri(magazzinoBrowser(), cambio);
+    const dove = cambio ? ` Ora vedi ${etichettaIntervallo("mese", intervalloDi("mese", campi.data)).toLowerCase()}.` : "";
+    if (allegatoOk) avvisa((creati.length > 1 ? `Movimento diviso fra ${creati.length} sedi.` : "Movimento salvato.") + dove);
     else avvisa("Movimento salvato, ma l'allegato non è stato caricato: puoi aggiungerlo dal dettaglio.", { tipo: "errore" });
     setAllegato(null);
     if (eAltro) {
       // si riparte da un modulo vuoto dello stesso tipo, con la stessa data
-      const nuovo = { ...campiVuoti(), tipo: campi.tipo, voceFissa: campi.voceFissa, categoria: campi.voceFissa === "ALTRA" ? campi.categoria : "", retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo, sedeId: campi.sedeId, dividi: campi.dividi, sediDivise: campi.sediDivise };
+      const nuovo = { ...campiVuoti(), tipo: campi.tipo, categoria: campi.tipo === "COSTO_FISSO" ? campi.categoria : "", eRetribuzione: campi.eRetribuzione, retribuzione: campi.retribuzione, data: campi.data, documentoVariabile: campi.documentoVariabile, tipoRicavo: campi.tipoRicavo, sedeId: campi.sedeId, dividi: campi.dividi, sediDivise: campi.sediDivise };
       setCampi(nuovo);
       setIniziali(nuovo);
       setErrori({});

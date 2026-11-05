@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, chiavi } from "../api/client";
-import type { Riepilogo as DatiRiepilogo } from "../api/tipi";
+import type { Riepilogo as DatiRiepilogo, VoceRiepilogo } from "../api/tipi";
 import BadgeSede from "../componenti/BadgeSede";
+import SchedaFattureDaFare from "../componenti/SchedaFattureDaFare";
 import SchedaScontrinoMedio from "../componenti/SchedaScontrinoMedio";
 import SelettorePeriodo from "../componenti/SelettorePeriodo";
 import SelettoreSedi from "../componenti/SelettoreSedi";
@@ -10,7 +11,6 @@ import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { useSedi } from "../hooks/useSedi";
-import { dividiVociFisse, nomiTue } from "../util/categorie";
 import { euro, NOME_PERIODO, numeroCent, percentuale } from "../util/formato";
 
 // Una riga di una scheda. `sotto` e' il sottotesto accanto al nome (solo sul computer);
@@ -22,6 +22,41 @@ function Riga({ nome, valore, sotto, className = "" }: { nome: string; valore: n
         {sotto && <span className="text-[13px] text-spento max-md:hidden"> · {sotto}</span>}
       </span>
       <span className="num shrink-0">{euro(valore)}</span>
+    </li>
+  );
+}
+
+// Una riga per categoria (dall'importo piu' alto; «Senza categoria» in fondo, in tono spento). Senza movimenti nel periodo: una riga che lo dice.
+function RigheVoci({ voci }: { voci: VoceRiepilogo[] }) {
+  if (voci.length === 0) return <li className="flex min-h-[44px] items-center border-t border-riga text-[15px] text-spento">Nessun movimento</li>;
+  return (
+    <>
+      {voci.map((v) => (
+        <Riga key={v.id ?? "senza"} nome={v.categoria} valore={v.importoCent} className={v.id === null ? "text-spento" : ""} />
+      ))}
+    </>
+  );
+}
+
+// «di cui»: le somme per documento (fatturati/extra, fatture/scontrini, retribuzione regolare/extra) sono un dettaglio del totale, NON
+// vanno aggiunte: stanno sotto le categorie, piu' piccole e piu' chiare, e si vedono solo se sono maggiori di zero.
+function DiCui({ nomeA, valoreA, nomeB, valoreB }: { nomeA: string; valoreA: number; nomeB: string; valoreB: number }) {
+  const presenti = [
+    { nome: nomeA, valore: valoreA },
+    { nome: nomeB, valore: valoreB },
+  ].filter((r) => r.valore > 0);
+  if (presenti.length === 0) return null;
+  return (
+    <li className="border-t border-dashed border-bordo2 pb-1 pt-2" aria-label="Di cui, già compreso nel totale">
+      <div className="etichettaMaiuscola">di cui (già nel totale)</div>
+      <ul className="m-0 list-none p-0">
+        {presenti.map((r) => (
+          <li key={r.nome} className="flex min-h-[32px] items-center justify-between gap-3 text-[14px] text-spento">
+            <span className="min-w-0">{r.nome}</span>
+            <span className="num shrink-0">{euro(r.valore)}</span>
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }
@@ -152,10 +187,6 @@ export default function Riepilogo() {
   const nomePeriodo = NOME_PERIODO[periodo.tipo];
   const titoloRisultato = sedi.piu ? `${nomePeriodo} · ${sedi.incluse ?? "tutte le sedi"}` : nomePeriodo;
   const perSede = sedi.piu && sedi.selezionate.length >= 2 ? (d?.perSede ?? []) : [];
-  // Le voci fisse create da chi usa l'app («Tua»): sul telefono hanno la loro riga, il resto sta in una riga sola.
-  const categorieFisse = useQuery({ queryKey: chiavi.categorie("COSTO_FISSO"), queryFn: () => api.categorie("COSTO_FISSO"), staleTime: 15_000 });
-  const tueFisse = nomiTue(categorieFisse.data ?? []);
-  const fisseTelefono = dividiVociFisse(d?.costiFissi.altreVoci ?? [], tueFisse);
   const coloreRisultato = d && d.risultatoCent < 0 ? "text-rosso" : "text-verdescuro";
 
   return (
@@ -166,6 +197,8 @@ export default function Riepilogo() {
         <div className="pb-3 md:pb-4">
           <SelettorePeriodo periodo={periodo} />
         </div>
+
+        <SchedaFattureDaFare />
 
         {(q.isPending || !sedi.pronto) && <Caricamento />}
         {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
@@ -224,32 +257,16 @@ export default function Riepilogo() {
 
             <div className="flex flex-col gap-3 md:flex-1 md:flex-row md:gap-4">
               <Blocco titolo="Ricavi" totaleNome="Totale ricavi" totale={d.ricavi.totaleCent}>
-                <Riga nome="Fatturati" valore={d.ricavi.fatturatiCent} />
-                <Riga nome="Extra" valore={d.ricavi.extraCent} />
-                {d.ricavi.altreVoci.map((v) => (
-                  <Riga key={v.categoria} nome={v.categoria} valore={v.importoCent} />
-                ))}
+                <RigheVoci voci={d.ricavi.voci} />
+                <DiCui nomeA="Fatturati" valoreA={d.ricavi.fatturatiCent} nomeB="Extra" valoreB={d.ricavi.extraCent} />
               </Blocco>
               <Blocco titolo="Costi variabili" totaleNome="Totale variabili" totale={d.costiVariabili.totaleCent}>
-                <Riga nome="Fatture" valore={d.costiVariabili.fattureCent} />
-                <Riga nome="Scontrini" sotto="totali inseriti" valore={d.costiVariabili.scontriniCent} />
-                {d.costiVariabili.altreVoci.map((v) => (
-                  <Riga key={v.categoria} nome={v.categoria} valore={v.importoCent} />
-                ))}
+                <RigheVoci voci={d.costiVariabili.voci} />
+                <DiCui nomeA="Fatture" valoreA={d.costiVariabili.fattureCent} nomeB="Scontrini" valoreB={d.costiVariabili.scontriniCent} />
               </Blocco>
               <Blocco titolo="Costi fissi" totaleNome="Totale fissi" totale={d.costiFissi.totaleCent} peso={1.15}>
-                <Riga nome="Retribuzione regolare" valore={d.costiFissi.retribuzioneRegolareCent} />
-                <Riga nome="Retribuzione extra" valore={d.costiFissi.retribuzioneExtraCent} />
-                {/* Computer: una riga per voce. Telefono: una riga per ogni voce «Tua» e una sola per tutte le altre. */}
-                {d.costiFissi.altreVoci.map((v) => (
-                  <Riga key={v.categoria} className="max-md:hidden" nome={v.categoria} valore={v.importoCent} />
-                ))}
-                {fisseTelefono.tue.map((v) => (
-                  <Riga key={v.categoria} className="md:hidden" nome={v.categoria} valore={v.importoCent} />
-                ))}
-                {fisseTelefono.altre.length > 0 && (
-                  <Riga className="md:hidden" nome="Affitto, utenze, altre" valore={fisseTelefono.sommaAltre} />
-                )}
+                <RigheVoci voci={d.costiFissi.voci} />
+                <DiCui nomeA="Retribuzione regolare" valoreA={d.costiFissi.retribuzioneRegolareCent} nomeB="Retribuzione extra" valoreB={d.costiFissi.retribuzioneExtraCent} />
               </Blocco>
             </div>
           </div>

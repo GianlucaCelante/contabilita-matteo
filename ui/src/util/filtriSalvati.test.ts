@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leggiFiltri, salvaFiltri } from "./filtriSalvati";
+import { leggiFiltri, periodoDopoSalvataggio, salvaFiltri } from "./filtriSalvati";
 
 // Un magazzino finto, come localStorage.
 function finto(iniziale: Record<string, string> = {}) {
@@ -64,5 +64,35 @@ describe("filtri salvati", () => {
     };
     expect(leggiFiltri(rotto)).toEqual({});
     expect(() => salvaFiltri(rotto, { p: "mese" })).not.toThrow();
+  });
+});
+
+describe("periodoDopoSalvataggio: l'elenco segue il movimento appena salvato", () => {
+  const oggi = "2026-11-04";
+  it("data dentro il periodo mostrato: niente da cambiare", () => {
+    expect(periodoDopoSalvataggio("2026-11-20", { p: "mese", r: "2026-11-04" }, oggi)).toBeNull();
+    expect(periodoDopoSalvataggio("2026-03-01", { p: "anno", r: "2026-11-04" }, oggi)).toBeNull();
+    expect(periodoDopoSalvataggio("2026-10-05", { p: "periodo", da: "2026-10-01", a: "2026-10-31" }, oggi)).toBeNull();
+  });
+  it("senza periodo salvato vale il mese corrente", () => {
+    expect(periodoDopoSalvataggio("2026-11-30", {}, oggi)).toBeNull();
+    expect(periodoDopoSalvataggio("2026-09-10", {}, oggi)).toEqual({ p: "mese", r: "2026-09-10" });
+  });
+  it("data fuori dal periodo mostrato: si passa al mese del movimento", () => {
+    expect(periodoDopoSalvataggio("2026-09-10", { p: "mese", r: "2026-11-04" }, oggi)).toEqual({ p: "mese", r: "2026-09-10" });
+    expect(periodoDopoSalvataggio("2026-11-30", { p: "settimana", r: "2026-11-04" }, oggi)).toEqual({ p: "mese", r: "2026-11-30" });
+    expect(periodoDopoSalvataggio("2025-12-31", { p: "anno", r: "2026-01-01" }, oggi)).toEqual({ p: "mese", r: "2025-12-31" });
+    expect(periodoDopoSalvataggio("2026-11-02", { p: "periodo", da: "2026-10-01", a: "2026-10-31" }, oggi)).toEqual({ p: "mese", r: "2026-11-02" });
+  });
+});
+
+import { scartaIdInesistenti } from "./filtriSalvati";
+describe("scartaIdInesistenti", () => {
+  it("scarta gli id che non esistono piu', tiene gli altri", () => {
+    expect(scartaIdInesistenti([1, 2, 9], [{ id: 1 }, { id: 2 }, { id: 3 }])).toEqual([1, 2]);
+    expect(scartaIdInesistenti([9], [{ id: 1 }])).toEqual([]);
+  });
+  it("senza elenco non scarta niente", () => {
+    expect(scartaIdInesistenti([1, 9], undefined)).toEqual([1, 9]);
   });
 });

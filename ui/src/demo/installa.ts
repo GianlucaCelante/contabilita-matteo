@@ -1,6 +1,7 @@
 // Mette la demo al posto del servizio: ogni fetch verso /api/... va a demo/backend.ts, il resto passa com'e'.
 // Si importa solo dalla pagina della demo (main.tsx con VITE_DEMO), mai nell'app vera.
 import { rispondi } from "./backend";
+import { modalitaVuota } from "./stato";
 
 const fetchVera = window.fetch.bind(window);
 
@@ -22,6 +23,8 @@ async function corpoDi(init?: RequestInit): Promise<unknown> {
 }
 
 export function installaDemo(): void {
+  // Con ?vuoto nell'indirizzo (prima del #) la demo parte senza dati di prova, come un'installazione nuova.
+  modalitaVuota(new URLSearchParams(window.location.search).has("vuoto"));
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, window.location.href);
     if (!url.pathname.startsWith("/api/")) return fetchVera(input, init);

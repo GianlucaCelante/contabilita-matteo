@@ -1,26 +1,25 @@
-import { useId, useMemo, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useMemo, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import AzioniVoce, { type EsitoVoce } from "./AzioniVoce";
 import BadgeSede from "./BadgeSede";
-import Combobox from "./Combobox";
-import GestioneCategoria from "./GestioneCategoria";
+import Combobox, { type ModificaVoci } from "./Combobox";
+import Interruttore from "./Interruttore";
 import SceltaFrequenza from "./SceltaFrequenza";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { useSedi } from "../hooks/useSedi";
-import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori } from "../hooks/useSuggerimenti";
+import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori, type VoceSuggerita } from "../hooks/useSuggerimenti";
 import {
   alternaSede,
-  campiDaNomeVoce,
-  chiedeCategoria,
+  campiDaVoceFissa,
   chiedeDescrizione,
   chiedeFornitore,
-  nomeVoce,
   opzioniVoce,
   ripetibile,
   sediDelleDivisione,
+  voceFissaNuova,
   type CampiForm,
   type Errori,
-  vociPersonalizzate,
 } from "../util/modelloMovimento";
-import type { Tipo } from "../api/tipi";
+import type { Anagrafica, Tipo } from "../api/tipi";
 import { leggiEuro } from "../util/formato";
 import { anteprimaDivisione } from "../util/sedi";
 
@@ -117,8 +116,8 @@ const TIPI: Opzione<Tipo>[] = [
 
 
 const OPZIONI_RICAVO: Opzione<"RICAVO_FATTURATO" | "RICAVO_EXTRA">[] = [
-            { valore: "RICAVO_FATTURATO", etichetta: "Fatturato" },
-            { valore: "RICAVO_EXTRA", etichetta: "Extra (non fatturato)" },
+            { valore: "RICAVO_FATTURATO", etichetta: "Con fattura" },
+            { valore: "RICAVO_EXTRA", etichetta: "Senza fattura (extra)" },
           ];
 
 const OPZIONI_DOCUMENTO: Opzione<"FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO">[] = [
@@ -135,6 +134,9 @@ const OPZIONI_RETRIBUZIONE: Opzione<"REGOLARE" | "EXTRA">[] = [
                 { valore: "REGOLARE", etichetta: "Regolare" },
                 { valore: "EXTRA", etichetta: "Extra" },
               ];
+
+// Il campo del modulo che contiene il nome di una voce (la voce fissa e' la categoria di un costo fisso).
+type CampoVoce = "fornitore" | "dipendente" | "categoria" | "voceFissa";
 
 interface ProprietaForm {
   campi: CampiForm;
@@ -253,16 +255,37 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const fornitori = useSuggerimentiFornitori(campi.fornitore);
   const dipendenti = useSuggerimentiDipendenti(campi.dipendente);
   const categorie = useSuggerimentiCategorie(campi.tipo, campi.categoria);
-  // Le voci fisse create da chi usa l'app sono le categorie dei costi fissi: stanno nel campo «Voce fissa» accanto a Retribuzione, Affitto e Utenze.
+  // La voce fissa e' una categoria dei costi fissi, scelta o creata da chi usa l'app (nessun nome e' scritto nel codice).
   const categorieFisse = useSuggerimentiCategorie("COSTO_FISSO", "");
-  const proprie = useMemo(() => vociPersonalizzate(categorieFisse.opzioni), [categorieFisse.opzioni]);
-  const chiedeCategoriaForm = campi.tipo !== "COSTO_FISSO" && chiedeCategoria(campi);
+  const vociFisse = useMemo(() => opzioniVoce(campi.categoria, categorieFisse.opzioni), [campi.categoria, categorieFisse.opzioni]);
+  // La matita dei campi di scelta: rinomina, unisci o elimina la voce. Se il campo conteneva proprio quella voce, si aggiorna.
+  const [gestita, setGestita] = useState<{ anagrafica: Anagrafica; campo: CampoVoce; voce: VoceSuggerita } | null>(null);
+  const modificaPer = (anagrafica: Anagrafica, campo: CampoVoce, voci: VoceSuggerita[]): ModificaVoci => {
+    const cerca = (nome: string) => voci.find((v) => v.nome.toLowerCase() === nome.trim().toLowerCase());
+    return { puo: (nome) => !!cerca(nome), apri: (nome) => { const voce = cerca(nome); if (voce) setGestita({ anagrafica, campo, voce }); } };
+  };
+  function dopoGestione(esito: EsitoVoce) {
+    if (!gestita) return;
+    const { campo, voce } = gestita;
+    const attuale = campo === "voceFissa" ? campi.categoria : campi[campo];
+    if (attuale.trim().toLowerCase() !== voce.nome.toLowerCase()) return;
+    const nuovo = esito.azione === "elimina" ? "" : esito.nome;
+    if (campo === "voceFissa") {
+      // Rinominata: il flag e' quello appena salvato. Unita a un'altra: quello dell'altra. Eliminata: il nome non c'e' piu'.
+      const flag = esito.azione === "rinomina" ? esito.retribuzione : esito.azione === "unisci" ? categorieFisse.voci.find((v) => v.nome.toLowerCase() === nuovo.toLowerCase())?.retribuzione : false;
+      onCambia({ categoria: nuovo, eRetribuzione: flag ?? campi.eRetribuzione });
+    }
+    else onCambia({ [campo]: nuovo });
+  }
+  const chiedeCategoriaForm = campi.tipo !== "COSTO_FISSO";
   const fornitoreRichiesto = chiedeFornitore(campi);
-  const retribuzione = campi.tipo === "COSTO_FISSO" && campi.voceFissa === "RETRIBUZIONE";
+  // Il flag retribuzione della categoria scelta (o, per un nome nuovo, l'interruttore) governa Regolare/Extra e Dipendente.
+  const retribuzione = campi.tipo === "COSTO_FISSO" && campi.eRetribuzione;
+  const nomeNuovo = campi.tipo === "COSTO_FISSO" && voceFissaNuova(campi, categorieFisse.voci);
   const fattura = campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile !== "SCONTRINO";
 
   function cambiaTipo(tipo: Tipo) {
-    onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", fornitore: "" });
+    onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", eRetribuzione: false, fornitore: "" });
   }
 
   function accendiRipeti() {
@@ -291,7 +314,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
     <Campo key="fattura" etichetta="N. fattura" type="text" value={campi.numeroDocumento} onChange={(e) => onCambia({ numeroDocumento: e.target.value })} />
   ) : null;
   const campoDipendente = retribuzione ? (
-    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" genere="m" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} {...dipendenti} />
+    <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" genere="m" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} nota={campi.dipendente.trim() ? undefined : "Indica chi: serve per le statistiche per dipendente."} modifica={modificaPer("dipendenti", "dipendente", dipendenti.voci)} {...dipendenti} />
   ) : null;
   const campoNote = (
     <Campo
@@ -316,7 +339,10 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
       {!modifica && <Scelte legenda="Che cos'è" valore={campi.tipo} opzioni={TIPI} onScegli={cambiaTipo} />}
 
       {campi.tipo === "RICAVO" && (
-        <Scelte legenda="Che ricavo è" valore={campi.tipoRicavo} opzioni={OPZIONI_RICAVO} onScegli={(v) => onCambia({ tipoRicavo: v })} bassa={modifica} />
+        <div>
+          <Scelte legenda="Che ricavo è" valore={campi.tipoRicavo} opzioni={OPZIONI_RICAVO} onScegli={(v) => onCambia({ tipoRicavo: v })} bassa={modifica} />
+          <p className="m-0 mt-1.5 text-[13px] text-spento">Nel Riepilogo: «Fatturati» se c&apos;è la fattura, «Extra» se no.</p>
+        </div>
       )}
 
       {/* Nel dettaglio sul telefono il documento non si cambia: il modulo parte dai campi. */}
@@ -330,15 +356,29 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
             <Combobox
               etichetta="Voce fissa"
               cosa="voce" genere="f"
-              value={nomeVoce(campi)}
-              onChange={(v) => onCambia(campiDaNomeVoce(v))}
-              opzioni={opzioniVoce(nomeVoce(campi), proprie)}
+              esempi="Affitto, Luce, Commercialista"
+              value={campi.categoria}
+              onChange={(v) => onCambia(campiDaVoceFissa(v, campi, categorieFisse.voci))}
+              opzioni={vociFisse}
               inCaricamento={categorieFisse.inCaricamento}
               errore={categorieFisse.errore}
               invalido={!!errori.categoria}
               messaggioErrore={errori.categoria}
+              modifica={modificaPer("categorie", "voceFissa", categorieFisse.voci)}
+              // Per un nome nuovo l'interruttore sta fra il campo e la lista: la tendina si apre sotto e non lo copre.
+              sotto={
+                nomeNuovo && !categorieFisse.inCaricamento ? (
+                  <div className="mt-2">
+                    <Interruttore
+                      acceso={campi.eRetribuzione}
+                      onCambia={() => onCambia({ eRetribuzione: !campi.eRetribuzione, ripeti: campi.eRetribuzione ? campi.ripeti : campi.retribuzione === "EXTRA" ? false : campi.ripeti })}
+                      titolo="È una retribuzione"
+                      sotto="Con dipendente, regolare ed extra."
+                    />
+                  </div>
+                ) : undefined
+              }
             />
-            <GestioneCategoria campi={campi} onCambia={onCambia} />
           </div>
           {retribuzione && (
             <Scelte
@@ -379,6 +419,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
               facoltativo={fornitoreRichiesto === "facoltativo"}
               invalido={!!errori.fornitore}
               messaggioErrore={errori.fornitore}
+              modifica={modificaPer("fornitori", "fornitore", fornitori.voci)}
               {...fornitori}
             />
           )}
@@ -392,9 +433,9 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
                 facoltativo={campi.tipo === "RICAVO"}
                 invalido={!!errori.categoria}
                 messaggioErrore={errori.categoria}
+                modifica={modificaPer("categorie", "categoria", categorie.voci)}
                 {...categorie}
               />
-              <GestioneCategoria campi={campi} onCambia={onCambia} />
             </div>
           )}
         </div>
@@ -431,7 +472,18 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
         </>
       )}
 
+      {campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile === "FATTURA" && (
+        <Interruttore
+          acceso={campi.pagata}
+          onCambia={() => onCambia({ pagata: !campi.pagata })}
+          titolo={modifica ? "Fattura pagata" : "Già pagata"}
+          sotto={campi.pagata ? "Segnata come pagata." : "Da pagare: la segni pagata quando paghi, da Fatture › Ricevute."}
+        />
+      )}
+
       {!modifica && ripetibile(campi) && <RigaRipeti campi={campi} onAccendi={accendiRipeti} onCambia={onCambia} errori={errori} />}
+
+      {gestita && <AzioniVoce key={`${gestita.anagrafica}-${gestita.voce.id}`} anagrafica={gestita.anagrafica} voce={gestita.voce} onChiudi={() => setGestita(null)} onFatto={dopoGestione} />}
     </div>
   );
 }

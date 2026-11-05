@@ -17,12 +17,13 @@ export function numeroCent(cent: number): string {
 // 123456 -> "€ 1.234,56"; -5000 -> "−€ 50,00"
 export function euro(cent: number): string {
   const assoluto = numeroCent(Math.abs(cent));
-  return cent < 0 ? `−€ ${assoluto}` : `€ ${assoluto}`;
+  // Spazio non separabile (U+00A0): il «€» non resta solo in fondo alla riga quando l'importo va a capo.
+  return cent < 0 ? `−€\u00a0${assoluto}` : `€\u00a0${assoluto}`;
 }
 
 // Con il segno esplicito dei movimenti: "+ € 10,00" / "− € 10,00".
 export function euroConSegno(cent: number, ricavo: boolean): string {
-  return `${ricavo ? "+" : "−"} € ${numeroCent(Math.abs(cent))}`;
+  return `${ricavo ? "+" : "−"}\u00a0€\u00a0${numeroCent(Math.abs(cent))}`;
 }
 
 // Quello che si scrive in un campo importo, in centesimi interi; null se non valido.

@@ -75,7 +75,7 @@ function TotaleSettimana({ campi }: { campi: CampiForm }) {
 
 // Colonna laterale (solo computer largo): dove viene contato il movimento e l'effetto sul totale.
 export default function DoveFinisce({ campi }: { campi: CampiForm }) {
-  const retribuzione = campi.tipo === "COSTO_FISSO" && campi.voceFissa === "RETRIBUZIONE";
+  const retribuzione = campi.tipo === "COSTO_FISSO" && campi.eRetribuzione;
   const settimana = dataValida(campi.data) ? intervalloDi("settimana", campi.data) : null;
   const doc = NOME_DOCUMENTO[documentoDi(campi)];
   const categoria = categoriaDi(campi);

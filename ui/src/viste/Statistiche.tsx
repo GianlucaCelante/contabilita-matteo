@@ -11,6 +11,7 @@ import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { useSedi } from "../hooks/useSedi";
+import { meseCorrente } from "../util/fatture";
 import { euro, NOME_PERIODO } from "../util/formato";
 import {
   elencoNomi,
@@ -52,6 +53,50 @@ function Banner({ lunedi, nomi }: { lunedi: string; nomi: string[] }) {
       <span className="flex shrink-0 items-center gap-0.5 whitespace-nowrap">
         Inserisci
         <IconaDestra larghezza={18} spessoreTratto={2.4} />
+      </span>
+    </Link>
+  );
+}
+
+// Porta a «Costi e ricavi per voce»: quanto per ogni fornitore, dipendente o categoria, mese per mese.
+function CollegamentoVoci() {
+  return (
+    <Link
+      to="/statistiche/voci"
+      className="scheda flex min-h-[64px] items-center gap-3 px-[18px] py-3 text-testo no-underline hover:bg-sabbia max-md:rounded-2xl md:px-6"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block font-titolo text-[18px] font-bold leading-tight md:text-[20px]">Costi e ricavi per voce</span>
+        <span className="mt-0.5 block text-[14px] text-spento">Quanto per ogni fornitore, dipendente o categoria, mese per mese</span>
+      </span>
+      <span className="shrink-0 text-verdescuro">
+        <IconaDestra larghezza={22} spessoreTratto={2.2} />
+      </span>
+    </Link>
+  );
+}
+
+// Porta a «Fatture»: le fatture da fare, emesse e pagate di ogni cliente, mese per mese. Con «N da fare» nel mese in corso.
+function CollegamentoFatture() {
+  const mese = meseCorrente();
+  const q = useQuery({ queryKey: chiavi.fatture(mese, mese), queryFn: () => api.fatture(mese, mese), staleTime: 15_000 });
+  const n = q.data?.daFare ?? 0;
+  return (
+    <Link
+      to="/statistiche/fatture"
+      className="scheda flex min-h-[64px] items-center gap-3 px-[18px] py-3 text-testo no-underline hover:bg-sabbia max-md:rounded-2xl md:px-6"
+    >
+      <span className="min-w-0 flex-1">
+        <span className="block font-titolo text-[18px] font-bold leading-tight md:text-[20px]">Fatture</span>
+        <span className="mt-0.5 block text-[14px] text-spento">Fatture da fare e pagate, mese per mese</span>
+      </span>
+      {n > 0 && (
+        <span className="num shrink-0 whitespace-nowrap rounded-full border border-ambrabordo bg-ambrachiaro px-2.5 py-1 text-[13px] font-bold text-ambra">
+          {n} da fare
+        </span>
+      )}
+      <span className="shrink-0 text-verdescuro">
+        <IconaDestra larghezza={22} spessoreTratto={2.2} />
       </span>
     </Link>
   );
@@ -218,6 +263,8 @@ export default function Statistiche() {
         {d && (
           <div className="flex flex-1 flex-col gap-3 md:gap-4">
             {incompleta && <Banner lunedi={incompleta.settimana} nomi={nomiMancanti} />}
+            <CollegamentoVoci />
+            <CollegamentoFatture />
 
             {/* Telefono e tablet: totale, «Per sede», grafico. Computer largo: totale e grafico affiancati, sotto «Per sede». */}
             <div className="grid gap-3 md:gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">

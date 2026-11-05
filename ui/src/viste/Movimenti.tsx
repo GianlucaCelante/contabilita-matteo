@@ -3,8 +3,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import { posizioneLista } from "../util/posizioneLista";
 import { useQuery } from "@tanstack/react-query";
 import { api, chiavi } from "../api/client";
-import type { Movimento, Tipo } from "../api/tipi";
-import BadgeSede from "../componenti/BadgeSede";
+import type { Tipo } from "../api/tipi";
+import { ElencoPerGiorno, IntestazioneElenco } from "../componenti/RigaMovimento";
 import { IconaCerca, IconaPiu } from "../componenti/Icone";
 import SelettorePeriodo, { NavigatorePeriodo } from "../componenti/SelettorePeriodo";
 import SelettoreSedi from "../componenti/SelettoreSedi";
@@ -13,11 +13,10 @@ import FiltroCategorie from "../componenti/FiltroCategorie";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { useDebounced } from "../hooks/useDebounced";
 import { idValidi, leggiIdCategorie, scriviIdCategorie } from "../util/filtroCategorie";
-import { leggiFiltri, magazzinoBrowser, salvaFiltri } from "../util/filtriSalvati";
+import { leggiFiltri, magazzinoBrowser, salvaFiltri, scartaIdInesistenti } from "../util/filtriSalvati";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { useSedi } from "../hooks/useSedi";
-import { aumentaIlSaldo, CLASSE_TIPO, documentoConNumero, nomeMovimento, NOME_ORIGINE, sottotitoloMovimento, sottotitoloTelefono, TIPO_BREVE } from "../util/etichette";
-import { dataBreve, dataGiorno, dataRiga, euro, euroConSegno } from "../util/formato";
+import { euro } from "../util/formato";
 
 const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
   { valore: "", lungo: "Tutti", breve: "Tutti" },
@@ -25,54 +24,6 @@ const FILTRI_TIPO: { valore: Tipo | ""; lungo: string; breve: string }[] = [
   { valore: "COSTO_VARIABILE", lungo: "Costi variabili", breve: "Variabili" },
   { valore: "COSTO_FISSO", lungo: "Costi fissi", breve: "Fissi" },
 ];
-
-// Le date di riga sono brevi (gg/mm); con l'anno (gg/mm/aa) quando il periodo e' un anno o un intervallo libero.
-// `conSede`: con almeno due sedi attive la riga porta il badge-lettera della sede; con una sola resta com'era.
-function RigaMovimento({ m, conAnno, conSede }: { m: Movimento; conAnno: boolean; conSede: boolean }) {
-  const ricavo = aumentaIlSaldo(m);
-  const sotto = sottotitoloMovimento(m);
-  const sottoTelefono = sottotitoloTelefono(m);
-  const testi = (
-    <span className="min-w-0">
-      <span className="block truncate text-[16px] font-bold max-[359px]:line-clamp-2 max-[359px]:whitespace-normal md:text-[15px]">{nomeMovimento(m)}</span>
-      {sotto && <span className="block truncate text-[13px] text-spento max-md:hidden">{sotto}</span>}
-      <span className="flex gap-1 text-[13px] text-spento md:hidden">
-        {sottoTelefono.documento && (
-          <>
-            <span className="min-w-0 truncate max-[359px]:whitespace-normal max-[359px]:break-words">{sottoTelefono.documento}</span>
-            <span aria-hidden="true">·</span>
-          </>
-        )}
-        <span className="shrink-0">{sottoTelefono.tipo}</span>
-      </span>
-    </span>
-  );
-  return (
-    <li className="riga">
-      <Link
-        to={`/movimenti/${m.id}`}
-        className="rigaMov"
-        aria-label={`${nomeMovimento(m)}, ${dataBreve(m.data)}, ${euroConSegno(m.importoCent, ricavo)}${conSede ? `, sede ${m.sede.nome}` : ""}. Apri il dettaglio`}
-      >
-        <span className="num text-[15px] max-md:hidden">{dataRiga(m.data, conAnno)}</span>
-        <span className="max-md:hidden">
-          <span className={"etichettaTipo " + CLASSE_TIPO[m.tipo]}>{TIPO_BREVE[m.tipo]}</span>
-        </span>
-        {conSede ? (
-          <span className="flex min-w-0 items-center gap-2.5">
-            <BadgeSede id={m.sede.id} taglia="grande" decorativo />
-            {testi}
-          </span>
-        ) : (
-          testi
-        )}
-        <span className="truncate text-[15px] max-md:hidden">{documentoConNumero(m)}</span>
-        <span className={"num text-right text-[16px] font-bold md:text-[15px] " + (ricavo ? "text-verdescuro" : "")}>{euroConSegno(m.importoCent, ricavo)}</span>
-        <span className="text-right text-[13px] text-spento max-md:hidden">{NOME_ORIGINE[m.origine]}</span>
-      </Link>
-    </li>
-  );
-}
 
 export default function Movimenti() {
   const periodo = usePeriodo("mese");
@@ -91,7 +42,7 @@ export default function Movimenti() {
   const tutteLeCategorie = useQuery({ queryKey: chiavi.categorie(), queryFn: () => api.categorie(), staleTime: 15_000 });
   const categorieGrezze = params.has("categorie") ? params.get("categorie") : scriviIdCategorie(leggiFiltri().categorie ?? []);
   const idCategorie = useMemo(() => leggiIdCategorie(categorieGrezze), [categorieGrezze]);
-  const categorieScelte = useMemo(() => idValidi(idCategorie, tutteLeCategorie.data, tipo), [idCategorie, tutteLeCategorie.data, tipo]);
+  const categorieScelte = useMemo(() => idValidi(scartaIdInesistenti(idCategorie, tutteLeCategorie.data), tutteLeCategorie.data, tipo), [idCategorie, tutteLeCategorie.data, tipo]);
   const filtroCategorie = scriviIdCategorie(categorieScelte);
   // Con delle categorie da verificare si aspetta l'elenco (se non arriva, vale quello che c'e').
   const categoriePronte = idCategorie.length === 0 || !tutteLeCategorie.isPending;
@@ -102,16 +53,6 @@ export default function Movimenti() {
   );
   const richiesta = useQuery({ queryKey: chiavi.movimenti(filtro), queryFn: () => api.movimenti(filtro), enabled: sedi.pronto && categoriePronte });
   const elenco = richiesta.data;
-
-  const gruppi = useMemo(() => {
-    const mappa = new Map<string, Movimento[]>();
-    for (const m of elenco?.elementi ?? []) {
-      const lista = mappa.get(m.data);
-      if (lista) lista.push(m);
-      else mappa.set(m.data, [m]);
-    }
-    return [...mappa.entries()];
-  }, [elenco]);
 
   function scegliTipo(valore: Tipo | "") {
     // Scegliendo un tipo le categorie scelte di altri tipi escono dal filtro.
@@ -193,7 +134,7 @@ export default function Movimenti() {
             <input type="search" value={ricerca} onChange={(e) => {
                 posizioneLista.ricerca = e.target.value;
                 setRicerca(e.target.value);
-              }} placeholder="Cerca fornitore o nota…" className="!text-[16px]" />
+              }} placeholder="Cerca…" className="!text-[16px]" />
           </label>
           <FiltroCategorie
             categorie={tutteLeCategorie.isError ? null : tutteLeCategorie.data}
@@ -222,26 +163,8 @@ export default function Movimenti() {
           )}
           {elenco && elenco.elementi.length > 0 && (
             <>
-              <div className="intestazioneTabella etichettaMaiuscola grid h-[42px] items-center gap-3 px-5 max-md:hidden">
-                <span>Data</span>
-                <span>Tipo</span>
-                <span>Fornitore / descrizione</span>
-                <span>Documento</span>
-                <span className="text-right">Importo</span>
-                <span className="text-right">
-                  <span className="sr-only">Origine</span>
-                </span>
-              </div>
-              {gruppi.map(([data, righe]) => (
-                <section key={data} aria-label={dataGiorno(data)}>
-                  <h2 className="etichettaMaiuscola flex h-[34px] items-center bg-sabbia px-4 !font-testo md:h-9 md:border-t md:border-riga md:px-5 md:text-[13px]">{dataGiorno(data)}</h2>
-                  <ul className="m-0 list-none p-0">
-                    {righe.map((m) => (
-                      <RigaMovimento key={m.id} m={m} conAnno={conAnno} conSede={sedi.piu} />
-                    ))}
-                  </ul>
-                </section>
-              ))}
+              <IntestazioneElenco />
+              <ElencoPerGiorno elementi={elenco.elementi} conAnno={conAnno} conSede={sedi.piu} />
             </>
           )}
         </div>

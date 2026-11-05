@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ErroreFileImportato, FatturaLetta } from "../api/importa";
-import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, stessoFornitore, testoRiassunto } from "./anteprimaImportazione";
+import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, messaggioChiaro, titoloCaricamento, raggruppaErrori, riassuntoSelezione, stessoFornitore, testoRiassunto } from "./anteprimaImportazione";
 
 const err = (nomeFile: string, messaggio: string): ErroreFileImportato => ({ nomeFile, messaggio });
 
@@ -12,10 +12,15 @@ describe("raggruppaErrori", () => {
       err("a.zip › 3.xml", "Tipo di documento TD17 non ammesso: fattura non importata."),
     ]);
     expect(g.map((x) => [x.messaggio, x.file.length])).toEqual([
-      ["Tipo di documento TD17 non ammesso: fattura non importata.", 2],
+      ["Questo tipo di documento non è una fattura di acquisto e non viene importato (codice TD17).", 2],
       ["Importo zero: non c'è nessun costo da registrare.", 1],
     ]);
     expect(g[0]?.file).toEqual(["a.zip › 1.xml", "a.zip › 3.xml"]);
+  });
+  it("il codice del tipo di documento diventa una frase semplice, anche con l'elenco dei tipi del servizio", () => {
+    expect(messaggioChiaro("Tipo di documento TD16 non ammesso: fattura non importata.")).toBe("Questo tipo di documento non è una fattura di acquisto e non viene importato (codice TD16).");
+    expect(messaggioChiaro("Tipo di documento TD99 non ammesso: fattura non importata (si importano TD01, TD02).")).toBe("Questo tipo di documento non è una fattura di acquisto e non viene importato (codice TD99).");
+    expect(messaggioChiaro("Importo zero: non c'è nessun costo da registrare.")).toBe("Importo zero: non c'è nessun costo da registrare.");
   });
   it("il prefisso «Fattura N: » dei lotti non separa i gruppi e il numero resta accanto al file", () => {
     const g = raggruppaErrori([
@@ -85,7 +90,7 @@ describe("integrazioni", () => {
 describe("testoRiassunto", () => {
   it("le note di credito si mostrano in meno, perché riducono i costi", () => {
     const r = riassuntoSelezione([fatt(0, "A", "1", { totaleCent: 100000 }), fatt(1, "A", "NC", { totaleCent: 5000, notaDiCredito: true })]);
-    expect(testoRiassunto(r)).toBe("1 fattura · € 1.000,00 · 1 nota di credito · −€ 50,00");
+    expect(testoRiassunto(r)).toBe("1 fattura · € 1.000,00 · 1 nota di credito · −€ 50,00");
   });
 });
 
@@ -133,5 +138,12 @@ describe("stessoFornitore / altreDelFornitore / applicaCategoriaAlFornitore", ()
     const categorie = { 0: "  ", 1: "X" };
     expect(altreDelFornitore(tutte, tutte[0]!, categorie)).toEqual([]);
     expect(applicaCategoriaAlFornitore(tutte, tutte[0]!, categorie)).toEqual(categorie);
+  });
+});
+
+describe("titoloCaricamento", () => {
+  it("su touch si sceglie, sul computer si trascina", () => {
+    expect(titoloCaricamento(true)).toBe("Scegli i file XML o ZIP");
+    expect(titoloCaricamento(false)).toBe("Trascina qui gli XML o lo ZIP delle fatture");
   });
 });

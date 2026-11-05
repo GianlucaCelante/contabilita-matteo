@@ -1,5 +1,5 @@
 import type { Tipo } from "../api/tipi";
-import { dataValida, type TipoPeriodo } from "./formato";
+import { dataValida, intervalloDi, type TipoPeriodo } from "./formato";
 
 // I filtri di periodo e di tipo si ricordano nel browser: passando da una pagina all'altra e anche dopo
 // aver chiuso l'applicazione si riparte da dove si era. Chi non puo' scrivere nel magazzino del browser
@@ -69,4 +69,29 @@ export function salvaFiltri(magazzino: Magazzino | null, nuovi: FiltriSalvati): 
   } catch {
     // niente da fare: si ricomincia dai valori predefiniti
   }
+}
+
+// Dopo aver salvato un movimento: se la sua data non cade nel periodo che si sta guardando (quello salvato, uguale in
+// Movimenti e Riepilogo), l'elenco sembrerebbe vuoto e il movimento perso. Si porta il periodo sul mese del movimento;
+// null = il movimento si vede gia', niente da cambiare. Senza periodo salvato le pagine partono dal mese corrente.
+export function periodoDopoSalvataggio(data: string, filtri: FiltriSalvati, oggi: string): FiltriSalvati | null {
+  const tipo = filtri.p ?? "mese";
+  let da: string;
+  let a: string;
+  if (tipo === "periodo") {
+    da = filtri.da ?? intervalloDi("mese", oggi).da;
+    a = filtri.a ?? oggi;
+    if (da > a) [da, a] = [a, da];
+  } else {
+    ({ da, a } = intervalloDi(tipo, filtri.r ?? oggi));
+  }
+  return data >= da && data <= a ? null : { p: "mese", r: data };
+}
+
+// Un filtro salvato puo' nominare voci che non esistono piu' (eliminate o unite): quegli id si scartano, gli altri restano.
+// Senza l'elenco delle voci (non ancora caricato) non si scarta niente.
+export function scartaIdInesistenti(ids: readonly number[], esistenti: readonly { id: number }[] | undefined): number[] {
+  if (!esistenti) return [...ids];
+  const buoni = new Set(esistenti.map((x) => x.id));
+  return ids.filter((id) => buoni.has(id));
 }

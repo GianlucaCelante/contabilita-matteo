@@ -178,3 +178,28 @@ export function IconaCercaDiNuovo(p: ProprietaIcona) {
     </IconaBase>
   );
 }
+
+// Fatture da fare: il foglio della fattura, l'orologio (da fare) e l'aeroplanino di carta (emessa).
+export function IconaFatture(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <path d="M6 3h8l5 5v13H6z" />
+      <path d="M14 3v5h5M9 13h7M9 17h5" />
+    </IconaBase>
+  );
+}
+export function IconaOrologio(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </IconaBase>
+  );
+}
+export function IconaInviata(p: ProprietaIcona) {
+  return (
+    <IconaBase {...p}>
+      <path d="M21 3L10 14M21 3l-6.5 18-4-7.5L3 9.5z" />
+    </IconaBase>
+  );
+}

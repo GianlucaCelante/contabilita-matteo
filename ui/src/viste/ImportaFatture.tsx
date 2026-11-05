@@ -12,7 +12,8 @@ import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSedi } from "../hooks/useSedi";
 import { useSuggerimentiCategorie } from "../hooks/useSuggerimenti";
-import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, type Filtro } from "../util/anteprimaImportazione";
+import { useSoloTocco } from "../hooks/useSoloTocco";
+import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, titoloCaricamento, type Filtro } from "../util/anteprimaImportazione";
 import { dataBreve, euro } from "../util/formato";
 
 const PAGINA = 50; // quante righe dell'anteprima si disegnano alla volta: con centinaia di fatture la pagina sarebbe lentissima
@@ -94,6 +95,7 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
   const idRiquadro = useId();
   const [aperto, setAperto] = useState(false);
   const [sopra, setSopra] = useState(false);
+  const soloTocco = useSoloTocco();
 
   function suDrop(e: DragEvent<HTMLElement>) {
     e.preventDefault();
@@ -126,9 +128,9 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
             <IconaCarica larghezza={24} />
           </span>
           <div className="min-w-0">
-            <p className="m-0 text-[17px] font-bold">Trascina qui gli XML o lo ZIP delle fatture</p>
+            <p className="m-0 text-[17px] font-bold">{titoloCaricamento(soloTocco)}</p>
             <p className="m-0 text-[14px] text-spento">
-              Uno o più file .xml (anche firmati, .xml.p7m), oppure uno .zip con dentro tutti gli XML. Vengono lette sul computer, non inviate da nessuna parte.
+              Uno o più file .xml (anche firmati, .xml.p7m), oppure uno .zip con dentro tutti gli XML. Vengono lette su questo dispositivo, non inviate da nessuna parte.
             </p>
           </div>
         </div>

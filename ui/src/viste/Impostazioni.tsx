@@ -5,6 +5,7 @@ import type { IndirizzoRete, Programma } from "../api/tipi";
 import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
 import Finestra from "../componenti/Finestra";
 import RipristinaDaCopia from "../componenti/RipristinaDaCopia";
+import SezioneElenchi from "../componenti/SezioneElenchi";
 import SezioneSedi from "../componenti/SezioneSedi";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
@@ -242,6 +243,7 @@ export default function Impostazioni() {
       <Testata titolo="Impostazioni" />
       <div className="flex flex-col gap-4 px-4 pb-24 md:px-8 md:pb-7">
         <SezioneSedi />
+        <SezioneElenchi />
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
           <DalTelefono />
           <DatiECopie />

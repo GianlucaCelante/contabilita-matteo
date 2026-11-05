@@ -37,7 +37,7 @@ describe("la sede nel modulo del movimento", () => {
   });
 
   it("un movimento diviso porta la ripetizione: ogni sede ripete la sua parte", () => {
-    const campi = valido({ tipo: "COSTO_FISSO", voceFissa: "AFFITTO", fornitore: "", categoria: "", ripeti: true, giorno: "5", dividi: true });
+    const campi = valido({ tipo: "COSTO_FISSO", fornitore: "", categoria: "Affitto", ripeti: true, giorno: "5", dividi: true });
     const { input } = preparaInput(campi, true, true);
     expect(input?.ricorrenza).toMatchObject({ unita: "MESI", intervallo: 1, giorno: 5 });
   });

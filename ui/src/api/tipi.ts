@@ -23,17 +23,56 @@ export interface Categoria {
   id: number;
   nome: string;
   tipo: Tipo;
-  // Vero per le categorie create da chi usa l'app (dal movimento o a mano): solo queste si rinominano. Le predefinite no.
-  personalizzata: boolean;
+  // Solo per i costi fissi: vero se e' una retribuzione (con dipendente, regolare ed extra). Non esistono categorie predefinite:
+  // sono tutte dell'utente, si creano, rinominano ed eliminano.
+  retribuzione: boolean;
+  // Quanti movimenti usano la categoria.
+  usi: number;
 }
 export interface Fornitore {
   id: number;
   nome: string;
   partitaIva: string | null;
+  usi: number;
 }
 export interface Dipendente {
   id: number;
   nome: string;
+  usi: number;
+}
+
+// Le tre anagrafiche che si rinominano, si eliminano e si uniscono (docs/api.md, «Gestione di categorie, fornitori e dipendenti»).
+export type Anagrafica = "categorie" | "fornitori" | "dipendenti";
+
+// ---- Statistiche per voce (docs/api.md, «Statistiche per voce») ----
+
+export type RaggruppaVoci = "FORNITORE" | "DIPENDENTE" | "CATEGORIA";
+// Il filtro per tipo: i tre tipi, oppure COSTI = variabili + fissi. Assente = il predefinito del raggruppamento.
+export type TipoVoci = Tipo | "COSTI";
+
+export interface VoceStatistica {
+  // null = i movimenti rimasti senza la voce («Senza fornitore»…).
+  id: number | null;
+  nome: string;
+  totaleCent: number;
+  movimenti: number;
+  // Solo per i dipendenti; altrimenti 0.
+  regolareCent: number;
+  extraCent: number;
+  // Solo con raggruppa=FORNITORE: la parte del totale gia' pagata (fatture con pagata=true); altrimenti null. Da pagare = totale - pagata.
+  pagataCent: number | null;
+  // Un importo per ogni mese di `mesi`, nello stesso ordine.
+  perMese: number[];
+}
+export interface StatisticheVoci {
+  da: string;
+  a: string;
+  raggruppa: RaggruppaVoci;
+  // Tutti i mesi di calendario (yyyy-MM) toccati dal periodo.
+  mesi: string[];
+  totaleCent: number;
+  movimenti: number;
+  voci: VoceStatistica[];
 }
 export interface RifNome {
   id: number;
@@ -73,6 +112,8 @@ export interface Movimento {
   numeroDocumento: string | null;
   note: string | null;
   origine: Origine;
+  // Solo per le fatture ricevute (FATTURA): vero se gia' pagata. Per ogni altro documento e' sempre false.
+  pagata: boolean;
   ricorrenza: RicorrenzaMovimento | null;
   allegatoNome: string | null;
   // ISO AAAA-MM-GGTHH:MM:SS; modificatoIl e' null se il movimento non e' mai stato modificato.
@@ -93,6 +134,8 @@ export interface MovimentoInput {
   note?: string;
   // Vedi «Quale sede» in docs/api.md: con una sola sede attiva si puo' omettere.
   sedeId?: number;
+  // Solo FATTURA: predefinito false in creazione, invariato in modifica se manca.
+  pagata?: boolean;
   // Senza unita e intervallo vale «ogni mese»; il giorno serve per mesi e anni.
   ricorrenza?: { giorno?: number; unita?: UnitaRipetizione; intervallo?: number } | null;
 }
@@ -117,26 +160,31 @@ export interface FiltroMovimenti {
   sedi?: string;
   // «3,7»: id di categoria. Assente = tutte; i movimenti senza categoria (retribuzioni) restano fuori quando c'e'.
   categorie?: string;
+  // Filtri «per voce» (cosa compone una riga delle statistiche per voce): id del fornitore, oppure `senza` = solo i movimenti
+  // senza quella voce («Senza fornitore / dipendente / categoria»).
+  fornitore?: number;
+  senza?: RaggruppaVoci;
+  // true = solo i movimenti con documento RETRIBUZIONE_REGOLARE / RETRIBUZIONE_EXTRA (elenco delle righe «Dipendenti»).
+  retribuzione?: boolean;
+  // Solo le fatture pagate (true) o da pagare (false).
+  pagata?: boolean;
 }
 
-// Una riga del Riepilogo per categoria. Nei ricavi e nei costi variabili sono solo le categorie personalizzate
-// (l'importo di una nota di credito conta in negativo); l'ordine e' quello del servizio.
+// Una riga del Riepilogo per categoria (`id` null = «Senza categoria», sempre in fondo). L'importo di una nota di credito conta in
+// negativo; l'ordine e' quello del servizio. La somma delle righe di una sezione e' il suo totale.
 export interface VoceRiepilogo {
+  id: number | null;
   categoria: string;
   importoCent: number;
 }
 
+// Le somme per documento (fatturati/extra, fatture/scontrini, retribuzione regolare/extra) sono «di cui»: dettaglio del totale, non da sommare.
 export interface Riepilogo {
   da: string;
   a: string;
-  ricavi: { fatturatiCent: number; extraCent: number; altreVoci: VoceRiepilogo[]; totaleCent: number };
-  costiVariabili: { fattureCent: number; scontriniCent: number; altreVoci: VoceRiepilogo[]; totaleCent: number };
-  costiFissi: {
-    retribuzioneRegolareCent: number;
-    retribuzioneExtraCent: number;
-    altreVoci: VoceRiepilogo[];
-    totaleCent: number;
-  };
+  ricavi: { voci: VoceRiepilogo[]; fatturatiCent: number; extraCent: number; totaleCent: number };
+  costiVariabili: { voci: VoceRiepilogo[]; fattureCent: number; scontriniCent: number; totaleCent: number };
+  costiFissi: { voci: VoceRiepilogo[]; retribuzioneRegolareCent: number; retribuzioneExtraCent: number; totaleCent: number };
   costiCent: number;
   risultatoCent: number;
   // Una riga per ogni sede scelta; la somma e' uguale ai totali.
@@ -222,4 +270,58 @@ export interface Statistiche {
   totale: MedieStatistiche & { settimaneConDati: number; settimaneTotali: number };
   perSede: StatisticheSede[];
   settimane: StatisticheSettimana[];
+}
+
+// ---- Fatture da fare (promemoria mensile, docs/api.md) ----
+
+export type StatoFattura = "DA_FARE" | "EMESSA" | "PAGATA";
+export interface CasellaFattura {
+  id: number;
+  nome: string;
+  // Il mese (yyyy-MM) in cui e' stata creata: i mesi prima non contano (niente arretrati).
+  dalMese: string;
+  // Entro che giorno del mese fare la fattura (1-31; nei mesi corti l'ultimo giorno), o null.
+  giornoScadenza: number | null;
+}
+// Lo stato di una casella in un mese (`mese` = yyyy-MM). Importo e nota sono facoltativi.
+export interface MeseFattura {
+  mese: string;
+  stato: StatoFattura;
+  importoCent: number | null;
+  nota: string | null;
+  // Falso per i mesi prima di `dalMese` senza stato salvato: si mostrano neutri, non contano e non sono «in ritardo».
+  attiva: boolean;
+  // La data limite del mese (yyyy-MM-dd) se la casella ha una scadenza, altrimenti null.
+  scadenza: string | null;
+}
+export interface CasellaConMesi extends CasellaFattura {
+  mesi: MeseFattura[];
+}
+export interface Fatture {
+  mesi: string[];
+  caselle: CasellaConMesi[];
+  // Coppie (casella, mese) ancora «Da fare» nell'intervallo chiesto.
+  daFare: number;
+}
+// GET /api/fatture/promemoria: sempre il mese corrente. `giorniMancanti` = scadenza - oggi (negativo se scaduta).
+export interface ScadenzaFattura {
+  casellaId: number;
+  nome: string;
+  mese: string;
+  scadenza: string;
+  giorniMancanti: number;
+}
+export interface PromemoriaFatture {
+  daFare: number;
+  inScadenza: ScadenzaFattura[];
+}
+export interface CasellaInput {
+  nome?: string;
+  giornoScadenza?: number | null;
+  dalMese?: string;
+}
+export interface MeseFatturaInput {
+  stato: StatoFattura;
+  importoCent?: number | null;
+  nota?: string | null;
 }

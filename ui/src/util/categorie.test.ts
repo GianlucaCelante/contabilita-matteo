@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Categoria } from "../api/tipi";
-import { dividiVociFisse, eTua, erroreNome, nomiTue, normalizzaNome, trovaDoppione } from "./categorie";
+import { erroreNome, normalizzaNome, trovaDoppione } from "./categorie";
 
 const lista: Categoria[] = [
-  { id: 1, nome: "Farine", tipo: "COSTO_VARIABILE", personalizzata: false },
-  { id: 2, nome: "Imballaggi", tipo: "COSTO_VARIABILE", personalizzata: true },
-  { id: 3, nome: "Imballaggi", tipo: "COSTO_FISSO", personalizzata: true },
-  { id: 4, nome: "Delivery", tipo: "RICAVO", personalizzata: true },
+  { id: 1, nome: "Farine", tipo: "COSTO_VARIABILE", retribuzione: false, usi: 0 },
+  { id: 2, nome: "Imballaggi", tipo: "COSTO_VARIABILE", retribuzione: false, usi: 0 },
+  { id: 3, nome: "Imballaggi", tipo: "COSTO_FISSO", retribuzione: false, usi: 0 },
+  { id: 4, nome: "Delivery", tipo: "RICAVO", retribuzione: false, usi: 0 },
 ];
 
 describe("normalizzaNome e erroreNome", () => {
@@ -39,31 +39,5 @@ describe("trovaDoppione", () => {
   it("nella rinomina una categoria non è un doppione di se stessa, ma lo è di un'altra", () => {
     expect(trovaDoppione("imballaggi", lista, "COSTO_VARIABILE", 2)).toBeUndefined();
     expect(trovaDoppione("farine", lista, "COSTO_VARIABILE", 2)?.id).toBe(1);
-  });
-});
-
-describe("categorie «Tua»", () => {
-  const tue = nomiTue(lista);
-  it("nomiTue tiene solo le personalizzate, in minuscolo", () => {
-    expect([...tue].sort()).toEqual(["delivery", "imballaggi"]);
-    expect(eTua(" Delivery ", tue)).toBe(true);
-    expect(eTua("Farine", tue)).toBe(false);
-    expect(eTua("Delivery", undefined)).toBe(false);
-  });
-  it("sul telefono i costi fissi «Tua» hanno la loro riga e il resto si somma in una", () => {
-    const voci = [
-      { categoria: "Affitto", importoCent: 100000 },
-      { categoria: "Commercialista", importoCent: 20000 },
-      { categoria: "Luce", importoCent: 5000 },
-    ];
-    const r = dividiVociFisse(voci, new Set(["commercialista"]));
-    expect(r.tue).toEqual([{ categoria: "Commercialista", importoCent: 20000 }]);
-    expect(r.altre.map((v) => v.categoria)).toEqual(["Affitto", "Luce"]);
-    expect(r.sommaAltre).toBe(105000);
-  });
-  it("senza categorie «Tua» tutto resta nella riga unica, come prima", () => {
-    const r = dividiVociFisse([{ categoria: "Affitto", importoCent: 100000 }], new Set());
-    expect(r.tue).toEqual([]);
-    expect(r.sommaAltre).toBe(100000);
   });
 });

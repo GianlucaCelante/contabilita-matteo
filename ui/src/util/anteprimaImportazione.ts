@@ -9,6 +9,14 @@ export interface GruppoErrori {
   file: string[];
 }
 
+// I codici dei tipi di documento (TD16…) sono gergo: al posto del messaggio tecnico del servizio una frase semplice, col codice fra parentesi.
+const TIPO_NON_AMMESSO = /^Tipo di documento (TD\d+) non ammesso\b.*$/;
+
+export function messaggioChiaro(messaggio: string): string {
+  const m = TIPO_NON_AMMESSO.exec(messaggio);
+  return m ? `Questo tipo di documento non è una fattura di acquisto e non viene importato (codice ${m[1]}).` : messaggio;
+}
+
 const PREFISSO_LOTTO = /^Fattura (.+?): /;
 
 // I file con lo stesso motivo stanno insieme, dal gruppo piu' numeroso. Nei lotti (piu' fatture in un file)
@@ -17,7 +25,7 @@ export function raggruppaErrori(errori: ErroreFileImportato[]): GruppoErrori[] {
   const gruppi = new Map<string, string[]>();
   for (const e of errori) {
     const m = PREFISSO_LOTTO.exec(e.messaggio);
-    const messaggio = m ? e.messaggio.slice(m[0].length) : e.messaggio;
+    const messaggio = messaggioChiaro(m ? e.messaggio.slice(m[0].length) : e.messaggio);
     const file = m ? `${e.nomeFile} (fattura ${m[1]})` : e.nomeFile;
     const lista = gruppi.get(messaggio);
     if (lista) lista.push(file);
@@ -123,4 +131,9 @@ export function applicaCategoriaAlFornitore(fatture: FatturaLetta[], riga: Fattu
   const categoria = (categorie[riga.indice] ?? "").trim();
   for (const f of altreDelFornitore(fatture, riga, categorie)) dopo[f.indice] = categoria;
   return dopo;
+}
+
+// Il titolo del riquadro di caricamento: il trascinamento esiste solo con mouse e tastiera, sul telefono si sceglie dall'elenco dei file.
+export function titoloCaricamento(soloTocco: boolean): string {
+  return soloTocco ? "Scegli i file XML o ZIP" : "Trascina qui gli XML o lo ZIP delle fatture";
 }

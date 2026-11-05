@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, chiavi, ErroreRichiesta, messaggioErrore } from "../api/client";
 import type { Ambito, Movimento } from "../api/tipi";
@@ -27,8 +27,16 @@ import { daMovimento, frequenzaCambiata, modificheDelModello, preparaInput, type
 
 const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "dipendenti", "sedi"];
 
+// Da dove si arriva (la lista di una voce delle statistiche, per esempio): la freccia indietro riporta li'; altrimenti ai Movimenti.
+function useTorna(): string {
+  const { state } = useLocation();
+  const da = (state as { da?: unknown } | null)?.da;
+  return typeof da === "string" && da.startsWith("/") ? da : "/movimenti";
+}
+
 function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   const navigate = useNavigate();
+  const torna = useTorna();
   const grande = useSchermoGrande();
   const avvisa = useAvviso();
   const client = useQueryClient();
@@ -52,12 +60,14 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
   }
   const esci = () => {
     consenti();
-    void navigate("/movimenti");
+    void navigate(torna);
   };
 
   const salva = useMutation({
-    mutationFn: (v: { corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>; ambito: Ambito }) =>
-      api.modificaMovimento(movimento.id, v.corpo, v.ambito),
+    mutationFn: async (v: { corpo: NonNullable<ReturnType<typeof preparaInput>["input"]>; ambito: Ambito }) => {
+      await api.assicuraCategoriaRetribuzione(v.corpo);
+      return api.modificaMovimento(movimento.id, v.corpo, v.ambito);
+    },
     onSuccess: () => {
       finito();
       avvisa("Modifiche salvate.");
@@ -136,7 +146,7 @@ function ModuloDettaglio({ movimento }: { movimento: Movimento }) {
       <Testata
         compatta
         titolo="Movimento"
-        indietro="/movimenti"
+        indietro={torna}
         etichetta={
           <span className={"etichettaTipo " + CLASSE_TIPO[movimento.tipo]}>
             {TIPO_BREVE[movimento.tipo]}

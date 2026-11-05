@@ -1,15 +1,24 @@
+import type { QueryClient } from "@tanstack/react-query";
 import type {
   Ambito,
+  Anagrafica,
   Categoria,
   CopiaBackup,
   CorpoErrore,
   Dipendente,
   ElencoMovimenti,
   FiltroMovimenti,
+  CasellaFattura,
+  CasellaInput,
+  Fatture,
   Fornitore,
+  MeseFattura,
+  MeseFatturaInput,
   Movimento,
   MovimentoInput,
   Programma,
+  PromemoriaFatture,
+  RaggruppaVoci,
   Rete,
   Riepilogo,
   RispostaRipristino,
@@ -17,7 +26,9 @@ import type {
   Settimana,
   SettimanaInput,
   Statistiche,
+  StatisticheVoci,
   Tipo,
+  TipoVoci,
 } from "./tipi";
 
 const BASE = "/api";
@@ -63,7 +74,7 @@ async function richiedi<T>(percorso: string, opzioni?: RequestInit): Promise<T> 
   return (await risposta.json()) as T;
 }
 
-export function stringaQuery(parametri: Record<string, string | number | undefined>): string {
+export function stringaQuery(parametri: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams();
   for (const [chiave, valore] of Object.entries(parametri)) {
     if (valore !== undefined && valore !== "") p.set(chiave, String(valore));
@@ -97,9 +108,41 @@ export const api = {
   fermaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/ferma`, { method: "POST" }),
   riattivaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/riattiva`, { method: "POST" }),
   categorie: (tipo?: Tipo) => richiedi<Categoria[]>(`/categorie${stringaQuery({ tipo })}`),
-  // Crea (201) o restituisce quella che c'e' gia' con lo stesso nome e tipo (200). Solo le categorie create cosi' sono «personalizzate».
-  // Rinomina una categoria personalizzata (409 se e' predefinita o il nome e' gia' usato nello stesso tipo).
-  rinominaCategoria: (id: number, nome: string) => richiedi<Categoria>(`/categorie/${id}`, { method: "PUT", ...json({ nome }) }),
+  // Crea (201) o restituisce quella che c'e' gia' con lo stesso nome e tipo (200; il flag allora non cambia). `retribuzione` solo per COSTO_FISSO.
+  creaCategoria: (corpo: { nome: string; tipo: Tipo; retribuzione?: boolean }) => richiedi<Categoria>("/categorie", { method: "POST", ...json(corpo) }),
+  // Rinomina e/o cambia il flag retribuzione (almeno uno dei due). 409 se il nome e' gia' usato nello stesso tipo o se si toglie il flag
+  // a una categoria che ha gia' delle retribuzioni.
+  modificaCategoria: (id: number, corpo: { nome?: string; retribuzione?: boolean }) => richiedi<Categoria>(`/categorie/${id}`, { method: "PUT", ...json(corpo) }),
+  // Prima di salvare una retribuzione si assicura che la categoria esista con il flag: un nome nuovo la crea come retribuzione, una che
+  // c'e' gia' resta com'e' (200, il flag non cambia). Gli altri movimenti creano la categoria da soli, per nome.
+  assicuraCategoriaRetribuzione: async (corpo: Pick<MovimentoInput, "tipo" | "documento" | "categoria">): Promise<void> => {
+    if (corpo.tipo !== "COSTO_FISSO" || !corpo.categoria) return;
+    if (corpo.documento !== "RETRIBUZIONE_REGOLARE" && corpo.documento !== "RETRIBUZIONE_EXTRA") return;
+    await richiedi<Categoria>("/categorie", { method: "POST", ...json({ nome: corpo.categoria, tipo: corpo.tipo, retribuzione: true }) });
+  },
+  rinominaFornitore: (id: number, nome: string) => richiedi<Fornitore>(`/fornitori/${id}`, { method: "PUT", ...json({ nome }) }),
+  rinominaDipendente: (id: number, nome: string) => richiedi<Dipendente>(`/dipendenti/${id}`, { method: "PUT", ...json({ nome }) }),
+  // Elimina una voce: senza `sostituisciCon` i movimenti restano senza quella voce; con l'id di un'altra voce passano a lei (unione).
+  eliminaVoce: (anagrafica: Anagrafica, id: number, sostituisciCon?: number) =>
+    richiedi<void>(`/${anagrafica}/${id}${stringaQuery({ sostituisciCon })}`, { method: "DELETE" }),
+  // Costi e ricavi per fornitore, dipendente o categoria, con il totale di ogni mese del periodo.
+  statisticheVoci: (da: string, a: string, raggruppa: RaggruppaVoci, tipo?: TipoVoci, sedi?: string) =>
+    richiedi<StatisticheVoci>(`/statistiche/voci${stringaQuery({ da, a, raggruppa, tipo, sedi })}`),
+  // Fatture da fare: le caselle dell'utente e, per ogni mese, Da fare / Emessa / Pagata.
+  caselleFatture: () => richiedi<CasellaFattura[]>("/fatture/caselle"),
+  // Crea (201) o restituisce quella che c'e' gia' con lo stesso nome (200).
+  // `giornoScadenza`: entro che giorno del mese (1-31); assente = nessuna. `dalMese` assente = il mese corrente.
+  creaCasellaFattura: (corpo: { nome: string; giornoScadenza?: number | null }) => richiedi<CasellaFattura>("/fatture/caselle", { method: "POST", ...json(corpo) }),
+  // Nome e/o scadenza (`giornoScadenza: null` la toglie).
+  modificaCasellaFattura: (id: number, corpo: CasellaInput) => richiedi<CasellaFattura>(`/fatture/caselle/${id}`, { method: "PUT", ...json(corpo) }),
+  eliminaCasellaFattura: (id: number) => richiedi<void>(`/fatture/caselle/${id}`, { method: "DELETE" }),
+  fatture: (da: string, a: string) => richiedi<Fatture>(`/fatture${stringaQuery({ da, a })}`),
+  // Il promemoria della Home: sempre il mese corrente, indipendente dal periodo che si sta guardando.
+  promemoriaFatture: () => richiedi<PromemoriaFatture>("/fatture/promemoria"),
+  // Fattura ricevuta pagata / da pagare (solo FATTURA, altrimenti 400).
+  segnaPagata: (id: number, pagata: boolean) => richiedi<Movimento>(`/movimenti/${id}/pagata`, { method: "PUT", ...json({ pagata }) }),
+  salvaMeseFattura: (id: number, mese: string, corpo: MeseFatturaInput) =>
+    richiedi<MeseFattura>(`/fatture/caselle/${id}/mesi/${mese}`, { method: "PUT", ...json(corpo) }),
   fornitori: (q: string) => richiedi<Fornitore[]>(`/fornitori${stringaQuery({ q })}`),
   dipendenti: (q: string) => richiedi<Dipendente[]>(`/dipendenti${stringaQuery({ q })}`),
   rete: () => richiedi<Rete>("/rete"),
@@ -130,12 +173,23 @@ export const chiavi = {
   sedi: ["sedi"] as const,
   statistiche: (da: string, a: string, sedi?: string) => ["statistiche", "periodo", da, a, sedi ?? ""] as const,
   settimanaStatistiche: (lunedi: string) => ["statistiche", "settimana", lunedi] as const,
+  statisticheVoci: (da: string, a: string, raggruppa: RaggruppaVoci, tipo?: TipoVoci, sedi?: string) =>
+    ["statistiche", "voci", da, a, raggruppa, tipo ?? "", sedi ?? ""] as const,
   movimenti: (f: FiltroMovimenti) => ["movimenti", f] as const,
   movimento: (id: number) => ["movimento", id] as const,
   categorie: (tipo?: Tipo) => ["categorie", tipo ?? ""] as const,
   fornitori: (q: string) => ["fornitori", q] as const,
   dipendenti: (q: string) => ["dipendenti", q] as const,
+  fatture: (da: string, a: string) => ["fatture", da, a] as const,
+  promemoriaFatture: ["fatture", "promemoria"] as const,
   rete: ["rete"] as const,
   programma: ["programma"] as const,
   copie: ["copie"] as const,
 };
+
+// Dopo aver rinominato, unito o eliminato una voce cambiano gli elenchi, i movimenti che la usano e tutti i conti per voce.
+export function invalidaVoci(client: QueryClient): void {
+  for (const k of ["categorie", "fornitori", "dipendenti", "movimenti", "movimento", "riepilogo", "statistiche"]) {
+    void client.invalidateQueries({ queryKey: [k] });
+  }
+}

@@ -6,13 +6,13 @@ import { descriviFrequenza, MASSIMO_INTERVALLO, nomeUnita, usaIlGiornoDelMese, t
 // I campi del modulo di un movimento, come testo digitato, e il passaggio da/verso il
 // contratto API (docs/api.md, MovimentoInput).
 
-export type VoceFissa = "RETRIBUZIONE" | "AFFITTO" | "UTENZE" | "ALTRA";
-
 export interface CampiForm {
   tipo: Tipo;
   documentoVariabile: "FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO";
   tipoRicavo: "RICAVO_FATTURATO" | "RICAVO_EXTRA";
-  voceFissa: VoceFissa;
+  // Solo per i costi fissi: la categoria scelta (campo `categoria`) e' una retribuzione, cioe' ha il flag `retribuzione` (oppure e' un
+  // nome nuovo e chi scrive ha acceso «È una retribuzione»). Allora il documento e' RETRIBUZIONE_* e si chiede il dipendente.
+  eRetribuzione: boolean;
   retribuzione: "REGOLARE" | "EXTRA";
   data: string;
   // L'importo come lo scrive chi usa l'app, in euro ("1.234,56"): si converte in centesimi al salvataggio.
@@ -23,6 +23,8 @@ export interface CampiForm {
   numeroDocumento: string;
   descrizione: string;
   note: string;
+  // Solo per la fattura ricevuta: gia' pagata. Di partenza spento.
+  pagata: boolean;
   ripeti: boolean;
   // «Ogni mese» (il caso comune: serve solo il giorno) oppure «Personalizzata» (ogni N giorni, settimane, mesi o anni).
   frequenza: "MESE" | "PERSONALIZZATA";
@@ -54,54 +56,49 @@ export function sediDelleDivisione(c: Pick<CampiForm, "sediDivise">, attive: num
 
 export type Errori = Partial<Record<keyof CampiForm, string>>;
 
-export const NOME_VOCE: Record<VoceFissa, string> = {
-  RETRIBUZIONE: "Retribuzione",
-  AFFITTO: "Affitto",
-  UTENZE: "Utenze",
-  ALTRA: "Altra voce fissa",
-};
-// Per queste voci la categoria e' la voce stessa (non si chiede).
-const CATEGORIA_DI_VOCE: Partial<Record<VoceFissa, string>> = {
-  RETRIBUZIONE: "Retribuzione",
-  AFFITTO: "Affitto",
-  UTENZE: "Utenze",
-};
+type RifVoce = { nome: string; retribuzione?: boolean | undefined };
 
-// La voce fissa e' un campo solo: si scrive il nome, o si sceglie fra Retribuzione, Affitto, Utenze e le voci create da chi
-// usa l'app (le categorie dei costi fissi). Un nome nuovo crea una voce nuova al salvataggio.
-const NOMI_STANDARD = (["RETRIBUZIONE", "AFFITTO", "UTENZE"] as const).map((v) => ({ voce: v, nome: NOME_VOCE[v] }));
+// La categoria con questo nome fra quelle caricate (senza badare alle maiuscole e agli spazi ai bordi), se c'e'.
+export function trovaPerNome<T extends { nome: string }>(testo: string, categorie: T[]): T | undefined {
+  const chiave = testo.trim().toLowerCase();
+  return chiave ? categorie.find((c) => c.nome.trim().toLowerCase() === chiave) : undefined;
+}
 
-// Le voci proprie: le categorie dei costi fissi senza le standard e i doppioni (senza badare alle maiuscole).
-export function vociPersonalizzate(nomiCategorie: string[]): string[] {
-  const standard = new Set(NOMI_STANDARD.map((s) => s.nome.toLowerCase()));
+// La voce fissa e' una categoria dei costi fissi scelta o scritta nel campo: nessun nome e' scritto nel codice. Dal testo ai campi.
+// Mentre si scrive il testo NON si ripulisce: con «Affitto » (spazio finale) il campo deve tenere lo spazio, altrimenti dopo una
+// voce scelta non si riesce a scrivere «Affitto capannone». Gli spazi ai bordi si tolgono al salvataggio (vedi `preparaInput`).
+// Se il nome e' di una categoria che c'e' gia', il flag retribuzione e' il suo; se e' nuovo si tiene l'interruttore, ma solo se anche
+// il testo di prima era nuovo (passando da una voce che c'e' a un nome nuovo l'interruttore riparte spento).
+export function campiDaVoceFissa(
+  testo: string,
+  attuale: Pick<CampiForm, "categoria" | "eRetribuzione">,
+  categorie: RifVoce[],
+): Pick<CampiForm, "categoria" | "eRetribuzione"> {
+  const trovata = trovaPerNome(testo, categorie);
+  if (trovata) return { categoria: testo, eRetribuzione: !!trovata.retribuzione };
+  const eraNuova = !trovaPerNome(attuale.categoria, categorie);
+  return { categoria: testo, eRetribuzione: eraNuova && attuale.eRetribuzione };
+}
+
+// Vale per il modulo: il nome della voce fissa e' una categoria che non c'e' ancora (si crea al salvataggio).
+export function voceFissaNuova(c: Pick<CampiForm, "categoria">, categorie: RifVoce[]): boolean {
+  return c.categoria.trim() !== "" && !trovaPerNome(c.categoria, categorie);
+}
+
+// I suggerimenti: tutte le categorie se il campo e' vuoto o contiene gia' un nome completo (per poter cambiare scelta), altrimenti quelle
+// che contengono il testo. Senza doppioni (senza badare alle maiuscole), in ordine alfabetico.
+export function opzioniVoce(testo: string, nomiCategorie: string[]): string[] {
   const viste = new Set<string>();
-  const risultato: string[] = [];
+  const tutte: string[] = [];
   for (const grezzo of nomiCategorie) {
     const nome = grezzo.trim();
-    const chiave = nome.toLowerCase();
-    if (!nome || standard.has(chiave) || viste.has(chiave)) continue;
-    viste.add(chiave);
-    risultato.push(nome);
+    if (!nome || viste.has(nome.toLowerCase())) continue;
+    viste.add(nome.toLowerCase());
+    tutte.push(nome);
   }
-  return risultato.sort((a, b) => a.localeCompare(b, "it"));
-}
-
-// Il testo del campo «Voce fissa».
-export function nomeVoce(c: Pick<CampiForm, "voceFissa" | "categoria">): string {
-  return c.voceFissa === "ALTRA" ? c.categoria : NOME_VOCE[c.voceFissa];
-}
-
-// Dal testo scritto ai campi: le voci standard si riconoscono dal nome, ogni altro nome e' una voce propria.
-export function campiDaNomeVoce(testo: string): Pick<CampiForm, "voceFissa" | "categoria"> {
-  const standard = NOMI_STANDARD.find((s) => s.nome.toLowerCase() === testo.trim().toLowerCase());
-  return standard ? { voceFissa: standard.voce, categoria: "" } : { voceFissa: "ALTRA", categoria: testo };
-}
-
-// I suggerimenti: tutte le voci se il campo e' vuoto o contiene gia' un nome completo (per poter cambiare scelta), altrimenti quelle che contengono il testo.
-export function opzioniVoce(testo: string, proprie: string[]): string[] {
-  const tutte = [...NOMI_STANDARD.map((s) => s.nome), ...proprie];
+  tutte.sort((a, b) => a.localeCompare(b, "it"));
   const cerca = testo.trim().toLowerCase();
-  if (!cerca || tutte.some((n) => n.toLowerCase() === cerca)) return tutte;
+  if (!cerca || viste.has(cerca)) return tutte;
   return tutte.filter((n) => n.toLowerCase().includes(cerca));
 }
 
@@ -110,7 +107,7 @@ export function campiVuoti(): CampiForm {
     tipo: "COSTO_VARIABILE",
     documentoVariabile: "FATTURA",
     tipoRicavo: "RICAVO_FATTURATO",
-    voceFissa: "RETRIBUZIONE",
+    eRetribuzione: false,
     retribuzione: "REGOLARE",
     data: oggiIso(),
     importo: "",
@@ -120,6 +117,7 @@ export function campiVuoti(): CampiForm {
     numeroDocumento: "",
     descrizione: "",
     note: "",
+    pagata: false,
     ripeti: false,
     frequenza: "MESE",
     intervallo: "1",
@@ -133,16 +131,12 @@ export function campiVuoti(): CampiForm {
 
 export function daMovimento(m: Movimento): CampiForm {
   const base = campiVuoti();
-  let voce: VoceFissa = "ALTRA";
-  if (m.documento === "RETRIBUZIONE_REGOLARE" || m.documento === "RETRIBUZIONE_EXTRA") voce = "RETRIBUZIONE";
-  else if (m.categoria?.nome.toLowerCase() === "affitto") voce = "AFFITTO";
-  else if (m.categoria?.nome.toLowerCase() === "utenze") voce = "UTENZE";
   return {
     ...base,
     tipo: m.tipo,
     documentoVariabile: m.documento === "SCONTRINO" ? "SCONTRINO" : m.documento === "NOTA_DI_CREDITO" ? "NOTA_DI_CREDITO" : "FATTURA",
     tipoRicavo: m.documento === "RICAVO_EXTRA" ? "RICAVO_EXTRA" : "RICAVO_FATTURATO",
-    voceFissa: voce,
+    eRetribuzione: m.documento === "RETRIBUZIONE_REGOLARE" || m.documento === "RETRIBUZIONE_EXTRA",
     retribuzione: m.documento === "RETRIBUZIONE_EXTRA" ? "EXTRA" : "REGOLARE",
     data: m.data,
     importo: euroPerCampo(m.importoCent),
@@ -152,6 +146,7 @@ export function daMovimento(m: Movimento): CampiForm {
     numeroDocumento: m.numeroDocumento ?? "",
     descrizione: m.descrizione ?? "",
     note: m.note ?? "",
+    pagata: m.pagata,
     ripeti: m.ricorrenza?.attiva ?? false,
     frequenza: m.ricorrenza && !(m.ricorrenza.unita === "MESI" && m.ricorrenza.intervallo === 1) ? "PERSONALIZZATA" : "MESE",
     intervallo: String(m.ricorrenza?.intervallo ?? 1),
@@ -166,7 +161,7 @@ export function daMovimento(m: Movimento): CampiForm {
 export function documentoDi(c: CampiForm): Documento {
   if (c.tipo === "RICAVO") return c.tipoRicavo;
   if (c.tipo === "COSTO_VARIABILE") return c.documentoVariabile;
-  if (c.voceFissa === "RETRIBUZIONE") return c.retribuzione === "EXTRA" ? "RETRIBUZIONE_EXTRA" : "RETRIBUZIONE_REGOLARE";
+  if (c.eRetribuzione) return c.retribuzione === "EXTRA" ? "RETRIBUZIONE_EXTRA" : "RETRIBUZIONE_REGOLARE";
   return "NESSUNO";
 }
 
@@ -175,23 +170,19 @@ export function ripetibile(c: CampiForm): boolean {
   return c.tipo === "COSTO_FISSO" && documentoDi(c) !== "RETRIBUZIONE_EXTRA";
 }
 
-// La categoria che verra' mandata (la voce fissa ha la sua; per i ricavi e' facoltativa).
+// La categoria che verra' mandata (la voce fissa e' obbligatoria; per i ricavi e' facoltativa).
 export function categoriaDi(c: CampiForm): string {
-  if (c.tipo === "COSTO_FISSO") return CATEGORIA_DI_VOCE[c.voceFissa] ?? c.categoria.trim();
   return c.categoria.trim();
 }
 
 export function chiedeFornitore(c: CampiForm): "si" | "facoltativo" | "no" {
   if (c.tipo === "COSTO_VARIABILE") return c.documentoVariabile === "SCONTRINO" ? "facoltativo" : "si";
-  if (c.tipo === "COSTO_FISSO" && c.voceFissa !== "RETRIBUZIONE") return "facoltativo";
+  if (c.tipo === "COSTO_FISSO" && !c.eRetribuzione) return "facoltativo";
   return "no";
 }
 // La descrizione (facoltativa) c'e' per ricavi, costi fissi e scontrini.
 export function chiedeDescrizione(c: CampiForm): boolean {
   return c.tipo !== "COSTO_VARIABILE" || c.documentoVariabile === "SCONTRINO";
-}
-export function chiedeCategoria(c: CampiForm): boolean {
-  return c.tipo === "RICAVO" || c.tipo === "COSTO_VARIABILE" || (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA");
 }
 
 // Controlla i campi e, se vanno bene, prepara il corpo per il servizio.
@@ -205,7 +196,7 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligat
   if (cent === null) errori.importo = "Scrivi un importo, per esempio 86,00.";
   else if (cent <= 0) errori.importo = "L'importo deve essere maggiore di zero.";
   if (chiedeFornitore(c) === "si" && !c.fornitore.trim()) errori.fornitore = "Scegli o crea un fornitore.";
-  if (c.tipo === "COSTO_FISSO" && c.voceFissa === "ALTRA" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
+  if (c.tipo === "COSTO_FISSO" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
   else if (categoriaDi(c).length > MASSIMO_NOME_CATEGORIA) errori.categoria = `Il nome può avere al massimo ${MASSIMO_NOME_CATEGORIA} caratteri.`;
   let ripetizione: NonNullable<MovimentoInput["ricorrenza"]> | null = null;
   if (conRipetizione && c.ripeti && ripetibile(c)) {
@@ -227,10 +218,11 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligat
   const categoria = categoriaDi(c);
   if (categoria) input.categoria = categoria;
   if (chiedeFornitore(c) !== "no" && c.fornitore.trim()) input.fornitore = c.fornitore.trim();
-  if (c.tipo === "COSTO_FISSO" && c.voceFissa === "RETRIBUZIONE" && c.dipendente.trim()) input.dipendente = c.dipendente.trim();
+  if (c.tipo === "COSTO_FISSO" && c.eRetribuzione && c.dipendente.trim()) input.dipendente = c.dipendente.trim();
   if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile !== "SCONTRINO" && c.numeroDocumento.trim()) input.numeroDocumento = c.numeroDocumento.trim();
   if (chiedeDescrizione(c) && c.descrizione.trim()) input.descrizione = c.descrizione.trim();
   if (c.note.trim()) input.note = c.note.trim();
+  if (c.tipo === "COSTO_VARIABILE" && c.documentoVariabile === "FATTURA") input.pagata = c.pagata;
   if (c.sedeId !== null && !c.dividi) input.sedeId = c.sedeId;
   if (ripetizione !== null) input.ricorrenza = ripetizione;
   return { errori, input };
@@ -238,7 +230,7 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligat
 
 // Sono cambiati dati che finirebbero nei prossimi movimenti (importo, voce, fornitore...)? Allora al salvataggio si chiede
 // «solo questo o anche i prossimi». Data e numero del documento sono di questo movimento soltanto; la frequenza e' della ripetizione.
-const CAMPI_DEL_MODELLO: (keyof CampiForm)[] = ["importo", "voceFissa", "categoria", "retribuzione", "fornitore", "dipendente", "descrizione", "note", "sedeId"];
+const CAMPI_DEL_MODELLO: (keyof CampiForm)[] = ["importo", "eRetribuzione", "categoria", "retribuzione", "fornitore", "dipendente", "descrizione", "note", "sedeId"];
 
 export function modificheDelModello(prima: CampiForm, dopo: CampiForm): boolean {
   return CAMPI_DEL_MODELLO.some((k) => prima[k] !== dopo[k]);

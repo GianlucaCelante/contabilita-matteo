@@ -2,9 +2,10 @@ import { useEffect, useRef, type ComponentType, type MouseEvent, type UIEvent } 
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useBarreFisse } from "../hooks/useBarreFisse";
 import { useTastieraVirtuale } from "../hooks/useTastieraVirtuale";
+import { titoloDellaVista, titoloDocumento, titoloPer } from "../util/titoloPagina";
 import { azzeraPosizioneLista, inMovimenti, posizioneLista } from "../util/posizioneLista";
 import ErroreVista from "./ErroreVista";
-import { IconaEsporta, IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, IconaStatistiche, type ProprietaIcona } from "./Icone";
+import { IconaEsporta,IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, IconaStatistiche, type ProprietaIcona } from "./Icone";
 
 interface Voce {
   percorso: string;
@@ -21,22 +22,6 @@ const VOCI: Voce[] = [
   { percorso: "/esporta", etichetta: "Esporta", Icona: IconaEsporta },
   { percorso: "/impostazioni", etichetta: "Impostazioni", Icona: IconaImpostazioni, soloComputer: true },
 ];
-
-const TITOLI_PAGINA: [string, string][] = [
-  ["/movimenti/nuovo", "Nuovo movimento"],
-  ["/movimenti/importa", "Importa fatture"],
-  ["/movimenti/", "Movimento"],
-  ["/movimenti", "Movimenti"],
-  ["/statistiche/pizze-ordini", "Pizze e ordini"],
-  ["/statistiche", "Statistiche"],
-  ["/riepilogo", "Riepilogo"],
-  ["/esporta", "Esporta"],
-  ["/impostazioni", "Impostazioni"],
-];
-
-function titoloPer(percorso: string): string {
-  return TITOLI_PAGINA.find(([p]) => percorso === p || (p.endsWith("/") && percorso.startsWith(p)))?.[1] ?? "Contabilità";
-}
 
 // Impianto della pagina: barra laterale larga 88 px sul computer, barra in
 // basso sul telefono (la scelta la fa il CSS con la media query "md"), con il
@@ -55,8 +40,8 @@ export default function Guscio() {
   useTastieraVirtuale();
 
   useEffect(() => {
-    document.title = `${titolo} · Contabilità`;
-  }, [titolo]);
+    if (!titoloDellaVista(posizione.pathname)) document.title = titoloDocumento(titolo);
+  }, [titolo, posizione.pathname]);
 
   // A ogni cambio di vista il fuoco va alla regione principale, cosi' il Tab
   // riparte dal primo controllo della vista nuova. Non alla prima apertura.

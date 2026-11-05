@@ -1,12 +1,14 @@
 // Il «servizio» della demo: risponde alle stesse chiamate /api dell'app vera, ma dentro il browser,
 // con i dati di prova di stato.ts. Niente di questo parte nell'app vera (vedi demo/installa.ts).
-import type { Categoria, Documento, Movimento, MovimentoInput, Riepilogo, Sede, Tipo, VoceRiepilogo } from "../api/tipi";
+import type { Categoria, Documento, Fatture, MeseFattura, Movimento, MovimentoInput, PromemoriaFatture, Riepilogo, Sede, StatoFattura, Tipo, VoceRiepilogo } from "../api/tipi";
 import { MASSIMO_NOME_CATEGORIA } from "../util/categorie";
 import { leggiIdCategorie } from "../util/filtroCategorie";
 import type { AnteprimaImportazione, FatturaLetta } from "../api/importa";
 import { MASSIMO_INTERVALLO, type UnitaRipetizione } from "../util/ripetizione";
+import { elencoMesi, contaMesi, dataScadenza, giorniMancanti, GIORNI_PREAVVISO, meseValido, MASSIMO_NOME_CASELLA, MASSIMO_NOTA_FATTURA, STATI } from "../util/fatture";
 import { dividiImporto } from "../util/sedi";
 import { costruisciXlsx } from "./xlsx";
+import { conUsi, contaUsi, eRetribuzione, eliminaVoce, raggruppamentoValido, rinominaVoce, statisticheVoci, tipoPredefinito, TIPI_VOCI } from "./voci";
 import { aggiungiGiorni, daIso, iso, lunediDi, oggiIso, successiva } from "./date";
 import {
   aggiornaRiferimenti,
@@ -19,6 +21,7 @@ import {
   stato,
   type SedeDemo,
   type StatoDemo,
+  eDocumentoRetribuzione,
   trova,
   trovaDipendente,
   trovaFornitore,
@@ -43,7 +46,22 @@ const DOCUMENTI: Record<Tipo, Documento[]> = {
 // Quanto un movimento pesa sui costi: la nota di credito li riduce.
 const effettoCosti = (m: Movimento) => (m.documento === "NOTA_DI_CREDITO" ? -m.importoCent : m.importoCent);
 
-function valida(i: MovimentoInput): string | null {
+// Retribuzione e categoria (docs/api.md): per un costo fisso il documento RETRIBUZIONE_* e una categoria con il flag vanno sempre insieme.
+// La categoria si cerca dal nome come sempre; una che non c'e' nascerebbe senza flag.
+function controlloRetribuzione(st: StatoDemo, i: MovimentoInput): string | null {
+  if (i.tipo !== "COSTO_FISSO") return null;
+  const nome = pulito(i.categoria);
+  const cat = nome ? st.categorie.find((c) => c.tipo === "COSTO_FISSO" && c.nome.toLowerCase() === nome.toLowerCase()) : undefined;
+  if (eDocumentoRetribuzione(i.documento)) {
+    if (!nome) return "Una retribuzione ha bisogno di una categoria di tipo retribuzione.";
+    if (!cat?.retribuzione) return `La categoria «${cat?.nome ?? nome}» non è una retribuzione.`;
+  } else if (cat?.retribuzione) {
+    return `La categoria «${cat.nome}» è una retribuzione: scegli Regolare o Extra.`;
+  }
+  return null;
+}
+
+function valida(st: StatoDemo, i: MovimentoInput): string | null {
   if (!i || !i.data || !/^\d{4}-\d{2}-\d{2}$/.test(i.data)) return "La data non è valida.";
   if (!DOCUMENTI[i.tipo]?.includes(i.documento)) return "Il tipo di documento non è valido per questo tipo di movimento.";
   if (!Number.isInteger(i.importoCent) || i.importoCent <= 0) return "L'importo deve essere maggiore di zero.";
@@ -57,7 +75,7 @@ function valida(i: MovimentoInput): string | null {
     if (!Number.isInteger(n) || n < 1 || n > max) return `Ogni quanto: da 1 a ${max}.`;
     if ((unita === "MESI" || unita === "ANNI") && (!r.giorno || r.giorno < 1 || r.giorno > 31)) return "Il giorno della ripetizione va da 1 a 31.";
   }
-  return null;
+  return controlloRetribuzione(st, i);
 }
 
 const pulito = (s: string | undefined | null) => (s && s.trim() ? s.trim() : undefined);
@@ -118,6 +136,26 @@ function applica(m: Movimento, i: MovimentoInput, sede?: SedeDemo): void {
   m.descrizione = pulito(i.descrizione) ?? null;
   m.numeroDocumento = pulito(i.numeroDocumento) ?? null;
   m.note = pulito(i.note) ?? null;
+  // `pagata` esiste solo per le fatture: senza valore resta com'e', per gli altri documenti e' sempre false.
+  if (i.documento !== "FATTURA") m.pagata = false;
+  else if (typeof i.pagata === "boolean") m.pagata = i.pagata;
+}
+
+const SENZA_VOCE = ["FORNITORE", "DIPENDENTE", "CATEGORIA"] as const;
+
+// Controlla i filtri per voce (`fornitore`, `senza`, `categorie`): stessi 400 del contratto di docs/api.md.
+function erroreFiltriVoce(q: URLSearchParams): string | null {
+  const categorie = q.get("categorie");
+  const fornitore = q.get("fornitore");
+  if (fornitore && !/^\d+$/.test(fornitore.trim())) return `fornitore: valore non valido: ${fornitore}`;
+  const senza = q.get("senza");
+  if (senza && !SENZA_VOCE.some((v) => v === senza)) return `senza: valore non valido: ${senza}`;
+  if (senza === "CATEGORIA" && categorie) return "categorie e senza=CATEGORIA non possono stare insieme.";
+  for (const campo of ["retribuzione", "pagata"]) {
+    const v = q.get(campo);
+    if (v && v !== "true" && v !== "false") return `${campo}: valore non valido: ${v}`;
+  }
+  return null;
 }
 
 function elenco(q: URLSearchParams, ids: Set<number> | null) {
@@ -127,6 +165,10 @@ function elenco(q: URLSearchParams, ids: Set<number> | null) {
   const cerca = (q.get("q") ?? "").trim().toLowerCase();
   const dip = q.get("dipendente");
   const cat = leggiIdCategorie(q.get("categorie"));
+  const fornitore = q.get("fornitore")?.trim();
+  const senza = q.get("senza");
+  const soloPaghe = q.get("retribuzione") === "true";
+  const pagata = q.get("pagata");
   const elementi = stato()
     .movimenti.filter(
       (m) =>
@@ -136,6 +178,12 @@ function elenco(q: URLSearchParams, ids: Set<number> | null) {
         (!ids || ids.has(m.sede.id)) &&
         (!dip || String(m.dipendente?.id) === dip) &&
         (cat.length === 0 || (!!m.categoria && cat.includes(m.categoria.id))) &&
+        (!fornitore || String(m.fornitore?.id) === fornitore) &&
+        (!soloPaghe || eRetribuzione(m)) &&
+        (!pagata || (m.documento === "FATTURA" && m.pagata === (pagata === "true"))) &&
+        (senza !== "FORNITORE" || !m.fornitore) &&
+        (senza !== "DIPENDENTE" || !m.dipendente) &&
+        (senza !== "CATEGORIA" || !m.categoria) &&
         (!cerca || [m.fornitore?.nome, m.descrizione, m.note].some((c) => c?.toLowerCase().includes(cerca))),
     )
     .sort((x, y) => (x.data === y.data ? y.id - x.id : x.data < y.data ? 1 : -1));
@@ -149,12 +197,10 @@ function elenco(q: URLSearchParams, ids: Set<number> | null) {
 }
 
 function riepilogo(da: string, a: string, ids: Set<number> | null = null): Riepilogo {
+  // `di cui`: le somme per documento sommano tutti i movimenti con quel documento, qualunque categoria, e non vanno aggiunte al totale.
   const r = { fat: 0, extra: 0, fatture: 0, scontrini: 0, reg: 0, ext: 0 };
-  const altre = new Map<string, number>();
-  // Categorie personalizzate di ricavi e costi variabili: una riga per categoria, fuori dalle righe base (docs/api.md, «Riepilogo»).
-  const altreRicavi = new Map<string, number>();
-  const altreVariabili = new Map<string, number>();
-  const personalizzata = new Map(stato().categorie.filter((c) => c.personalizzata).map((c) => [c.id, c]));
+  // Una riga per categoria in ogni sezione (id null = «Senza categoria», sempre in fondo); la nota di credito conta in negativo.
+  const sezioni = { RICAVO: new Map<number | null, VoceRiepilogo>(), COSTO_VARIABILE: new Map<number | null, VoceRiepilogo>(), COSTO_FISSO: new Map<number | null, VoceRiepilogo>() };
   const sedeTot = new Map<number, { ricavi: number; costi: number; n: number }>();
   for (const m of stato().movimenti) {
     if (m.data < da || m.data > a) continue;
@@ -164,13 +210,11 @@ function riepilogo(da: string, a: string, ids: Set<number> | null = null): Riepi
     else t.costi += effettoCosti(m);
     t.n++;
     sedeTot.set(m.sede.id, t);
-    // La nota di credito riduce: nella riga della sua categoria conta in negativo.
-    const propria = m.categoria ? personalizzata.get(m.categoria.id) : undefined;
-    if (propria && (m.tipo === "RICAVO" || m.tipo === "COSTO_VARIABILE")) {
-      const mappa = m.tipo === "RICAVO" ? altreRicavi : altreVariabili;
-      mappa.set(propria.nome, (mappa.get(propria.nome) ?? 0) + (m.tipo === "RICAVO" ? m.importoCent : effettoCosti(m)));
-      continue;
-    }
+    const mappa = sezioni[m.tipo];
+    const chiave = m.categoria?.id ?? null;
+    const riga = mappa.get(chiave) ?? { id: chiave, categoria: m.categoria?.nome ?? "Senza categoria", importoCent: 0 };
+    riga.importoCent += m.tipo === "RICAVO" ? m.importoCent : effettoCosti(m);
+    mappa.set(chiave, riga);
     switch (m.documento) {
       case "RICAVO_FATTURATO": r.fat += m.importoCent; break;
       case "RICAVO_EXTRA": r.extra += m.importoCent; break;
@@ -179,19 +223,17 @@ function riepilogo(da: string, a: string, ids: Set<number> | null = null): Riepi
       case "SCONTRINO": r.scontrini += m.importoCent; break;
       case "RETRIBUZIONE_REGOLARE": r.reg += m.importoCent; break;
       case "RETRIBUZIONE_EXTRA": r.ext += m.importoCent; break;
-      default: {
-        const nome = m.categoria?.nome ?? "Altre voci fisse";
-        altre.set(nome, (altre.get(nome) ?? 0) + m.importoCent);
-      }
+      default: break;
     }
   }
-  const righe = (mappa: Map<string, number>): VoceRiepilogo[] =>
-    [...mappa.entries()].map(([categoria, importoCent]) => ({ categoria, importoCent })).sort((x, y) => y.importoCent - x.importoCent || x.categoria.localeCompare(y.categoria));
-  const altreVoci = righe(altre);
-  const voci = { ricavi: righe(altreRicavi), variabili: righe(altreVariabili) };
-  const ricavi = r.fat + r.extra + voci.ricavi.reduce((s, v) => s + v.importoCent, 0);
-  const variabili = r.fatture + r.scontrini + voci.variabili.reduce((s, v) => s + v.importoCent, 0);
-  const fissi = r.reg + r.ext + altreVoci.reduce((s, v) => s + v.importoCent, 0);
+  // Dall'importo piu' alto, poi per nome; «Senza categoria» in fondo.
+  const righe = (mappa: Map<number | null, VoceRiepilogo>): VoceRiepilogo[] =>
+    [...mappa.values()].sort((x, y) => (x.id === null ? 1 : 0) - (y.id === null ? 1 : 0) || y.importoCent - x.importoCent || x.categoria.localeCompare(y.categoria, "it"));
+  const voci = { ricavi: righe(sezioni.RICAVO), variabili: righe(sezioni.COSTO_VARIABILE), fissi: righe(sezioni.COSTO_FISSO) };
+  const somma = (v: VoceRiepilogo[]) => v.reduce((s, x) => s + x.importoCent, 0);
+  const ricavi = somma(voci.ricavi);
+  const variabili = somma(voci.variabili);
+  const fissi = somma(voci.fissi);
   // Una riga per ogni sede scelta: le attive anche a zero, le archiviate solo se nel periodo hanno movimenti.
   const perSede = elencoSedi(stato())
     .filter((s) => (!ids || ids.has(s.id)) && (!s.archiviata || sedeTot.has(s.id)))
@@ -202,9 +244,9 @@ function riepilogo(da: string, a: string, ids: Set<number> | null = null): Riepi
   return {
     da,
     a,
-    ricavi: { fatturatiCent: r.fat, extraCent: r.extra, altreVoci: voci.ricavi, totaleCent: ricavi },
-    costiVariabili: { fattureCent: r.fatture, scontriniCent: r.scontrini, altreVoci: voci.variabili, totaleCent: variabili },
-    costiFissi: { retribuzioneRegolareCent: r.reg, retribuzioneExtraCent: r.ext, altreVoci, totaleCent: fissi },
+    ricavi: { voci: voci.ricavi, fatturatiCent: r.fat, extraCent: r.extra, totaleCent: ricavi },
+    costiVariabili: { voci: voci.variabili, fattureCent: r.fatture, scontriniCent: r.scontrini, totaleCent: variabili },
+    costiFissi: { voci: voci.fissi, retribuzioneRegolareCent: r.reg, retribuzioneExtraCent: r.ext, totaleCent: fissi },
     costiCent: variabili + fissi,
     risultatoCent: ricavi - variabili - fissi,
     perSede,
@@ -408,15 +450,14 @@ function statistichePeriodo(st: StatoDemo, da: string, a: string, ids: Set<numbe
 function fornitori(q: string) {
   const st = stato();
   const filtro = q.trim().toLowerCase();
-  const usi = new Map<number, number>();
-  for (const m of st.movimenti) if (m.fornitore) usi.set(m.fornitore.id, (usi.get(m.fornitore.id) ?? 0) + 1);
-  return st.fornitori
+  const usi = contaUsi(st, "fornitori");
+  return conUsi(st, "fornitori", st.fornitori
     .filter((f) => !filtro || f.nome.toLowerCase().includes(filtro))
     .sort((x, y) => {
       const px = filtro && x.nome.toLowerCase().startsWith(filtro) ? 0 : 1;
       const py = filtro && y.nome.toLowerCase().startsWith(filtro) ? 0 : 1;
       return px - py || (usi.get(y.id) ?? 0) - (usi.get(x.id) ?? 0) || x.nome.localeCompare(y.nome);
-    });
+    }));
 }
 
 // ---- importazione: nella demo i file scelti non si leggono, si mostra sempre lo stesso gruppo di fatture di prova ----
@@ -507,19 +548,37 @@ function esportaFile(q: URLSearchParams, ids: Set<number> | null): Risposta {
       ["Data", "Tipo", "Documento", "Fornitore", "Categoria", "Descrizione", "Numero", "Dipendente", "Origine", "Importo", "Sede"],
       ...righe.map((m) => [m.data, TIPO_FILE[m.tipo], m.documento, m.fornitore?.nome ?? "", m.categoria?.nome ?? "", m.descrizione ?? "", m.numeroDocumento ?? "", m.dipendente?.nome ?? "", m.origine, segno(m) * e(m.importoCent), m.sede.nome]),
     ];
-    // Riepilogo: una riga per voce; con «colonnePerSede» una colonna per ogni sede scelta e «Totale» in fondo (solo Excel, il CSV non ha il riepilogo).
-    const voci = (x: Riepilogo): [string, number][] => [
-      ["Ricavi", e(x.ricavi.totaleCent)],
-      ["Costi variabili", -e(x.costiVariabili.totaleCent)],
-      ["Costi fissi", -e(x.costiFissi.totaleCent)],
-      ["Risultato", e(x.risultatoCent)],
-    ];
+    // Riepilogo: stesse righe di GET /riepilogo, per sezione una riga per categoria (+ «Senza categoria»), il totale e le somme «di cui» (gia' nel
+    // totale). Con «colonnePerSede» una colonna per ogni sede scelta e «Totale» in fondo (solo Excel, il CSV non ha il riepilogo): le righe sono
+    // quelle del Riepilogo complessivo, una categoria presente solo in alcune sedi ha 0 nelle altre.
+    const chiave = (sezione: string, id: number | null, nome: string) => `${sezione}|${id ?? "senza"}|${nome}`;
+    const voci = (x: Riepilogo, base?: Riepilogo): [string, number][] => {
+      const sezione = (titolo: string, k: string, parte: Riepilogo["ricavi"] | Riepilogo["costiVariabili"] | Riepilogo["costiFissi"], segno: number, dettaglio: [string, number][]): [string, number][] => {
+        const righe: [string, number][] = [];
+        // Con `base` le righe sono quelle del complessivo (zero dove questo Riepilogo non ha la categoria).
+        const elenco = (base ? (base[k as "ricavi"] as typeof parte).voci : parte.voci);
+        for (const v of elenco) {
+          const propria = parte.voci.find((p) => chiave(k, p.id, p.categoria) === chiave(k, v.id, v.categoria));
+          righe.push([`${titolo}: ${v.categoria}`, segno * e(propria?.importoCent ?? 0)]);
+        }
+        righe.push([`Totale ${titolo.toLowerCase()}`, segno * e(parte.totaleCent)]);
+        for (const [nome, cent] of dettaglio) if (cent > 0 || base) righe.push([`  di cui ${nome}`, segno * e(cent)]);
+        return righe;
+      };
+      return [
+        ...sezione("Ricavi", "ricavi", x.ricavi, 1, [["fatturati", x.ricavi.fatturatiCent], ["extra", x.ricavi.extraCent]]),
+        ...sezione("Costi variabili", "costiVariabili", x.costiVariabili, -1, [["fatture", x.costiVariabili.fattureCent], ["scontrini", x.costiVariabili.scontriniCent]]),
+        ...sezione("Costi fissi", "costiFissi", x.costiFissi, -1, [["retribuzione regolare", x.costiFissi.retribuzioneRegolareCent], ["retribuzione extra", x.costiFissi.retribuzioneExtraCent]]),
+        ["Costi", -e(x.costiCent)],
+        ["Risultato", e(x.risultatoCent)],
+      ];
+    };
     const foglioRiepilogo: (string | number)[][] = [["Periodo", `${da} – ${a}`]];
     const sediRiepilogo = r.perSede ?? [];
     if (q.get("colonnePerSede") === "true" && sediRiepilogo.length > 0) {
-      const perSede = sediRiepilogo.map((s) => voci(riepilogo(da, a, new Set([s.sede.id]))));
+      const perSede = sediRiepilogo.map((s) => voci(riepilogo(da, a, new Set([s.sede.id])), r));
       foglioRiepilogo.push(["", ...sediRiepilogo.map((s) => s.sede.nome), "Totale"]);
-      voci(r).forEach(([nome, totale], i) => foglioRiepilogo.push([nome, ...perSede.map((v) => v[i]![1]), totale]));
+      voci(r, r).forEach(([nome, totale], i) => foglioRiepilogo.push([nome, ...perSede.map((v) => v[i]![1]), totale]));
     } else {
       foglioRiepilogo.push(...voci(r));
     }
@@ -543,6 +602,148 @@ function esportaFile(q: URLSearchParams, ids: Set<number> | null): Risposta {
     [m.data, TIPO_FILE[m.tipo], m.documento, m.fornitore?.nome ?? "", m.categoria?.nome ?? "", m.descrizione ?? "", m.numeroDocumento ?? "", m.dipendente?.nome ?? "", m.origine, (m.tipo === "RICAVO" || m.documento === "NOTA_DI_CREDITO" ? "" : "-") + virgola(m.importoCent), m.sede.nome].map(cella).join(";"),
   );
   return { stato: 200, testo: { contenuto: "﻿" + [testa, ...corpo].join("\r\n"), tipo: "text/csv;charset=utf-8", nomeFile: `contabilita-${da}_${a}.csv` } };
+}
+
+// ---- fatture da fare (stesse regole di docs/api.md, «Fatture da fare») ----
+
+const MASSIMO_MESI_FATTURE = 24;
+
+function fatture(st: StatoDemo, da: string, a: string): Fatture {
+  const mesi = elencoMesi(da, a);
+  let daFare = 0;
+  const caselle = st.fatture.caselle.map((c) => ({
+    ...c,
+    mesi: mesi.map((mese): MeseFattura => {
+      const salvato = st.fatture.mesi.find((x) => x.casellaId === c.id && x.mese === mese);
+      const scadenza = dataScadenza(mese, c.giornoScadenza);
+      // Prima del mese di creazione, senza uno stato salvato, il mese non conta (niente arretrati).
+      if (!salvato) {
+        const attiva = mese >= c.dalMese;
+        if (attiva) daFare++;
+        return { mese, stato: "DA_FARE", importoCent: null, nota: null, attiva, scadenza };
+      }
+      if (salvato.stato === "DA_FARE") daFare++;
+      return { mese, stato: salvato.stato, importoCent: salvato.importoCent, nota: salvato.nota, attiva: true, scadenza };
+    }),
+  }));
+  return { mesi, caselle, daFare };
+}
+
+// Il corpo di POST/PUT di una casella. In creazione il nome e' obbligatorio; in modifica basta uno qualunque dei campi.
+// `giornoScadenza: null` toglie la scadenza (undefined = non cambia).
+interface CorpoCasella {
+  nome?: string;
+  giornoScadenza?: number | null;
+  dalMese?: string;
+  errore?: Risposta;
+}
+function leggiCasella(corpo: unknown, creazione: boolean): CorpoCasella {
+  const c = (corpo ?? {}) as { nome?: unknown; giornoScadenza?: unknown; dalMese?: unknown };
+  const r: CorpoCasella = {};
+  if (creazione || c.nome !== undefined) {
+    const nome = typeof c.nome === "string" ? pulito(c.nome) : undefined;
+    if (!nome) return { errore: errore(400, "Il nome della casella è obbligatorio.") };
+    if (nome.length > MASSIMO_NOME_CASELLA) return { errore: errore(400, `Il nome della casella può avere al massimo ${MASSIMO_NOME_CASELLA} caratteri.`) };
+    r.nome = nome;
+  }
+  if (c.giornoScadenza !== undefined) {
+    const g = c.giornoScadenza;
+    if (g !== null && (typeof g !== "number" || !Number.isInteger(g) || g < 1 || g > 31)) return { errore: errore(400, "Il giorno di scadenza va da 1 a 31.") };
+    r.giornoScadenza = g;
+  }
+  if (c.dalMese !== undefined) {
+    if (typeof c.dalMese !== "string" || !meseValido(c.dalMese)) return { errore: errore(400, "Il mese non è valido (anno-mese, per esempio 2026-11).") };
+    r.dalMese = c.dalMese;
+  }
+  if (!creazione && r.nome === undefined && r.giornoScadenza === undefined && r.dalMese === undefined) return { errore: errore(400, "Indica almeno un campo da cambiare.") };
+  return r;
+}
+
+// GET /fatture/promemoria: il mese corrente, qualunque periodo guardi l'utente. In scadenza = Da fare con scadenza entro 3 giorni (o gia' passata).
+function promemoriaFatture(st: StatoDemo): PromemoriaFatture {
+  const oggi = oggiIso();
+  const mese = oggi.slice(0, 7);
+  let daFare = 0;
+  const inScadenza: PromemoriaFatture["inScadenza"] = [];
+  for (const c of st.fatture.caselle) {
+    const salvato = st.fatture.mesi.find((x) => x.casellaId === c.id && x.mese === mese);
+    const attiva = !!salvato || mese >= c.dalMese;
+    if (!attiva || (salvato ? salvato.stato : "DA_FARE") !== "DA_FARE") continue;
+    daFare++;
+    const scadenza = dataScadenza(mese, c.giornoScadenza);
+    if (scadenza === null) continue;
+    const giorni = giorniMancanti(scadenza, oggi);
+    if (giorni <= GIORNI_PREAVVISO) inScadenza.push({ casellaId: c.id, nome: c.nome, mese, scadenza, giorniMancanti: giorni });
+  }
+  inScadenza.sort((x, y) => x.giorniMancanti - y.giorniMancanti || x.casellaId - y.casellaId);
+  return { daFare, inScadenza };
+}
+
+function fattureRispondi(st: StatoDemo, metodo: string, percorso: string, q: URLSearchParams, corpo: unknown): Risposta | null {
+  let m: RegExpMatchArray | null;
+  const f = st.fatture;
+  if (percorso === "/fatture/caselle") {
+    if (metodo === "GET") return ok(f.caselle);
+    if (metodo === "POST") {
+      const n = leggiCasella(corpo, true);
+      if (n.errore || !n.nome) return n.errore!;
+      const esistente = f.caselle.find((c) => c.nome.toLowerCase() === n.nome!.toLowerCase());
+      if (esistente) return ok(esistente, 200);
+      const nuova = { id: Math.max(0, ...f.caselle.map((c) => c.id)) + 1, nome: n.nome, dalMese: n.dalMese ?? oggiIso().slice(0, 7), giornoScadenza: n.giornoScadenza ?? null };
+      f.caselle.push(nuova);
+      salva();
+      return ok(nuova, 201);
+    }
+  }
+  if ((m = percorso.match(/^\/fatture\/caselle\/(\d+)$/))) {
+    const casella = f.caselle.find((c) => c.id === Number(m![1]));
+    if (!casella) return errore(404, "Casella non trovata.");
+    if (metodo === "PUT") {
+      const n = leggiCasella(corpo, false);
+      if (n.errore) return n.errore;
+      if (n.nome !== undefined && f.caselle.some((c) => c.id !== casella.id && c.nome.toLowerCase() === n.nome!.toLowerCase())) return errore(409, "Esiste già una casella con questo nome.");
+      if (n.nome !== undefined) casella.nome = n.nome;
+      if (n.giornoScadenza !== undefined) casella.giornoScadenza = n.giornoScadenza;
+      if (n.dalMese !== undefined) casella.dalMese = n.dalMese;
+      salva();
+      return ok(casella);
+    }
+    if (metodo === "DELETE") {
+      f.caselle = f.caselle.filter((c) => c.id !== casella.id);
+      f.mesi = f.mesi.filter((x) => x.casellaId !== casella.id);
+      salva();
+      return { stato: 204 };
+    }
+  }
+  if ((m = percorso.match(/^\/fatture\/caselle\/(\d+)\/mesi\/([^/]+)$/)) && metodo === "PUT") {
+    const casella = f.caselle.find((c) => c.id === Number(m![1]));
+    if (!casella) return errore(404, "Casella non trovata.");
+    const mese = m[2]!;
+    if (!meseValido(mese)) return errore(400, "Il mese non è valido (anno-mese, per esempio 2026-11).");
+    const c = (corpo ?? {}) as { stato?: unknown; importoCent?: unknown; nota?: unknown };
+    if (!STATI.includes(c.stato as StatoFattura)) return errore(400, "Lo stato non è valido.");
+    const importo = c.importoCent ?? null;
+    if (importo !== null && (typeof importo !== "number" || !Number.isInteger(importo) || importo < 0)) return errore(400, "L'importo non può essere negativo.");
+    if (c.nota !== undefined && c.nota !== null && typeof c.nota !== "string") return errore(400, "La nota non è valida.");
+    const nota = typeof c.nota === "string" ? (pulito(c.nota) ?? null) : null;
+    if (nota && nota.length > MASSIMO_NOTA_FATTURA) return errore(400, `La nota può avere al massimo ${MASSIMO_NOTA_FATTURA} caratteri.`);
+    const stato = c.stato as StatoFattura;
+    f.mesi = f.mesi.filter((x) => !(x.casellaId === casella.id && x.mese === mese));
+    // «Da fare» senza importo ne' nota e' lo stato di partenza: non si salva niente.
+    if (stato !== "DA_FARE" || importo !== null || nota !== null) f.mesi.push({ casellaId: casella.id, mese, stato, importoCent: importo, nota });
+    salva();
+    return ok({ mese, stato, importoCent: importo, nota });
+  }
+  if (percorso === "/fatture/promemoria" && metodo === "GET") return ok(promemoriaFatture(st));
+  if (percorso === "/fatture" && metodo === "GET") {
+    const da = q.get("da") ?? "";
+    const a = q.get("a") ?? "";
+    if (!meseValido(da) || !meseValido(a)) return errore(400, "Servono i mesi da e a nel formato anno-mese (per esempio 2026-11).");
+    if (da > a) return errore(400, "Il mese iniziale non può essere dopo quello finale.");
+    if (contaMesi(da, a) > MASSIMO_MESI_FATTURE) return errore(400, `Si possono chiedere al massimo ${MASSIMO_MESI_FATTURE} mesi alla volta.`);
+    return ok(fatture(st, da, a));
+  }
+  return null;
 }
 
 // ---- instradamento ----
@@ -588,12 +789,31 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
       return ok(elencoSedi(st).find((s) => s.id === sede.id));
     }
   }
+  if (percorso.startsWith("/fatture")) {
+    const r = fattureRispondi(st, metodo, percorso, q, corpo);
+    if (r) return r;
+  }
   if (percorso === "/riepilogo" && metodo === "GET") {
     const da = q.get("da");
     const a = q.get("a");
     const f = filtroSedi(q);
     if (f.errore) return errore(400, f.errore);
     return da && a ? ok(riepilogo(da, a, f.ids)) : errore(400, "Indica il periodo (da e a).");
+  }
+  // GET /statistiche/voci?da=&a=&raggruppa=&tipo=&sedi=: costi e ricavi per fornitore, dipendente o categoria, con i totali mese per mese.
+  if (percorso === "/statistiche/voci" && metodo === "GET") {
+    const da = q.get("da") ?? "";
+    const a = q.get("a") ?? "";
+    const raggruppa = raggruppamentoValido(q.get("raggruppa"));
+    const tipoGrezzo = q.get("tipo");
+    const tipo = tipoGrezzo ? TIPI_VOCI.find((t) => t === tipoGrezzo) : undefined;
+    const f = filtroSedi(q);
+    if (f.errore) return errore(400, f.errore);
+    if (!dataIsoValida(da) || !dataIsoValida(a)) return errore(400, "Indica il periodo (da e a).");
+    if (da > a) return errore(400, "La data di inizio non può essere dopo quella di fine.");
+    if (!raggruppa) return errore(400, "Indica come raggruppare: FORNITORE, DIPENDENTE o CATEGORIA.");
+    if (tipoGrezzo && !tipo) return errore(400, `Valore non valido per «tipo»: ${tipoGrezzo}`);
+    return ok(statisticheVoci(st, { da, a, raggruppa, tipo: tipo ?? tipoPredefinito(raggruppa), ids: f.ids }));
   }
   if (percorso === "/statistiche/settimana") {
     if (metodo === "PUT") return salvaSettimanaStatistiche(st, corpo);
@@ -613,11 +833,13 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
   }
   if (percorso === "/movimenti" && metodo === "GET") {
     const f = filtroSedi(q);
-    return f.errore ? errore(400, f.errore) : ok(elenco(q, f.ids));
+    if (f.errore) return errore(400, f.errore);
+    const filtriVoce = erroreFiltriVoce(q);
+    return filtriVoce ? errore(400, filtriVoce) : ok(elenco(q, f.ids));
   }
   if (percorso === "/movimenti" && metodo === "POST") {
     const input = corpo as MovimentoInput;
-    const e = valida(input);
+    const e = valida(st, input);
     if (e) return errore(400, e);
     const scelta = sceglieSede(st, input.sedeId);
     if (scelta.errore || !scelta.sede) return errore(400, scelta.errore ?? "Sede non trovata.");
@@ -629,7 +851,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
   if (percorso === "/movimenti/dividi" && metodo === "POST") {
     const input = corpo as MovimentoInput;
     if (input?.sedeId !== undefined && input.sedeId !== null) return errore(400, "Per dividere fra più sedi non indicare la sede.");
-    const e = valida(input);
+    const e = valida(st, input);
     if (e) return errore(400, e);
     const scelte = filtroSedi(q);
     if (scelte.errore) return errore(400, scelte.errore);
@@ -648,6 +870,17 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     return ok(creati, 201);
   }
   if ((m = percorso.match(/^\/movimenti\/(\d+)\/allegato$/))) return NELLA_DEMO("l'allegato di un file");
+  // PUT /movimenti/{id}/pagata {pagata}: cambia solo questo campo, e solo per le fatture.
+  if ((m = percorso.match(/^\/movimenti\/(\d+)\/pagata$/)) && metodo === "PUT") {
+    const mov = st.movimenti.find((x) => x.id === Number(m![1]));
+    if (!mov) return errore(404, "Movimento non trovato.");
+    const pagata = (corpo as { pagata?: unknown } | undefined)?.pagata;
+    if (typeof pagata !== "boolean") return errore(400, "Indica se la fattura è pagata (true o false).");
+    if (mov.documento !== "FATTURA") return errore(400, "Solo una fattura si segna come pagata.");
+    mov.pagata = pagata;
+    salva();
+    return ok(mov);
+  }
   if ((m = percorso.match(/^\/movimenti\/(\d+)$/))) {
     const mov = st.movimenti.find((x) => x.id === Number(m![1]));
     if (!mov) return errore(404, "Movimento non trovato.");
@@ -655,7 +888,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     const ambito = q.get("ambito") ?? "SOLO_QUESTO";
     if (metodo === "PUT") {
       const input = corpo as MovimentoInput;
-      const e = valida({ ...input, ricorrenza: input.ricorrenza ?? null });
+      const e = valida(st, { ...input, ricorrenza: input.ricorrenza ?? null });
       if (e) return errore(400, e);
       // Con sedeId il movimento cambia sede (non verso una archiviata); senza resta nella sua.
       let nuovaSede: SedeDemo | undefined;
@@ -691,42 +924,37 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
   }
   if (percorso === "/categorie" && metodo === "GET") {
     const tipo = q.get("tipo");
-    return ok(st.categorie.filter((c) => !tipo || c.tipo === tipo).sort((x, y) => x.nome.localeCompare(y.nome)));
+    return ok(conUsi(st, "categorie", st.categorie.filter((c) => !tipo || c.tipo === tipo).sort((x, y) => x.nome.localeCompare(y.nome))));
   }
-  // POST /categorie {nome, tipo}: 201 se nuova (personalizzata), 200 con quella che c'e' se lo stesso nome (senza badare alle maiuscole) esiste nello stesso tipo.
+  // POST /categorie {nome, tipo, retribuzione?}: 201 se nuova, 200 con quella che c'e' (il flag non cambia) se lo stesso nome (senza badare
+  // alle maiuscole) esiste nello stesso tipo. `retribuzione=true` solo con COSTO_FISSO, altrimenti 400.
   if (percorso === "/categorie" && metodo === "POST") {
-    const c = (corpo ?? {}) as { nome?: unknown; tipo?: unknown };
+    const c = (corpo ?? {}) as { nome?: unknown; tipo?: unknown; retribuzione?: unknown };
     const nome = typeof c.nome === "string" ? pulito(c.nome) : undefined;
     if (!nome) return errore(400, "Il nome della categoria è obbligatorio.");
     if (nome.length > MASSIMO_NOME_CATEGORIA) return errore(400, `Il nome della categoria può avere al massimo ${MASSIMO_NOME_CATEGORIA} caratteri.`);
     if (c.tipo !== "RICAVO" && c.tipo !== "COSTO_VARIABILE" && c.tipo !== "COSTO_FISSO") return errore(400, "Il tipo della categoria non è valido.");
+    if (c.retribuzione !== undefined && typeof c.retribuzione !== "boolean") return errore(400, "Il valore di «retribuzione» non è valido.");
+    if (c.retribuzione === true && c.tipo !== "COSTO_FISSO") return errore(400, "Solo una categoria dei costi fissi può essere una retribuzione.");
     const esistente = st.categorie.find((x) => x.tipo === c.tipo && x.nome.toLowerCase() === nome.toLowerCase());
     if (esistente) return ok(esistente);
-    trova(st.categorie, nome, c.tipo);
+    trova(st.categorie, nome, c.tipo, c.retribuzione === true);
     salva();
     return ok(st.categorie.find((x) => x.tipo === c.tipo && x.nome === nome), 201);
-  }
-  // PUT /categorie/{id} {nome}: rinomina solo le personalizzate (cambiano anche i movimenti e le ripetizioni che la usano).
-  if ((m = percorso.match(/^\/categorie\/(\d+)$/)) && metodo === "PUT") {
-    const cat = st.categorie.find((x) => x.id === Number(m![1]));
-    if (!cat) return errore(404, "Categoria non trovata.");
-    const nome = typeof (corpo as { nome?: unknown } | undefined)?.nome === "string" ? pulito((corpo as { nome: string }).nome) : undefined;
-    if (!nome) return errore(400, "Il nome della categoria è obbligatorio.");
-    if (nome.length > MASSIMO_NOME_CATEGORIA) return errore(400, `Il nome della categoria può avere al massimo ${MASSIMO_NOME_CATEGORIA} caratteri.`);
-    if (!cat.personalizzata) return errore(409, "Questa categoria è predefinita e non si rinomina.");
-    if (st.categorie.some((x) => x.id !== cat.id && x.tipo === cat.tipo && x.nome.toLowerCase() === nome.toLowerCase())) return errore(409, "Esiste già una categoria con questo nome.");
-    const vecchio = cat.nome;
-    cat.nome = nome;
-    for (const mov of st.movimenti) if (mov.categoria?.id === cat.id) mov.categoria = { id: cat.id, nome };
-    // Le ripetizioni tengono il nome della categoria nel modello: seguono la rinomina.
-    for (const r of st.ricorrenze) if (r.modello.tipo === cat.tipo && r.modello.categoria?.toLowerCase() === vecchio.toLowerCase()) r.modello.categoria = nome;
-    salva();
-    return ok(cat);
   }
   if (percorso === "/fornitori" && metodo === "GET") return ok(fornitori(q.get("q") ?? ""));
   if (percorso === "/dipendenti" && metodo === "GET") {
     const filtro = (q.get("q") ?? "").trim().toLowerCase();
-    return ok(st.dipendenti.filter((d) => !filtro || d.nome.toLowerCase().includes(filtro)).sort((x, y) => x.nome.localeCompare(y.nome)));
+    return ok(conUsi(st, "dipendenti", st.dipendenti.filter((d) => !filtro || d.nome.toLowerCase().includes(filtro)).sort((x, y) => x.nome.localeCompare(y.nome))));
+  }
+  // PUT /{anagrafica}/{id} {nome} (per le categorie anche {retribuzione}): rinomina qualunque voce; DELETE con o senza ?sostituisciCon=.
+  if ((m = percorso.match(/^\/(categorie|fornitori|dipendenti)\/(\d+)$/)) && (metodo === "PUT" || metodo === "DELETE")) {
+    const anagrafica = m[1] as "categorie" | "fornitori" | "dipendenti";
+    const id = Number(m[2]);
+    const esito = metodo === "PUT" ? rinominaVoce(st, anagrafica, id, corpo) : eliminaVoce(st, anagrafica, id, q.get("sostituisciCon"));
+    if ("errore" in esito) return errore(esito.errore.stato, esito.errore.messaggio);
+    salva();
+    return metodo === "PUT" ? ok(esito.valore) : { stato: 204 };
   }
   if (percorso === "/rete") return ok({ porta: 8766, indirizzi: [] });
   if (percorso === "/programma" && metodo === "GET") return ok({ versione: "demo", cartellaBackup: "Demo: i dati restano solo su questo telefono", cartellaPredefinita: true, ultimoBackup: null });

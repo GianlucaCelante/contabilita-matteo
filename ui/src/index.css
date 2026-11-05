@@ -231,6 +231,10 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
   }
   .segmenti > [aria-pressed="true"], .segmenti > [aria-current="page"] { background: var(--color-testo); color: #fff; }
   .segmenti > :focus-visible { outline-offset: -3px; }
+  /* A 320 px «Settimana» deve respirare: meno spazio ai lati e testo un filo piu' piccolo. */
+  @media (max-width: 359px) {
+    .segmenti > button, .segmenti > a { padding: 0 4px; font-size: 14px; flex: 1 1 auto; justify-content: center; }
+  }
 
   /* Scelte esclusive grandi (Che cos'è, Documento) */
   .scelta {
