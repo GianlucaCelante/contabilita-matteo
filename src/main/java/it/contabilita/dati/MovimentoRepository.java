@@ -35,5 +35,35 @@ public interface MovimentoRepository extends JpaRepository<Movimento, Long>, Jpa
     @org.springframework.data.jpa.repository.Query("select m.sede.id, count(m) from Movimento m group by m.sede.id")
     List<Object[]> contaPerSede();
 
+    /** Se la categoria e' usata da movimenti con uno di quei documenti (le retribuzioni). */
+    boolean existsByCategoriaIdAndDocumentoIn(Long categoriaId, java.util.Collection<Documento> documenti);
+
+    /** Quanti movimenti ha ogni categoria: {@code [id, numero]}. */
+    @org.springframework.data.jpa.repository.Query("select m.categoria.id, count(m) from Movimento m where m.categoria is not null group by m.categoria.id")
+    List<Object[]> contaPerCategoria();
+
+    /** Quanti movimenti ha ogni dipendente: {@code [id, numero]}. */
+    @org.springframework.data.jpa.repository.Query("select m.dipendente.id, count(m) from Movimento m where m.dipendente is not null group by m.dipendente.id")
+    List<Object[]> contaPerDipendente();
+
+    long countByCategoriaId(Long id);
+
+    long countByFornitoreId(Long id);
+
+    long countByDipendenteId(Long id);
+
+    // Spostamenti in blocco (eliminazione e unione di voci): la voce nuova puo' essere null (= senza voce).
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true, clearAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("update Movimento m set m.categoria = :nuova where m.categoria.id = :id")
+    int spostaCategoria(@org.springframework.data.repository.query.Param("id") Long id, @org.springframework.data.repository.query.Param("nuova") Categoria nuova);
+
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true, clearAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("update Movimento m set m.fornitore = :nuova where m.fornitore.id = :id")
+    int spostaFornitore(@org.springframework.data.repository.query.Param("id") Long id, @org.springframework.data.repository.query.Param("nuova") Fornitore nuova);
+
+    @org.springframework.data.jpa.repository.Modifying(flushAutomatically = true, clearAutomatically = true)
+    @org.springframework.data.jpa.repository.Query("update Movimento m set m.dipendente = :nuova where m.dipendente.id = :id")
+    int spostaDipendente(@org.springframework.data.repository.query.Param("id") Long id, @org.springframework.data.repository.query.Param("nuova") Dipendente nuova);
+
     boolean existsByRicorrenzaIdAndData(Long ricorrenzaId, LocalDate data);
 }

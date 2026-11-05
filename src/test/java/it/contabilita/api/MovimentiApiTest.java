@@ -68,7 +68,7 @@ class MovimentiApiTest extends ProvaBase {
                 {"COSTO_VARIABILE", "FATTURA"}, {"COSTO_VARIABILE", "SCONTRINO"},
                 {"COSTO_FISSO", "RETRIBUZIONE_REGOLARE"}, {"COSTO_FISSO", "RETRIBUZIONE_EXTRA"}, {"COSTO_FISSO", "NESSUNO"}};
         for (String[] c : ammesse) {
-            crea(movimento("2026-03-10", c[0], c[1], 100));
+            crea(c[1].startsWith("RETRIBUZIONE") ? retribuzione("2026-03-10", c[1], 100) : movimento("2026-03-10", c[0], c[1], 100));
         }
         String[] tipi = {"RICAVO", "COSTO_VARIABILE", "COSTO_FISSO"};
         String[] documenti = {"RICAVO_FATTURATO", "RICAVO_EXTRA", "FATTURA", "SCONTRINO", "RETRIBUZIONE_REGOLARE", "RETRIBUZIONE_EXTRA", "NESSUNO"};
@@ -109,6 +109,8 @@ class MovimentiApiTest extends ProvaBase {
 
     @Test
     void creaAlVoloCategoriaFornitoreEDipendenteSenzaDuplicatiESenzaDistinguereMaiuscole() throws Exception {
+        // la retribuzione ha bisogno di una categoria con il flag: si crea prima, poi la si ritrova dal nome
+        invia(post("/api/categorie"), json.createObjectNode().put("nome", "Stipendi").put("tipo", "COSTO_FISSO").put("retribuzione", true), 201);
         ObjectNode a = movimento("2026-03-10", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 150000);
         a.put("categoria", "Stipendi").put("dipendente", "Mario Bianchi");
         JsonNode primo = crea(a);
@@ -192,7 +194,7 @@ class MovimentiApiTest extends ProvaBase {
         ObjectNode sc = movimento("2026-03-05", "COSTO_VARIABILE", "SCONTRINO", 2000);
         sc.put("note", "Pomodori dal MOLINO?");
         crea(sc);
-        ObjectNode re = movimento("2026-04-01", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 50000);
+        ObjectNode re = retribuzione("2026-04-01", "RETRIBUZIONE_REGOLARE", 50000);
         re.put("dipendente", "Anna");
         crea(re);
 
@@ -265,7 +267,7 @@ class MovimentiApiTest extends ProvaBase {
 
     @Test
     void laRetribuzioneExtraNonPuoEssereRicorrente() throws Exception {
-        ObjectNode in = movimento("2026-01-10", "COSTO_FISSO", "RETRIBUZIONE_EXTRA", 50000);
+        ObjectNode in = retribuzione("2026-01-10", "RETRIBUZIONE_EXTRA", 50000);
         in.putObject("ricorrenza").put("giorno", 10);
         JsonNode e = errore(post("/api/movimenti"), in, 400);
         assertThat(e.get("errore").asText()).contains("extra");

@@ -50,8 +50,18 @@ public class MovimentiController {
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long dipendente,
             @RequestParam(required = false) String sedi,
-            @RequestParam(required = false) String categorie) {
-        return movimenti.elenca(da, a, tipo, q, dipendente, SediService.idsDa(sedi), AnagraficheService.idsCategorieDa(categorie));
+            @RequestParam(required = false) String categorie,
+            @RequestParam(required = false) Long fornitore,
+            @RequestParam(required = false) String senza,
+            @RequestParam(required = false) Boolean retribuzione,
+            @RequestParam(required = false) Boolean pagata) {
+        return movimenti.elenca(da, a, tipo, q, dipendente, SediService.idsDa(sedi), AnagraficheService.idsCategorieDa(categorie),
+                fornitore, senza, retribuzione, pagata);
+    }
+
+    @PutMapping("/movimenti/{id}/pagata")
+    public MovimentoDto segnaPagata(@PathVariable Long id, @RequestBody Dto.PagataInput corpo) {
+        return movimenti.segnaPagata(id, corpo == null ? null : corpo.pagata());
     }
 
     @GetMapping("/movimenti/{id}")

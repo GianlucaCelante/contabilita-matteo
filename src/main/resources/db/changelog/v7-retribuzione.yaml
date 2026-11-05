@@ -1,0 +1,41 @@
+databaseChangeLog:
+  # Versione 7: la retribuzione e' una proprieta' della categoria (retribuzione = 1), non piu' un documento slegato.
+  # Un costo fisso con documento RETRIBUZIONE_REGOLARE/EXTRA e una categoria con il flag vanno sempre insieme.
+  # - Colonna con valore predefinito (0: le categorie nuove non sono retribuzioni) + UPDATE, senza chiave esterna
+  #   (SQLite non accetta tutto cio' che addColumn genera).
+  # - Si contrassegna la categoria di COSTO_FISSO chiamata «Retribuzione» (nome_chiave = retribuzione).
+  # - Se non c'e' e ci sono retribuzioni (movimenti o ripetizioni) senza categoria, se ne crea una, predefinita come
+  #   tutte quelle che esistono alla migrazione (personalizzata = 0), e si assegna a quelle righe. Altrimenti non si crea nulla.
+  # I dati gia' presenti non si rivalidano: le retribuzioni con un'altra categoria restano come sono.
+  # Il contesto «retribuzione» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 70-categoria-retribuzione
+      author: contabilita
+      context: retribuzione
+      changes:
+        - sql:
+            comment: "Il valore predefinito (0) vale per le categorie create da ora in poi."
+            sql: ALTER TABLE categoria ADD COLUMN retribuzione BOOLEAN NOT NULL DEFAULT 0
+        - sql:
+            comment: "La categoria «Retribuzione» di COSTO_FISSO, se c'e', e' una retribuzione."
+            sql: UPDATE categoria SET retribuzione = 1 WHERE tipo = 'COSTO_FISSO' AND nome_chiave = 'retribuzione'
+        - sql:
+            comment: "Se non c'e' ma ci sono retribuzioni senza categoria, la crea."
+            sql: >
+              INSERT INTO categoria (nome, nome_chiave, tipo, personalizzata, retribuzione)
+              SELECT 'Retribuzione', 'retribuzione', 'COSTO_FISSO', 0, 1
+              WHERE NOT EXISTS (SELECT 1 FROM categoria WHERE tipo = 'COSTO_FISSO' AND nome_chiave = 'retribuzione')
+                AND (EXISTS (SELECT 1 FROM movimento WHERE documento IN ('RETRIBUZIONE_REGOLARE', 'RETRIBUZIONE_EXTRA') AND categoria_id IS NULL)
+                  OR EXISTS (SELECT 1 FROM ricorrenza WHERE documento IN ('RETRIBUZIONE_REGOLARE', 'RETRIBUZIONE_EXTRA') AND categoria_id IS NULL))
+        - sql:
+            comment: "Le retribuzioni senza categoria passano a quella delle retribuzioni."
+            sql: >
+              UPDATE movimento
+              SET categoria_id = (SELECT id FROM categoria WHERE tipo = 'COSTO_FISSO' AND nome_chiave = 'retribuzione')
+              WHERE documento IN ('RETRIBUZIONE_REGOLARE', 'RETRIBUZIONE_EXTRA') AND categoria_id IS NULL
+        - sql:
+            comment: "Idem per le ripetizioni."
+            sql: >
+              UPDATE ricorrenza
+              SET categoria_id = (SELECT id FROM categoria WHERE tipo = 'COSTO_FISSO' AND nome_chiave = 'retribuzione')
+              WHERE documento IN ('RETRIBUZIONE_REGOLARE', 'RETRIBUZIONE_EXTRA') AND categoria_id IS NULL

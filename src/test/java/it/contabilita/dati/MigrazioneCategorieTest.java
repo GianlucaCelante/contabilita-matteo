@@ -30,7 +30,7 @@ class MigrazioneCategorieTest {
     }
 
     @Test
-    void leCategoriePreesistentiDiventanoPredefiniteLeNuovePersonalizzate() throws Exception {
+    void leCategoriePreesistentiDiventanoPredefiniteLeNuovePersonalizzateEPoiLaColonnaSparisce() throws Exception {
         Path file = Files.createTempFile("contabilita-migrazione-categorie-", ".db");
         try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + file); Statement st = c.createStatement()) {
             aggiorna(c, new Contexts("statistiche")); // lo schema com'era prima delle categorie personalizzate (v1 - v5)
@@ -45,7 +45,7 @@ class MigrazioneCategorieTest {
             st.executeUpdate("INSERT INTO movimento (data, tipo, documento, importo_cent, categoria_id, origine, creato_il, modificato_il) VALUES "
                     + "('2026-03-01', 'COSTO_FISSO', 'NESSUNO', 60000, 1, 'MANO', '2026-03-01T10:00:00', '2026-03-01T10:00:00')");
 
-            aggiorna(c, new Contexts()); // tutto, come all'avvio dell'applicazione
+            aggiorna(c, new Contexts("categorie")); // fino alla versione 6
 
             List<String> categorie = new ArrayList<>();
             try (ResultSet rs = st.executeQuery("SELECT nome, tipo, personalizzata FROM categoria ORDER BY id")) {
@@ -71,6 +71,20 @@ class MigrazioneCategorieTest {
             try (ResultSet rs = st.executeQuery("SELECT personalizzata FROM categoria WHERE nome_chiave = 'nuova'")) {
                 assertThat(rs.next() && rs.getInt(1) == 1).isTrue();
             }
+
+            // la versione 8 toglie la colonna: le categorie restano, tutte uguali
+            aggiorna(c, new Contexts()); // tutto, come all'avvio dell'applicazione
+            try (ResultSet rs = st.executeQuery("SELECT count(*) FROM pragma_table_info('categoria') WHERE name = 'personalizzata'")) {
+                assertThat(rs.next() && rs.getInt(1) == 0).isTrue();
+            }
+            try (ResultSet rs = st.executeQuery("SELECT count(*) FROM categoria")) {
+                assertThat(rs.next() && rs.getInt(1) == 8).isTrue();
+            }
+            try (ResultSet rs = st.executeQuery("SELECT count(*) FROM movimento WHERE categoria_id = 1")) {
+                assertThat(rs.next() && rs.getInt(1) == 1).isTrue();
+            }
+            // e una categoria nuova si inserisce senza la colonna
+            st.executeUpdate("INSERT INTO categoria (nome, nome_chiave, tipo) VALUES ('Altra', 'altra', 'RICAVO')");
         } finally {
             Files.deleteIfExists(file);
         }

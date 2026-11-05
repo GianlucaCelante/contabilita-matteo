@@ -21,15 +21,22 @@ Fonte di verità condivisa tra servizio (`src/`) e interfaccia (`ui/`). Base: `/
 
 Combinazioni valide `Tipo` → `Documento`: `RICAVO` → `RICAVO_FATTURATO` o `RICAVO_EXTRA`; `COSTO_VARIABILE` → `FATTURA`, `NOTA_DI_CREDITO` o `SCONTRINO`; `COSTO_FISSO` → `RETRIBUZIONE_REGOLARE`, `RETRIBUZIONE_EXTRA` o `NESSUNO`. Altre combinazioni: 400.
 
+**Retribuzione e categoria** (vale per creazione e modifica di un movimento, per le ripetizioni e per l'importazione): per un `COSTO_FISSO` il `documento` `RETRIBUZIONE_REGOLARE`/`RETRIBUZIONE_EXTRA` e una categoria con `retribuzione=true` vanno **sempre insieme**.
+- `documento` `RETRIBUZIONE_*` senza categoria → 400 «Una retribuzione ha bisogno di una categoria di tipo retribuzione.»; con una categoria che non ha il flag → 400 «La categoria «X» non è una retribuzione.» (si può contrassegnare in Elenchi o scegliere un'altra). Il nome non conta: la categoria si cerca come sempre, al volo dal nome, e il flag è quello che ha già.
+- `documento` `NESSUNO` con una categoria `retribuzione=true` → 400 «La categoria «X» è una retribuzione: scegli Regolare o Extra.».
+- Una categoria creata al volo dal solo nome in un movimento ha sempre `retribuzione=false`: per una nuova retribuzione l'interfaccia crea prima la categoria con `POST /api/categorie {…, retribuzione: true}`.
+- Il controllo vale anche per la **modifica con ambito `QUESTO_E_PROSSIMI`** e per i movimenti creati dalle ripetizioni: se la categoria di una ripetizione perde il flag mentre ha retribuzioni, `PUT /api/categorie/{id}` risponde già 409 (vedi Anagrafiche), quindi non si arriva a un modello incoerente.
+- I dati già presenti prima della migrazione non si rivalidano; la migrazione porta le retribuzioni senza categoria alla categoria «Retribuzione» (vedi Anagrafiche).
+
 **Nota di credito** (`COSTO_VARIABILE` + `NOTA_DI_CREDITO`, come nel progetto del ristorante): l'`importoCent` resta positivo, ma la nota **riduce** i costi: nei totali di `GET /api/movimenti`, nel Riepilogo (riga «Fatture»: fatture − note) e nell'esportazione (dove i costi sono negativi e la nota è positiva). Ha fornitore, categoria e numero come una fattura; arriva dall'importazione (a mano non la offre l'interfaccia, ma l'API la accetta).
 
 ## Anagrafiche (creazione al volo)
 
-- `GET /api/categorie?tipo=COSTO_VARIABILE` → `[{id, nome, tipo, personalizzata}]` (`tipo` facoltativo; la categoria ha un `Tipo`). `personalizzata` è vero per le categorie create da chi usa l'app (con `POST /api/categorie` o al volo dal nome nel movimento) e falso per le **predefinite**: tutte le categorie già presenti quando si è applicata la migrazione (qualunque nome e tipo), così il Riepilogo di un database esistente non cambia. Ogni categoria creata dopo, con `POST` o al volo, è personalizzata, anche se ha lo stesso nome di una voce standard come `Affitto`; un database nuovo parte senza categorie, quindi senza predefinite.
-- `PUT /api/categorie/{id}` `{nome}` → `{id, nome, tipo, personalizzata}`: rinomina una categoria **personalizzata** (cambiano anche i movimenti che la usano, perché puntano alla categoria). Si può cambiare anche solo la grafia (`delivery` → `Delivery`). Errori: nome vuoto o oltre 120 caratteri → 400; categoria inesistente → 404; categoria predefinita → 409 «Questa categoria è predefinita e non si rinomina.»; nome già usato da un'altra categoria dello stesso `tipo` (senza distinguere maiuscole) → 409 «Esiste già una categoria con questo nome.». Non esiste `DELETE`.
+- `GET /api/categorie?tipo=COSTO_VARIABILE` → `[{id, nome, tipo, retribuzione}]` (`tipo` facoltativo; la categoria ha un `Tipo`). **Non esistono categorie predefinite né «di sistema»**: sono tutte dell'utente, si rinominano e si eliminano (vedi sotto); il campo `personalizzata` è stato tolto. `retribuzione` (booleano) è vero solo per le categorie di `COSTO_FISSO` che l'utente ha contrassegnato come **retribuzione**: i movimenti di quella categoria hanno `documento` `RETRIBUZIONE_REGOLARE` o `RETRIBUZIONE_EXTRA` e un dipendente facoltativo; l'interfaccia, scelta una categoria con `retribuzione`, chiede Regolare/Extra e Dipendente. Il nome della categoria si può cambiare (è solo un nome): quello che conta è il flag. Un database nuovo parte **senza categorie**; un database esistente, alla migrazione, mantiene le sue categorie e ne contrassegna come retribuzione quella di `COSTO_FISSO` che si chiama `Retribuzione` (senza distinguere maiuscole); se non c'è **e** ci sono retribuzioni (movimenti o ripetizioni con documento `RETRIBUZIONE_*`) senza categoria, ne crea una con quel nome (con il flag) e le assegna a quella; in un database senza retribuzioni non crea nulla.
+- `PUT /api/categorie/{id}` `{nome?, retribuzione?}` (almeno uno dei due) → `{id, nome, tipo, retribuzione}`: rinomina e/o cambia il flag. Cambiano anche i movimenti che la usano, perché puntano alla categoria. Errori: nome vuoto o oltre 120 caratteri → 400; categoria inesistente → 404; nome già usato da un'altra categoria dello stesso `tipo` (senza distinguere maiuscole) → 409 «Esiste già una categoria con questo nome.»; `retribuzione=true` su una categoria che non è di `COSTO_FISSO` → 400; `retribuzione=false` su una categoria usata da movimenti con `documento` `RETRIBUZIONE_*` → 409 «Questa categoria ha già delle retribuzioni.». `DELETE` vedi «Gestione di categorie, fornitori e dipendenti».
 - `GET /api/fornitori?q=` → `[{id, nome, partitaIva}]` (`q` filtra per nome, senza distinguere maiuscole). Ordine: con `q` prima chi inizia col testo, poi chi lo contiene; dentro ogni gruppo i più usati (numero di movimenti), a parità alfabetico. Senza `q`: i più usati.
 - `GET /api/dipendenti?q=` → `[{id, nome}]`.
-- `POST /api/categorie` `{nome, tipo}`, `POST /api/fornitori` `{nome, partitaIva?}`, `POST /api/dipendenti` `{nome}` → 201 con l'oggetto creato; se esiste già (stesso nome senza distinguere maiuscole, e per le categorie stesso `tipo`) → 200 con quello esistente.
+- `POST /api/categorie` `{nome, tipo, retribuzione?}` (`retribuzione=true` solo con `tipo` `COSTO_FISSO`, altrimenti 400; se la categoria esiste già il flag non cambia), `POST /api/fornitori` `{nome, partitaIva?}`, `POST /api/dipendenti` `{nome}` → 201 con l'oggetto creato; se esiste già (stesso nome senza distinguere maiuscole, e per le categorie stesso `tipo`) → 200 con quello esistente.
 
 Anche il salvataggio di un movimento crea al volo categoria, fornitore e dipendente dal solo nome (vedi sotto): l'interfaccia non deve fare una POST separata.
 
@@ -60,6 +67,7 @@ Oggetto `Movimento` (risposta):
   sede: {id, nome},
   descrizione, numeroDocumento, note,
   origine,
+  pagata,                                                        // boolean: solo per le fatture ricevute, vedi «Fatture ricevute»; per ogni altro documento è sempre false
   ricorrenza: {id, giorno, attiva, unita, intervallo, prossimaData} | null,
   allegatoNome | null }
 ```
@@ -71,11 +79,14 @@ Corpo di creazione/modifica (`MovimentoInput`):
   categoria?: "nome", fornitore?: "nome", dipendente?: "nome",   // creati al volo se non esistono
   sedeId?: n,                                                    // vedi «Quale sede» in Sedi; in modifica, se manca, il movimento resta dov'è
   descrizione?, numeroDocumento?, note?,
+  pagata?: boolean,                                              // solo FATTURA: predefinito false in creazione, invariato in modifica se manca; per gli altri documenti si ignora
   ricorrenza?: { giorno?: 1..31, unita?: "GIORNI"|"SETTIMANE"|"MESI"|"ANNI", intervallo?: n } | null }   // senza unita e intervallo: ogni mese
 ```
 
 - `GET /api/movimenti?da=&a=&tipo=&q=&dipendente=&sedi=&categorie=` → `{elementi: [Movimento], totali: {ricaviCent, costiCent, saldoCent}}`, ordinati per `data` decrescente poi `id` decrescente. `da`/`a` inclusivi, facoltativi. `q` cerca in fornitore, descrizione, note. `dipendente` è l'id. `sedi` è il filtro per sede (vedi Sedi); anche i `totali` riguardano solo le sedi scelte.
   `categorie` filtra per categoria: id separati da virgola (es. `GET /api/movimenti?categorie=3,7`), in AND con gli altri filtri e con i `totali` calcolati sul filtrato. Assente o vuoto = nessun filtro; un id inesistente non dà risultati (elenco vuoto, totali a 0); un valore che non è un numero → 400 «categorie: valore non valido: …». I movimenti **senza categoria** (per esempio le retribuzioni) sono esclusi quando il filtro è attivo.
+  `retribuzione=true` tiene solo i movimenti con `documento` `RETRIBUZIONE_REGOLARE`/`RETRIBUZIONE_EXTRA` (serve all'elenco di «Senza dipendente», che riguarda solo le retribuzioni). `pagata=true|false` tiene solo le **fatture** (`documento` `FATTURA`) pagate o da pagare (valore non valido → 400).
+  **Filtri per voce** (servono a vedere «cosa compone» una riga delle statistiche per voce, e valgono in AND con gli altri): `fornitore` = id del fornitore (come `dipendente`); `senza` = `FORNITORE`, `DIPENDENTE` o `CATEGORIA` tiene solo i movimenti **senza** quella voce (la riga «Senza …» delle statistiche; `categorie` e `senza=CATEGORIA` insieme → 400). Id non numerico o `senza` non valido → 400 come per `categorie`. Con questi filtri, `elementi` e `totali` sono coerenti con le righe di `GET /api/statistiche/voci` dello stesso periodo: per una voce, la somma degli importi degli `elementi` (note di credito in negativo, ricavi positivi) è il `totaleCent` della sua riga.
 - `GET /api/movimenti/{id}` → `Movimento`.
 - `POST /api/movimenti` `MovimentoInput` → 201 `Movimento` (`origine = MANO`). `sedeId` come in «Quale sede».
 - `POST /api/movimenti/dividi` `MovimentoInput` **senza** `sedeId` → 201 con la **lista** dei `Movimento` creati («dividi»): un movimento per ogni sede **attiva** (oppure solo per quelle di `?sedi=1,3`: almeno due, attive, altrimenti 400), in ordine di `ordine`, con `importoCent` diviso in parti uguali. I centesimi di resto vanno uno ciascuno alle prime sedi, quindi la somma delle parti è esattamente l'importo originale (1000 su 3 sedi → 334 + 333 + 333). Gli altri campi (data, tipo, documento, categoria, fornitore, descrizione…) sono uguali in tutti. È una sola operazione: se qualcosa non va non si crea nessun movimento. Con una sola sede attiva crea un solo movimento con tutto l'importo; se l'importo ha meno centesimi delle sedi, le ultime sedi restano senza movimento (non esistono movimenti da zero). Con `ricorrenza` nel corpo (costo fisso) ogni sede ottiene **la sua** ripetizione con la sua parte, quindi anche i mesi dopo escono divisi (una ripetizione per sede, da modificare sede per sede); `sedeId` nel corpo → 400 «Per dividere fra più sedi non indicare la sede.»; gli altri controlli sono quelli di `POST /api/movimenti`.
@@ -100,17 +111,18 @@ Corpo di creazione/modifica (`MovimentoInput`):
 
 ```
 { da, a,
-  ricavi:        { fatturatiCent, extraCent, altreVoci: [{categoria, importoCent}], totaleCent },
-  costiVariabili:{ fattureCent, scontriniCent, altreVoci: [{categoria, importoCent}], totaleCent },
-  costiFissi:    { retribuzioneRegolareCent, retribuzioneExtraCent,
-                   altreVoci: [{categoria, importoCent}], totaleCent },
+  ricavi:        { voci: [{id, categoria, importoCent}], fatturatiCent, extraCent, totaleCent },
+  costiVariabili:{ voci: [{id, categoria, importoCent}], fattureCent, scontriniCent, totaleCent },
+  costiFissi:    { voci: [{id, categoria, importoCent}], retribuzioneRegolareCent, retribuzioneExtraCent, totaleCent },
   costiCent, risultatoCent,
   perSede:       [{sede: {id, nome}, ricaviCent, costiCent, risultatoCent}] }
 ```
 
-`costiFissi.altreVoci` raggruppa i costi fissi con `documento = NESSUNO` per categoria (senza categoria: «Altre voci fisse»).
+**Una riga per ogni categoria** (cambio di novembre 2026: non esistono più categorie «predefinite»). In ognuna delle tre sezioni `voci` ha una riga per ogni categoria che nel periodo ha movimenti di quel tipo (`id` della categoria, `categoria` = il suo nome), più, se ci sono movimenti senza categoria, una riga `{id: null, categoria: "Senza categoria", importoCent}`. `voci` è ordinato per importo decrescente, poi per nome, con «Senza categoria» sempre in fondo; la somma delle `voci` è `totaleCent` della sezione. Le note di credito riducono la riga della loro categoria (l'importo conta in negativo; una riga può risultare negativa). `altreVoci` non esiste più.
 
-**Categorie personalizzate.** Un movimento di tipo `RICAVO` o `COSTO_VARIABILE` la cui categoria è **personalizzata** (vedi Categorie) va nella riga della sua categoria, in `ricavi.altreVoci` o `costiVariabili.altreVoci`, e **non** nelle righe base (`fatturatiCent`/`extraCent`, `fattureCent`/`scontriniCent`, qualunque sia il `documento`). Con categoria predefinita o senza categoria vale la regola di sempre. Le note di credito con categoria personalizzata riducono la riga della loro categoria (l'importo conta in negativo; una riga può risultare negativa). `altreVoci` è ordinato per importo decrescente, poi per nome; il nome mostrato è quello della categoria. I `totaleCent` restano la somma di tutto, quindi `costiCent`, `risultatoCent` e `perSede` non cambiano (la ripartizione per categoria si calcola solo sul totale delle sedi scelte, non per sede). I costi fissi non cambiano: le retribuzioni restano retribuzioni e gli `NESSUNO` vanno in `costiFissi.altreVoci`. Esempio (marzo 2026, importi inventati): ricavi `{fatturatiCent: 100000, extraCent: 0, altreVoci: [{categoria: "Delivery", importoCent: 42000}], totaleCent: 142000}`, costi variabili `{fattureCent: 20000, scontriniCent: 1500, altreVoci: [{categoria: "Imballaggi", importoCent: 5000}, {categoria: "Bibite", importoCent: 900}], totaleCent: 27400}` (Imballaggi = fattura 8000 − nota di credito 3000). `costiCent` = variabili + fissi; `risultatoCent` = ricavi − costi (può essere negativo). Con `sedi` tutti i campi riguardano solo le sedi scelte. `perSede` ha una riga per ogni sede scelta (nell'ordine di `GET /api/sedi`): le non archiviate compaiono anche con tutto a zero se nel periodo non hanno movimenti, le archiviate solo se ne hanno; `costiCent` per sede conta le note di credito come riduzione, come il resto. La somma delle righe di `perSede` è uguale ai totali `ricavi.totaleCent`, `costiCent`, `risultatoCent`. I campi di prima non sono cambiati.
+**Le somme per documento sono «di cui»**: `fatturatiCent`/`extraCent` (ricavi per `documento`), `fattureCent` (fatture − note di credito)/`scontriniCent` (costi variabili) e `retribuzioneRegolareCent`/`retribuzioneExtraCent` (costi fissi) sommano **tutti** i movimenti del tipo con quel documento, qualunque sia la loro categoria, e **non** vanno aggiunte al totale: sono un dettaglio del totale. Nei costi fissi, i movimenti con `documento` `NESSUNO` contano solo in `voci`. Un valore a zero significa che non ci sono movimenti con quel documento.
+
+Esempio (marzo 2026, importi inventati): ricavi `{voci: [{id: 3, categoria: "Sala", importoCent: 100000}, {id: 9, categoria: "Delivery", importoCent: 42000}], fatturatiCent: 120000, extraCent: 22000, totaleCent: 142000}`, costi variabili `{voci: [{id: 5, categoria: "Imballaggi", importoCent: 5000}, {id: 6, categoria: "Bibite", importoCent: 900}, {id: null, categoria: "Senza categoria", importoCent: 21500}], fattureCent: 20000, scontriniCent: 7400, totaleCent: 27400}` (Imballaggi = fattura 8000 − nota di credito 3000). Le sedi: la ripartizione per categoria si calcola solo sul totale delle sedi scelte, non per sede. `costiCent` = variabili + fissi; `risultatoCent` = ricavi − costi (può essere negativo). Con `sedi` tutti i campi riguardano solo le sedi scelte. `perSede` ha una riga per ogni sede scelta (nell'ordine di `GET /api/sedi`): le non archiviate compaiono anche con tutto a zero se nel periodo non hanno movimenti, le archiviate solo se ne hanno; `costiCent` per sede conta le note di credito come riduzione, come il resto. La somma delle righe di `perSede` è uguale ai totali `ricavi.totaleCent`, `costiCent`, `risultatoCent`. I campi di prima non sono cambiati.
 
 ## Statistiche
 
@@ -189,6 +201,75 @@ Pizze e ordini si caricano **a mano, una volta a settimana per ogni sede**; serv
 - `settimane` è in ordine cronologico, con **tutte** le settimane del periodo (anche senza dati: somme a 0, medie `null`). `sediMancanti` elenca le sedi **non archiviate**, comprese nel filtro `sedi`, senza dati in quella settimana.
 - `perSede` ha una riga per ogni sede del filtro (nell'ordine di `GET /api/sedi`): le non archiviate sempre (a zero se senza dati), le archiviate solo se nel periodo hanno dati o ricavi.
 
+## Gestione di categorie, fornitori e dipendenti (richieste del cliente, novembre 2026)
+
+Stesso contratto per le tre anagrafiche; `{anagrafica}` = `categorie`, `fornitori` o `dipendenti`.
+
+- Le tre `GET` elencano anche `usi`: quanti **movimenti** usano la voce (intero ≥ 0). Il resto della forma non cambia.
+- `PUT /api/categorie/{id}` `{nome}`, `PUT /api/fornitori/{id}` `{nome, partitaIva?}`, `PUT /api/dipendenti/{id}` `{nome}` → l'oggetto aggiornato (con `usi`). Si rinomina **qualunque** voce (non ci sono voci «di sistema»; per le categorie, `PUT` accetta anche `retribuzione`, vedi Anagrafiche). Cambiano anche movimenti e ripetizioni che la usano, perché puntano alla voce. Errori: nome vuoto o oltre 120 caratteri → 400; inesistente → 404; nome già usato da un'altra voce (stessa anagrafica, per le categorie stesso `tipo`, senza distinguere maiuscole) → 409 «Esiste già …». Cambiare solo la grafia della stessa voce è permesso. Cade il vecchio 409 «Questa categoria è predefinita e non si rinomina.».
+- `DELETE /api/{anagrafica}/{id}` → 204. **Senza parametri elimina la voce e lascia i movimenti e le ripetizioni che la usavano senza quella voce** (campo `null`; categoria, fornitore e dipendente sono sempre facoltativi sui movimenti, quindi non c'è nessun blocco). Parametro facoltativo:
+  - `sostituisciCon={idAltra}`: prima di eliminare sposta su `idAltra` tutti i movimenti **e le ripetizioni** che usano la voce (è il modo di **unire** due voci scritte male). L'altra voce deve esistere (404), essere diversa (400) e, per le categorie, avere lo stesso `tipo` (400).
+  - Inesistente → 404. Tutto o niente (una transazione).
+- I totali del Riepilogo non cambiano per un'eliminazione (cambia solo il dettaglio per voce): nelle statistiche per voce i movimenti rimasti senza voce stanno nella riga «Senza fornitore» / «Senza dipendente» / «Senza categoria» (`id: null`). L'interfaccia, prima di eliminare una voce usata, dice «usata da N movimenti: resteranno senza».
+
+## Statistiche per voce (costi e ricavi)
+
+`GET /api/statistiche/voci?da=&a=&raggruppa=FORNITORE|DIPENDENTE|CATEGORIA&tipo=&sedi=` (`da`, `a`, `raggruppa` obbligatori; `da` ≤ `a`; `sedi` come nel Riepilogo; `tipo` facoltativo: `RICAVO`, `COSTO_VARIABILE`, `COSTO_FISSO` o `COSTI` = variabili + fissi; assente = tutti i tipi per `CATEGORIA`, `COSTO_VARIABILE` per `FORNITORE`). Valori non validi → 400 come nel Riepilogo. **Con `raggruppa=DIPENDENTE` si considerano solo le retribuzioni**, cioè i movimenti con `documento` `RETRIBUZIONE_REGOLARE` o `RETRIBUZIONE_EXTRA`, e `tipo` non si usa (si ignora): un costo fisso come l'affitto non è una retribuzione e non compare nemmeno in «Senza dipendente» (la riga `id: null` è quella delle retribuzioni senza dipendente).
+
+Si considerano i movimenti nel periodo (per data) del filtro; l'importo di una voce è l'importo del movimento, tranne le **note di credito**, che lo riducono (anche sotto zero). I movimenti senza la voce scelta (nessun fornitore, nessun dipendente, nessuna categoria) vanno in una riga con `id: null`, solo se ci sono movimenti.
+
+```
+{ "da": "2026-09-01", "a": "2026-11-30", "raggruppa": "FORNITORE", "tipo": "COSTI",
+  "mesi": ["2026-09", "2026-10", "2026-11"],
+  "totaleCent": 123456, "movimenti": 42,
+  "voci": [
+    { "id": 7, "nome": "Bel Fungo", "totaleCent": 80000, "movimenti": 9,
+      "regolareCent": 0, "extraCent": 0,
+      "pagataCent": 50000,
+      "perMese": [30000, 50000, 0] } ] }
+```
+
+- `pagataCent`: solo con `raggruppa=FORNITORE`: la somma delle fatture (`documento` `FATTURA`) della voce già segnate come pagate (`pagata=true`); quanto resta da pagare è `totaleCent − pagataCent` (le note di credito riducono il totale ma non sono «pagate»). Con gli altri `raggruppa` è `null`.
+
+- `mesi`: tutti i mesi di calendario (`yyyy-MM`) toccati dal periodo, in ordine; `perMese` ha lo stesso numero di elementi, nello stesso ordine, e la somma dei suoi elementi è `totaleCent` (il movimento sta nel mese della sua data; contano solo le date tra `da` e `a`).
+- `regolareCent`/`extraCent`: solo con `raggruppa=DIPENDENTE` (somma di `RETRIBUZIONE_REGOLARE` e `RETRIBUZIONE_EXTRA`; gli altri documenti contano nel totale ma in nessuno dei due); altrimenti 0.
+- `voci` ordinate per `totaleCent` decrescente, a parità per nome. Una voce senza movimenti nel periodo non compare. La riga `id: null` va in fondo.
+- `totaleCent` = somma di `voci[].totaleCent`; `movimenti` = numero di movimenti considerati.
+
+## Fatture da fare (promemoria mensile)
+
+Serve per ricordarsi quali **fatture emettere** (e se sono state pagate) ogni mese: l'utente crea le sue «caselle» (per esempio una per cliente o per tipo di fattura) e ogni mese ne segna lo stato. Non è collegato ai movimenti e non entra nei totali.
+
+`StatoFattura`: `DA_FARE` (predefinito), `EMESSA`, `PAGATA`.
+
+- `GET /api/fatture/caselle` → `[{id, nome, dalMese, giornoScadenza}]` nell'ordine di creazione. `dalMese` (`yyyy-MM`) è il mese in cui la casella è stata creata: **i mesi precedenti non contano** (niente arretrati «in ritardo» alla creazione). `giornoScadenza` (1–31 o `null`) è il giorno del mese entro cui fare la fattura; nei mesi più corti vale l'ultimo giorno.
+- `POST /api/fatture/caselle` `{nome, giornoScadenza?, dalMese?}` → 201 con la casella; se esiste già (senza distinguere maiuscole) → 200 con quella. `dalMese` assente = il mese corrente. Nome vuoto o oltre 120 caratteri, `giornoScadenza` fuori da 1–31, `dalMese` non `yyyy-MM` → 400.
+- `PUT /api/fatture/caselle/{id}` `{nome?, giornoScadenza?, dalMese?}` (almeno un campo; `giornoScadenza: null` toglie la scadenza) → la casella (404; 400 valore non valido; 409 «Esiste già una casella con questo nome.»).
+- `DELETE /api/fatture/caselle/{id}` → 204; elimina anche i suoi stati mensili (404 se non esiste). L'interfaccia avvisa.
+- `GET /api/fatture?da=yyyy-MM&a=yyyy-MM` (`da` ≤ `a`, al massimo 24 mesi, altrimenti 400) →
+
+```
+{ "mesi": ["2026-10", "2026-11"],
+  "caselle": [
+    { "id": 1, "nome": "Fatture Euro Service", "dalMese": "2026-10", "giornoScadenza": 28,
+      "mesi": [ { "mese": "2026-10", "attiva": true, "stato": "PAGATA", "importoCent": 125000, "nota": "N. 45", "scadenza": "2026-10-28" },
+                { "mese": "2026-11", "attiva": true, "stato": "DA_FARE", "importoCent": null, "nota": null, "scadenza": "2026-11-28" } ] } ],
+  "daFare": 1 }
+```
+
+  Ogni casella ha un elemento per ciascun mese richiesto (stato `DA_FARE` se nulla è stato salvato). `attiva` è falsa per i mesi precedenti a `dalMese` in cui non è salvato nessuno stato (l'interfaccia li mostra neutri, «—», non «in ritardo»); un mese con uno stato salvato è sempre attivo. `scadenza` (`yyyy-MM-dd`) è la data limite del mese se la casella ha `giornoScadenza`, altrimenti `null`. `daFare` = numero di coppie (casella, mese) **attive** in `DA_FARE` nell'intervallo.
+- `GET /api/fatture/promemoria` → `{daFare, inScadenza: [{casellaId, nome, mese, scadenza, giorniMancanti}]}` per il **mese corrente** del servizio (indipendente dal periodo che l'utente guarda): `daFare` = caselle attive in `DA_FARE` questo mese; `inScadenza` = quelle tra loro con `scadenza` e `giorniMancanti` (= scadenza − oggi, negativo se scaduta) **≤ 3**, ordinate per `giorniMancanti` crescente. Serve alla scheda della Home («Fattura a Rossi: scade tra 3 giorni»); non è una notifica: l'app non manda avvisi a schermo spento.
+- `PUT /api/fatture/caselle/{id}/mesi/{mese}` `{stato, importoCent?, nota?}` → `{mese, stato, importoCent, nota}`. `importoCent` ≥ 0 (centesimi), `nota` fino a 200 caratteri; stato non valido, mese non `yyyy-MM`, importo negativo → 400; casella inesistente → 404. Se `stato` è `DA_FARE` e non ci sono né importo né nota, lo stato salvato si cancella (si torna al predefinito).
+- Le caselle si salvano nel database e quindi nella copia di sicurezza; l'esportazione non le contiene.
+
+### Fatture ricevute (pagate / da pagare)
+
+Le fatture **ricevute dai fornitori** (movimenti `COSTO_VARIABILE` con `documento` `FATTURA`, a mano o importate da XML) hanno il campo `pagata`, per controllare a fine mese quello che è stato davvero pagato. Le caselle qui sopra restano per le fatture **da emettere**: sono due cose diverse e l'interfaccia le tiene in due schede.
+- `pagata` esiste solo per `FATTURA`: per ogni altro documento è sempre `false` e il campo in ingresso si ignora. Le fatture create a mano o importate nascono **da pagare** (`false`); la migrazione segna come **pagate** quelle già presenti (si presume pagate, per non riempire di arretrati chi usa già l'app).
+- `PUT /api/movimenti/{id}/pagata` `{pagata: boolean}` → il `Movimento` aggiornato. 404 se non esiste; 400 «Solo una fattura si segna come pagata.» se il `documento` non è `FATTURA`; `pagata` mancante o non booleano → 400. Cambia solo questo campo (non `modificatoIl` di altro).
+- `GET /api/movimenti?pagata=true|false` (vedi Movimenti) filtra le fatture; le note di credito non hanno stato.
+- `GET /api/statistiche/voci?raggruppa=FORNITORE` dà `pagataCent` per fornitore (vedi «Statistiche per voce»): è il confronto «totale delle fatture del fornitore nel mese / quanto già pagato».
+
 ## Programma, rete, impostazioni
 
 - `GET /api/versione` → `{versione}`.
@@ -202,7 +283,7 @@ Pizze e ordini si caricano **a mano, una volta a settimana per ogni sede**; serv
 - `PUT ...?ambito=QUESTO_E_PROSSIMI` aggiorna nel modello della ricorrenza anche `tipo` e `documento`, oltre ai campi elencati. Con `SOLO_QUESTO` su un movimento già ricorrente il campo `ricorrenza` del corpo (frequenza, giorno) si applica comunque alla ripetizione; i dati del movimento no. Un `PUT` su un movimento singolo con `ricorrenza: {giorno}` lo rende ricorrente. Un movimento già ricorrente non può diventare `RETRIBUZIONE_EXTRA` (400).
 - Dopo un `POST` o `PUT` che crea o modifica una ricorrenza, le occorrenze arretrate fino a oggi si registrano subito (oltre che all'avvio e alle 03:05).
 - `GET /api/movimenti`: nessuna paginazione; i totali riguardano tutto l'elenco filtrato.
-- `altreVoci` (costi fissi) è ordinato per importo decrescente, poi per nome; «Altre voci fisse» raccoglie le voci senza categoria.
+- `voci` (in ogni sezione del Riepilogo) è ordinato per importo decrescente, poi per nome; «Senza categoria» raccoglie i movimenti senza categoria e sta sempre in fondo.
 - **Cartella delle copie.** Se non è configurata (`backup.cartella`), le copie vanno nella cartella predefinita `<cartella dati>/copie`, creata al bisogno: vale per il backup automatico delle 03:00, il recupero all'avvio (su installazione nuova crea subito una copia), «Fai ora», l'elenco delle copie, il ripristino e la pulizia delle ultime 10. `PUT /api/programma/backup` `{cartella}` risponde con lo stesso oggetto di `GET /api/programma`: `cartella` nulla o vuota (o uguale al percorso predefinito) torna al default; un percorso deve essere assoluto (400 «La cartella delle copie deve essere un percorso completo (per esempio D:\Copie).»), creabile e scrivibile (verificato con un file temporaneo, altrimenti 400 in italiano), e non può stare dentro la cartella dati se non è il default (400 «La cartella delle copie non può stare dentro i dati, tranne quella predefinita.»). Dopo un cambio di cartella, `ultimoBackup` continua a indicare l'ultima copia fatta nella cartella precedente. `POST /api/programma/backup`: 409 solo se una copia è già in corso, 500 con `{errore}` se fallisce. `GET /api/rete/qr.png`: 503 se non c'è nessun indirizzo.
 - `PUT /api/impostazioni` accetta qualsiasi chiave tranne il prefisso interno `backup.`, che si rifiuta e non compare in `GET`.
 - Un valore non valido nel corpo JSON (enum o data) risponde 400 con `Valore non valido per «campo»: …`.
@@ -227,8 +308,8 @@ Il ripristino avviene **a riavvio**: sostituire il file di un database SQLite ap
 
 - **Etichette in italiano** nel file: Tipo `Ricavo` / `Costo variabile` / `Costo fisso`; Documento `Fatturato`, `Extra`, `Fattura`, `Nota di credito`, `Scontrino`, `Retribuzione regolare`, `Retribuzione extra`, `-` (per `NESSUNO`).
 - **Colonne del foglio Movimenti** (stesso ordine nel CSV): `Data`, `Tipo`, `Documento`, `Categoria`, `Fornitore`, `Dipendente`, `Descrizione`, `N. documento`, `Note`, `Importo`, `Origine` (`A mano`, `XML`, `Ricorrenza`), `Sede` (il nome; ultima colonna, dopo `Origine`, così le colonne di prima non si spostano). `sedi` filtra come negli altri `GET` (assente = tutte): vale per i movimenti e per il foglio `Riepilogo`. Ordinati per data crescente poi id. `Importo` **con segno** (ricavi positivi, costi negativi).
-- **XLSX** (libreria fastexcel, scrittura in streaming come nel progetto etichette): fogli `Movimenti` (data come cella data, importo come numero in euro con formato valuta, intestazione in grassetto e riga bloccata, larghezze colonna adeguate) e `Riepilogo` (stesse voci di `GET /api/riepilogo` per il periodo: ricavi fatturati/extra/totale, costi variabili fatture/scontrini/totale, costi fissi retribuzione regolare/extra/altre voci/totale, costi, risultato; importi come numeri). Le righe delle categorie personalizzate (`altreVoci` di ricavi e costi variabili) compaiono col nome della categoria, subito prima del «Totale ricavi» e del «Totale costi variabili».
-- **`colonnePerSede=true`** (solo XLSX, foglio `Riepilogo`): ogni importo è ripetuto in una colonna per ogni sede del filtro `sedi`, nell'ordine delle sedi (le archiviate solo se hanno movimenti nel periodo; ogni colonna è il Riepilogo calcolato con il filtro di quella sola sede), più una colonna finale `Totale` (il Riepilogo complessivo, cioè la somma delle colonne per sede). Intestazione: `Voce`, `<nome sede 1>`, …, `<nome sede N>`, `Totale`. Le righe sono quelle del Riepilogo complessivo: una categoria personalizzata presente solo in alcune sedi compare con 0 nelle altre. Con una sola sede nel filtro/periodo, o con `false`, resta la sola colonna `Importo` di prima.
+- **XLSX** (libreria fastexcel, scrittura in streaming come nel progetto etichette): fogli `Movimenti` (data come cella data, importo come numero in euro con formato valuta, intestazione in grassetto e riga bloccata, larghezze colonna adeguate) e `Riepilogo` (stesse righe di `GET /api/riepilogo` per il periodo: per ogni sezione una riga per categoria (`voci`, «Senza categoria» in fondo) e il totale della sezione; poi, come dettaglio «di cui», fatturati/extra, fatture/scontrini e retribuzione regolare/extra, che non si sommano ai totali; infine costi e risultato; importi come numeri). Le righe di categoria stanno prima del totale della loro sezione, le righe «di cui» subito dopo.
+- **`colonnePerSede=true`** (solo XLSX, foglio `Riepilogo`): ogni importo è ripetuto in una colonna per ogni sede del filtro `sedi`, nell'ordine delle sedi (le archiviate solo se hanno movimenti nel periodo; ogni colonna è il Riepilogo calcolato con il filtro di quella sola sede), più una colonna finale `Totale` (il Riepilogo complessivo, cioè la somma delle colonne per sede). Intestazione: `Voce`, `<nome sede 1>`, …, `<nome sede N>`, `Totale`. Le righe sono quelle del Riepilogo complessivo: una categoria presente solo in alcune sedi compare con 0 nelle altre. Con una sola sede nel filtro/periodo, o con `false`, resta la sola colonna `Importo` di prima.
 - **Foglio `Statistiche`** (solo XLSX, ultimo foglio, **presente solo se** `statistiche` non è `false` e nel periodo c'è almeno un dato di pizze/ordini; vedi «Statistiche»): colonne `Settimana` (il lunedì, come data), `Sede`, `Pizze`, `Ordini`, `Ricavi` (tutti i ricavi della sede in quella settimana, in euro), `Scontrino medio` (in euro; vuoto se gli ordini sono 0). Una riga per ogni dato inserito nelle settimane il cui lunedì cade in [`da`, `a`], per settimana e poi per inserimento; segue il filtro `sedi`. Il CSV non lo contiene.
 - **CSV**: solo i movimenti; separatore `;`, UTF-8 con BOM (si apre bene in Excel italiano), date `yyyy-MM-dd`, importi con virgola decimale e nessun separatore delle migliaia, campi con `;`, virgolette o a capo tra virgolette raddoppiate.
 - Nessun elemento nel periodo: il file si genera comunque (solo intestazione); nessun errore.

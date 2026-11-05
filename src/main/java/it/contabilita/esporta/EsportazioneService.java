@@ -2,7 +2,7 @@ package it.contabilita.esporta;
 
 import it.contabilita.api.Dto.Riepilogo;
 import it.contabilita.api.Dto.RisultatoSede;
-import it.contabilita.api.Dto.VoceFissa;
+import it.contabilita.api.Dto.VoceCategoria;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Documento;
 import it.contabilita.dati.Movimento;
@@ -307,31 +307,35 @@ public class EsportazioneService {
     private record Voce(String nome, boolean totale, ToLongFunction<Riepilogo> importo) {
     }
 
-    private static long altra(List<VoceFissa> voci, String nome) {
-        return voci.stream().filter(v -> v.categoria().equals(nome)).mapToLong(VoceFissa::importoCent).sum();
+    /** L'importo della riga della categoria {@code id} (null = «Senza categoria»), 0 se in quel Riepilogo non c'e'. */
+    private static long perCategoria(List<VoceCategoria> voci, Long id) {
+        return voci.stream().filter(v -> java.util.Objects.equals(v.id(), id)).mapToLong(VoceCategoria::importoCent).sum();
     }
 
-    /** Le righe del foglio, dal Riepilogo complessivo (le categorie personalizzate di tutte le sedi sono li'). */
+    /**
+     * Le righe del foglio, dal Riepilogo complessivo (le categorie di tutte le sedi sono li'). Per ogni sezione: una riga
+     * per categoria, il totale, e poi le righe «di cui» (per documento), che non si sommano al totale.
+     */
     private static List<Voce> voci(Riepilogo r) {
         List<Voce> v = new ArrayList<>();
-        v.add(new Voce("Ricavi fatturati", false, x -> x.ricavi().fatturatiCent()));
-        v.add(new Voce("Ricavi extra", false, x -> x.ricavi().extraCent()));
-        for (VoceFissa f : r.ricavi().altreVoci()) {
-            v.add(new Voce(f.categoria(), false, x -> altra(x.ricavi().altreVoci(), f.categoria())));
+        for (VoceCategoria c : r.ricavi().voci()) {
+            v.add(new Voce(c.categoria(), false, x -> perCategoria(x.ricavi().voci(), c.id())));
         }
         v.add(new Voce("Totale ricavi", true, x -> x.ricavi().totaleCent()));
-        v.add(new Voce("Fatture", false, x -> x.costiVariabili().fattureCent()));
-        v.add(new Voce("Scontrini", false, x -> x.costiVariabili().scontriniCent()));
-        for (VoceFissa f : r.costiVariabili().altreVoci()) {
-            v.add(new Voce(f.categoria(), false, x -> altra(x.costiVariabili().altreVoci(), f.categoria())));
+        v.add(new Voce("Ricavi fatturati", false, x -> x.ricavi().fatturatiCent()));
+        v.add(new Voce("Ricavi extra", false, x -> x.ricavi().extraCent()));
+        for (VoceCategoria c : r.costiVariabili().voci()) {
+            v.add(new Voce(c.categoria(), false, x -> perCategoria(x.costiVariabili().voci(), c.id())));
         }
         v.add(new Voce("Totale costi variabili", true, x -> x.costiVariabili().totaleCent()));
-        v.add(new Voce("Retribuzione regolare", false, x -> x.costiFissi().retribuzioneRegolareCent()));
-        v.add(new Voce("Retribuzione extra", false, x -> x.costiFissi().retribuzioneExtraCent()));
-        for (VoceFissa f : r.costiFissi().altreVoci()) {
-            v.add(new Voce(f.categoria(), false, x -> altra(x.costiFissi().altreVoci(), f.categoria())));
+        v.add(new Voce("Fatture", false, x -> x.costiVariabili().fattureCent()));
+        v.add(new Voce("Scontrini", false, x -> x.costiVariabili().scontriniCent()));
+        for (VoceCategoria c : r.costiFissi().voci()) {
+            v.add(new Voce(c.categoria(), false, x -> perCategoria(x.costiFissi().voci(), c.id())));
         }
         v.add(new Voce("Totale costi fissi", true, x -> x.costiFissi().totaleCent()));
+        v.add(new Voce("Retribuzione regolare", false, x -> x.costiFissi().retribuzioneRegolareCent()));
+        v.add(new Voce("Retribuzione extra", false, x -> x.costiFissi().retribuzioneExtraCent()));
         v.add(new Voce("Costi", true, Riepilogo::costiCent));
         v.add(new Voce("Risultato", true, Riepilogo::risultatoCent));
         return v;

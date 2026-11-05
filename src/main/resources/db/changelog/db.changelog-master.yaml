@@ -17,3 +17,15 @@ databaseChangeLog:
   - include:
       file: v6-categorie.yaml
       relativeToChangelogFile: true
+  - include:
+      file: v7-retribuzione.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v8-senza-personalizzata.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v9-fatture-pagate.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v10-fatture-da-fare.yaml
+      relativeToChangelogFile: true

@@ -313,7 +313,7 @@ class SediApiTest extends ProvaBase {
         crea(inSede(movimento("2026-03-02", "COSTO_VARIABILE", "FATTURA", 30000), 1));
         crea(inSede(movimento("2026-03-03", "COSTO_VARIABILE", "NOTA_DI_CREDITO", 1000), 1));
         crea(inSede(movimento("2026-03-04", "RICAVO", "RICAVO_EXTRA", 50000), mare));
-        crea(inSede(movimento("2026-03-05", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 80000), mare));
+        crea(inSede(retribuzione("2026-03-05", "RETRIBUZIONE_REGOLARE", 80000), mare));
         crea(inSede(movimento("2026-04-01", "RICAVO", "RICAVO_EXTRA", 99999), monti)); // fuori periodo
 
         JsonNode r = leggi("/api/riepilogo?da=2026-03-01&a=2026-03-31");

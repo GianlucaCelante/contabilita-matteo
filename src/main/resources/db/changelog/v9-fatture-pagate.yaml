@@ -1,0 +1,16 @@
+databaseChangeLog:
+  # Versione 9: le fatture ricevute hanno il campo "pagata" (docs/api.md, "Fatture ricevute").
+  # - Colonna con valore predefinito (0 = da pagare) per i movimenti nuovi e per tutti i documenti che non sono fatture.
+  # - Le fatture gia' presenti si segnano come pagate (si presume pagate, per non riempire di arretrati chi usa gia' l'app).
+  # Il contesto «pagata» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 90-movimento-pagata
+      author: contabilita
+      context: pagata
+      changes:
+        - sql:
+            comment: "Il valore predefinito (0) vale per i movimenti creati da ora in poi."
+            sql: ALTER TABLE movimento ADD COLUMN pagata BOOLEAN NOT NULL DEFAULT 0
+        - sql:
+            comment: "Le fatture gia' registrate si presumono pagate."
+            sql: UPDATE movimento SET pagata = 1 WHERE documento = 'FATTURA'

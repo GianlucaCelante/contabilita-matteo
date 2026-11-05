@@ -1,0 +1,13 @@
+databaseChangeLog:
+  # Versione 8: non esistono piu' categorie "predefinite" o "di sistema" (docs/api.md): tutte sono dell'utente, si
+  # rinominano e si eliminano. La colonna "personalizzata" (versione 6) non serve piu' e si toglie. Le categorie e i
+  # movimenti restano come sono. I changeset precedenti non si toccano.
+  # Il contesto «senza-personalizzata» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 80-categoria-senza-personalizzata
+      author: contabilita
+      context: senza-personalizzata
+      changes:
+        - sql:
+            comment: "Tutte le categorie sono uguali: la colonna non serve piu'."
+            sql: ALTER TABLE categoria DROP COLUMN personalizzata

@@ -27,6 +27,11 @@ public class Fornitore {
         this.partitaIva = partitaIva;
     }
 
+    public void rinomina(String nome, String nomeChiave) {
+        this.nome = nome;
+        this.nomeChiave = nomeChiave;
+    }
+
     public Long getId() { return id; }
     public String getNome() { return nome; }
     public String getNomeChiave() { return nomeChiave; }

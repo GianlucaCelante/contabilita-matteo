@@ -5,6 +5,7 @@ import it.contabilita.api.Dto.SettimanaInput;
 import it.contabilita.api.Dto.Statistiche;
 import it.contabilita.movimenti.SediService;
 import it.contabilita.movimenti.StatisticheService;
+import it.contabilita.movimenti.StatisticheVociService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -22,8 +23,11 @@ public class StatisticheController {
 
     private final StatisticheService statistiche;
 
-    public StatisticheController(StatisticheService statistiche) {
+    private final StatisticheVociService vociPerPeriodo;
+
+    public StatisticheController(StatisticheService statistiche, StatisticheVociService vociPerPeriodo) {
         this.statistiche = statistiche;
+        this.vociPerPeriodo = vociPerPeriodo;
     }
 
     @GetMapping("/settimana")
@@ -34,6 +38,16 @@ public class StatisticheController {
     @PutMapping("/settimana")
     public SettimanaDto salva(@RequestBody SettimanaInput corpo) {
         return statistiche.salva(corpo);
+    }
+
+    @GetMapping("/voci")
+    public StatisticheVociService.StatisticheVoci voci(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
+            @RequestParam(required = false) String raggruppa,
+            @RequestParam(required = false) String tipo,
+            @RequestParam(required = false) String sedi) {
+        return vociPerPeriodo.calcola(da, a, raggruppa, tipo, SediService.idsDa(sedi));
     }
 
     @GetMapping

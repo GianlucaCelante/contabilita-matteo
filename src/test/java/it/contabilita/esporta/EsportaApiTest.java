@@ -47,10 +47,10 @@ class EsportaApiTest extends ProvaBase {
         fattura.put("note", "Pagato 50 € in contanti");
         crea(fattura);
         crea(movimento("2026-03-10", "COSTO_VARIABILE", "SCONTRINO", 4550));
-        ObjectNode retribuzione = movimento("2026-03-27", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 80000);
+        ObjectNode retribuzione = retribuzione("2026-03-27", "RETRIBUZIONE_REGOLARE", 80000);
         retribuzione.put("dipendente", "Giuseppe Verdi");
         crea(retribuzione);
-        crea(movimento("2026-03-27", "COSTO_FISSO", "RETRIBUZIONE_EXTRA", 20000));
+        crea(retribuzione("2026-03-27", "RETRIBUZIONE_EXTRA", 20000));
         ObjectNode affitto = movimento("2026-03-05", "COSTO_FISSO", "NESSUNO", 60000);
         affitto.put("categoria", "Affitto");
         crea(affitto);
@@ -95,8 +95,8 @@ class EsportaApiTest extends ProvaBase {
         assertThat(righe[2]).isEqualTo("2026-03-05;Costo fisso;-;Affitto;;;;;;-600,00;A mano;Sede principale");
         assertThat(righe[3]).startsWith("2026-03-10;Costo variabile;Fattura;");
         assertThat(righe[4]).isEqualTo("2026-03-10;Costo variabile;Scontrino;;;;;;;-45,50;A mano;Sede principale");
-        assertThat(righe[5]).isEqualTo("2026-03-27;Costo fisso;Retribuzione regolare;;;Giuseppe Verdi;;;;-800,00;A mano;Sede principale");
-        assertThat(righe[6]).isEqualTo("2026-03-27;Costo fisso;Retribuzione extra;;;;;;;-200,00;A mano;Sede principale");
+        assertThat(righe[5]).isEqualTo("2026-03-27;Costo fisso;Retribuzione regolare;Retribuzione;;Giuseppe Verdi;;;;-800,00;A mano;Sede principale");
+        assertThat(righe[6]).isEqualTo("2026-03-27;Costo fisso;Retribuzione extra;Retribuzione;;;;;;-200,00;A mano;Sede principale");
         assertThat(righe[7]).isEqualTo("2026-03-31;Ricavo;Extra;;;;;;;250,50;A mano;Sede principale");
         assertThat(righe).hasSize(8);
     }
@@ -303,7 +303,7 @@ class EsportaApiTest extends ProvaBase {
     }
 
     @Test
-    void ilFoglioRiepilogoHaLeRigheDelleCategoriePersonalizzate() throws Exception {
+    void ilFoglioRiepilogoHaUnaRigaPerCategoriaESommeDiCui() throws Exception {
         ObjectNode delivery = movimento("2026-03-02", "RICAVO", "RICAVO_EXTRA", 7000);
         delivery.put("categoria", "Delivery");
         crea(delivery);
@@ -321,11 +321,20 @@ class EsportaApiTest extends ProvaBase {
             }
         }
         assertThat(perVoce.get("Delivery")).isEqualTo(70.0);
-        assertThat(perVoce.get("Ricavi extra")).isEqualTo(0.0);
         assertThat(perVoce.get("Totale ricavi")).isEqualTo(170.0);
         assertThat(perVoce.get("Imballaggi")).isEqualTo(25.0);
-        assertThat(perVoce.get("Scontrini")).isEqualTo(0.0);
         assertThat(perVoce.get("Totale costi variabili")).isEqualTo(25.0);
+        // le righe «di cui» contano tutti i movimenti con quel documento e non si sommano ai totali
+        assertThat(perVoce.get("Ricavi extra")).isEqualTo(70.0);
+        assertThat(perVoce.get("Ricavi fatturati")).isEqualTo(100.0);
+        assertThat(perVoce.get("Scontrini")).isEqualTo(25.0);
+        // ordine: righe di categoria, poi il totale, poi le righe «di cui»
+        java.util.List<String> nomi = new java.util.ArrayList<>(perVoce.keySet());
+        assertThat(nomi.indexOf("Delivery")).isLessThan(nomi.indexOf("Totale ricavi"));
+        assertThat(nomi.indexOf("Senza categoria")).isLessThan(nomi.indexOf("Totale ricavi"));
+        assertThat(nomi.indexOf("Totale ricavi")).isLessThan(nomi.indexOf("Ricavi fatturati"));
+        assertThat(nomi.indexOf("Imballaggi")).isLessThan(nomi.indexOf("Totale costi variabili"));
+        assertThat(nomi.indexOf("Totale costi variabili")).isLessThan(nomi.indexOf("Scontrini"));
     }
 
     @Test
@@ -421,7 +430,7 @@ class EsportaApiTest extends ProvaBase {
         ObjectNode affitto = inSede(movimento("2026-03-06", "COSTO_FISSO", "NESSUNO", 60000), 1);
         affitto.put("categoria", "Affitto");
         crea(affitto);
-        crea(inSede(movimento("2026-03-07", "COSTO_FISSO", "RETRIBUZIONE_REGOLARE", 50000), mare));
+        crea(inSede(retribuzione("2026-03-07", "RETRIBUZIONE_REGOLARE", 50000), mare));
         return mare;
     }
 

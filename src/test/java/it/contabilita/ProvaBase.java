@@ -83,6 +83,8 @@ public abstract class ProvaBase {
                 }
             }
         }
+        jdbc.update("DELETE FROM fattura_mese");
+        jdbc.update("DELETE FROM fattura_casella");
         jdbc.update("DELETE FROM dati_settimana");
         jdbc.update("DELETE FROM movimento");
         jdbc.update("DELETE FROM ricorrenza");
@@ -106,6 +108,16 @@ public abstract class ProvaBase {
         n.put("documento", documento);
         n.put("importoCent", importoCent);
         return n;
+    }
+
+    /**
+     * Una retribuzione (RETRIBUZIONE_REGOLARE o RETRIBUZIONE_EXTRA): ha bisogno di una categoria con il flag retribuzione,
+     * che qui si crea la prima volta (la categoria «Retribuzione»).
+     */
+    protected ObjectNode retribuzione(String data, String documento, long importoCent) throws Exception {
+        mockMvc.perform(post("/api/categorie").contentType("application/json")
+                .content("{\"nome\":\"Retribuzione\",\"tipo\":\"COSTO_FISSO\",\"retribuzione\":true}"));
+        return movimento(data, "COSTO_FISSO", documento, importoCent).put("categoria", "Retribuzione");
     }
 
     /** Lo stesso movimento, assegnato a una sede. */

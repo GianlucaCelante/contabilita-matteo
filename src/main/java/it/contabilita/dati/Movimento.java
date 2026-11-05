@@ -62,6 +62,10 @@ public class Movimento {
     @Column(name = "anno_mese")
     private String annoMese;
 
+    /** Solo per le fatture ricevute (documento FATTURA): gia' pagata o da pagare. Per ogni altro documento e' false. */
+    @Column(nullable = false)
+    private boolean pagata;
+
     @Column(name = "allegato_nome")
     private String allegatoNome;
 
@@ -108,6 +112,8 @@ public class Movimento {
     public void setRicorrenza(Ricorrenza ricorrenza) { this.ricorrenza = ricorrenza; }
     public String getAnnoMese() { return annoMese; }
     public void setAnnoMese(String annoMese) { this.annoMese = annoMese; }
+    public boolean isPagata() { return pagata; }
+    public void setPagata(boolean pagata) { this.pagata = pagata; }
     public String getAllegatoNome() { return allegatoNome; }
     public void setAllegatoNome(String allegatoNome) { this.allegatoNome = allegatoNome; }
     public String getAllegatoFile() { return allegatoFile; }

@@ -10,7 +10,9 @@ import it.contabilita.dati.Dipendente;
 import it.contabilita.dati.DipendenteRepository;
 import it.contabilita.dati.Fornitore;
 import it.contabilita.dati.FornitoreRepository;
+import it.contabilita.dati.Documento;
 import it.contabilita.dati.MovimentoRepository;
+import it.contabilita.dati.RicorrenzaRepository;
 import it.contabilita.dati.Tipo;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -63,10 +65,12 @@ public class AnagraficheService {
     private final DipendenteRepository dipendenti;
 
     private final MovimentoRepository movimenti;
+    private final RicorrenzaRepository ricorrenze;
 
     public AnagraficheService(CategoriaRepository categorie, FornitoreRepository fornitori, DipendenteRepository dipendenti,
-                              MovimentoRepository movimenti) {
+                              MovimentoRepository movimenti, RicorrenzaRepository ricorrenze) {
         this.movimenti = movimenti;
+        this.ricorrenze = ricorrenze;
         this.categorie = categorie;
         this.fornitori = fornitori;
         this.dipendenti = dipendenti;
@@ -98,10 +102,19 @@ public class AnagraficheService {
 
     // ---- elenchi ----
 
+    private static java.util.Map<Long, Long> mappa(List<Object[]> righe) {
+        java.util.Map<Long, Long> m = new java.util.HashMap<>();
+        for (Object[] riga : righe) {
+            m.put((Long) riga[0], (Long) riga[1]);
+        }
+        return m;
+    }
+
     @Transactional(readOnly = true)
     public List<CategoriaDto> elencoCategorie(Tipo tipo) {
         List<Categoria> righe = tipo == null ? categorie.findAllByOrderByNomeChiave() : categorie.findByTipoOrderByNomeChiave(tipo);
-        return righe.stream().map(AnagraficheService::dto).toList();
+        java.util.Map<Long, Long> usi = mappa(movimenti.contaPerCategoria());
+        return righe.stream().map(c -> new CategoriaDto(c.getId(), c.getNome(), c.getTipo(), c.isRetribuzione(), usi.getOrDefault(c.getId(), 0L))).toList();
     }
 
     /**
@@ -111,53 +124,93 @@ public class AnagraficheService {
     @Transactional(readOnly = true)
     public List<FornitoreDto> elencoFornitori(String q) {
         String filtro = pulisci(q) == null ? null : chiave(pulisci(q));
-        java.util.Map<Long, Long> usi = new java.util.HashMap<>();
-        for (Object[] riga : movimenti.contaPerFornitore()) {
-            usi.put((Long) riga[0], (Long) riga[1]);
-        }
+        java.util.Map<Long, Long> usi = mappa(movimenti.contaPerFornitore());
         return fornitori.findAllByOrderByNomeChiave().stream() // gia' alfabetico: il sort e' stabile
                 .filter(f -> filtro == null || f.getNomeChiave().contains(filtro))
                 .sorted(java.util.Comparator
                         .comparing((Fornitore f) -> filtro != null && f.getNomeChiave().startsWith(filtro) ? 0 : 1)
                         .thenComparing(f -> -usi.getOrDefault(f.getId(), 0L)))
-                .map(AnagraficheService::dto).toList();
+                .map(f -> new FornitoreDto(f.getId(), f.getNome(), f.getPartitaIva(), usi.getOrDefault(f.getId(), 0L))).toList();
     }
 
     @Transactional(readOnly = true)
     public List<DipendenteDto> elencoDipendenti(String q) {
         String filtro = pulisci(q) == null ? null : chiave(pulisci(q));
+        java.util.Map<Long, Long> usi = mappa(movimenti.contaPerDipendente());
         return dipendenti.findAllByOrderByNomeChiave().stream()
                 .filter(d -> filtro == null || d.getNomeChiave().contains(filtro))
-                .map(AnagraficheService::dto).toList();
+                .map(d -> new DipendenteDto(d.getId(), d.getNome(), usi.getOrDefault(d.getId(), 0L))).toList();
     }
 
     // ---- trova o crea ----
 
+    /** Trova o crea dal solo nome (nei movimenti): una categoria nuova non e' mai una retribuzione. */
     @Transactional
     public Esito<Categoria> categoria(String nome, Tipo tipo) {
+        return categoria(nome, tipo, null);
+    }
+
+    /**
+     * Trova o crea. {@code retribuzione=true} vale solo per COSTO_FISSO (altrimenti 400) e solo per una categoria nuova:
+     * se esiste gia' il suo flag non cambia.
+     */
+    @Transactional
+    public Esito<Categoria> categoria(String nome, Tipo tipo, Boolean retribuzione) {
         if (tipo == null) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "Il tipo della categoria è obbligatorio.");
         }
         String n = nomeObbligatorio(nome, "della categoria");
+        if (Boolean.TRUE.equals(retribuzione) && tipo != Tipo.COSTO_FISSO) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Solo una categoria di costo fisso può essere una retribuzione.");
+        }
         return categorie.findByNomeChiaveAndTipo(chiave(n), tipo)
                 .map(c -> new Esito<>(c, false))
-                .orElseGet(() -> new Esito<>(categorie.save(new Categoria(n, chiave(n), tipo, true)), true));
+                .orElseGet(() -> {
+                    Categoria nuova = new Categoria(n, chiave(n), tipo);
+                    nuova.setRetribuzione(Boolean.TRUE.equals(retribuzione));
+                    return new Esito<>(categorie.save(nuova), true);
+                });
     }
 
-    /** Rinomina una categoria personalizzata: 404 se non esiste, 409 se e' predefinita o il nome c'e' gia' per quel tipo. */
+    private static final List<Documento> DOCUMENTI_RETRIBUZIONE =
+            List.of(Documento.RETRIBUZIONE_REGOLARE, Documento.RETRIBUZIONE_EXTRA);
+
+    /**
+     * Rinomina e/o cambia il flag retribuzione (almeno uno dei due, altrimenti 400). 404 se non esiste. Rinominare
+     * e' 409 se il nome c'e' gia' per quel tipo (qualunque categoria si rinomina). Il flag vero e' 400 se la categoria non e' di COSTO_FISSO; il flag falso e' 409 se la categoria ha
+     * gia' retribuzioni (movimenti o ripetizioni con documento RETRIBUZIONE_*).
+     */
     @Transactional
-    public Categoria rinominaCategoria(long id, String nome) {
+    public Categoria modificaCategoria(long id, String nome, Boolean retribuzione) {
         Categoria c = categorie.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Categoria non trovata."));
-        String n = nomeObbligatorio(nome, "della categoria");
-        if (!c.isPersonalizzata()) {
-            throw new ErroreApi(HttpStatus.CONFLICT, "Questa categoria è predefinita e non si rinomina.");
+        if (nome == null && retribuzione == null) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Indica il nome o se è una retribuzione.");
         }
-        categorie.findByNomeChiaveAndTipo(chiave(n), c.getTipo()).ifPresent(altra -> {
-            if (!altra.getId().equals(c.getId())) {
-                throw new ErroreApi(HttpStatus.CONFLICT, "Esiste già una categoria con questo nome.");
+        String nuovoNome = null;
+        if (nome != null) {
+            String n = nomeObbligatorio(nome, "della categoria");
+            categorie.findByNomeChiaveAndTipo(chiave(n), c.getTipo()).ifPresent(altra -> {
+                if (!altra.getId().equals(c.getId())) {
+                    throw new ErroreApi(HttpStatus.CONFLICT, "Esiste già una categoria con questo nome.");
+                }
+            });
+            nuovoNome = n;
+        }
+        if (retribuzione != null) {
+            if (retribuzione && c.getTipo() != Tipo.COSTO_FISSO) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Solo una categoria di costo fisso può essere una retribuzione.");
             }
-        });
-        c.rinomina(n, chiave(n));
+            if (!retribuzione && (movimenti.existsByCategoriaIdAndDocumentoIn(c.getId(), DOCUMENTI_RETRIBUZIONE)
+                    || ricorrenze.existsByCategoriaIdAndDocumentoIn(c.getId(), DOCUMENTI_RETRIBUZIONE))) {
+                throw new ErroreApi(HttpStatus.CONFLICT, "Questa categoria ha già delle retribuzioni.");
+            }
+        }
+        if (nuovoNome != null) {
+            c.rinomina(nuovoNome, chiave(nuovoNome));
+        }
+        if (retribuzione != null) {
+            c.setRetribuzione(retribuzione);
+        }
         return categorie.save(c);
     }
 
@@ -187,17 +240,107 @@ public class AnagraficheService {
                 .orElseGet(() -> new Esito<>(dipendenti.save(new Dipendente(n, chiave(n))), true));
     }
 
-    // ---- conversioni ----
+    // ---- rinomina e eliminazione di fornitori e dipendenti ----
 
-    public static CategoriaDto dto(Categoria c) {
-        return new CategoriaDto(c.getId(), c.getNome(), c.getTipo(), c.isPersonalizzata());
+    @Transactional
+    public Fornitore modificaFornitore(long id, String nome, String partitaIva) {
+        Fornitore f = fornitori.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Fornitore non trovato."));
+        String n = nomeObbligatorio(nome, "del fornitore");
+        fornitori.findByNomeChiave(chiave(n)).ifPresent(altro -> {
+            if (!altro.getId().equals(f.getId())) {
+                throw new ErroreApi(HttpStatus.CONFLICT, "Esiste già un fornitore con questo nome.");
+            }
+        });
+        String piva = pulisci(partitaIva);
+        if (piva != null && piva.length() > 30) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "La partita IVA è troppo lunga.");
+        }
+        f.rinomina(n, chiave(n));
+        if (partitaIva != null) { // assente = invariata; vuota = tolta
+            f.setPartitaIva(piva);
+        }
+        return fornitori.save(f);
     }
 
-    public static FornitoreDto dto(Fornitore f) {
-        return new FornitoreDto(f.getId(), f.getNome(), f.getPartitaIva());
+    @Transactional
+    public Dipendente modificaDipendente(long id, String nome) {
+        Dipendente d = dipendenti.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Dipendente non trovato."));
+        String n = nomeObbligatorio(nome, "del dipendente");
+        dipendenti.findByNomeChiave(chiave(n)).ifPresent(altro -> {
+            if (!altro.getId().equals(d.getId())) {
+                throw new ErroreApi(HttpStatus.CONFLICT, "Esiste già un dipendente con questo nome.");
+            }
+        });
+        d.rinomina(n, chiave(n));
+        return dipendenti.save(d);
     }
 
-    public static DipendenteDto dto(Dipendente d) {
-        return new DipendenteDto(d.getId(), d.getNome());
+    /**
+     * Elimina la categoria. I movimenti e le ripetizioni che la usano passano a {@code sostituisciCon} (stesso tipo)
+     * oppure, se manca, restano senza categoria. Tutto in una transazione.
+     */
+    @Transactional
+    public void eliminaCategoria(long id, Long sostituisciCon) {
+        Categoria c = categorie.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Categoria non trovata."));
+        Categoria altra = null;
+        if (sostituisciCon != null) {
+            altra = categorie.findById(sostituisciCon).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "La categoria con cui unire non esiste."));
+            if (altra.getId().equals(c.getId())) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Per unire scegli una categoria diversa.");
+            }
+            if (altra.getTipo() != c.getTipo()) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Si possono unire solo categorie dello stesso tipo.");
+            }
+        }
+        movimenti.spostaCategoria(c.getId(), altra);
+        ricorrenze.spostaCategoria(c.getId(), altra);
+        categorie.deleteById(c.getId());
+    }
+
+    @Transactional
+    public void eliminaFornitore(long id, Long sostituisciCon) {
+        Fornitore f = fornitori.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Fornitore non trovato."));
+        Fornitore altro = null;
+        if (sostituisciCon != null) {
+            altro = fornitori.findById(sostituisciCon).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Il fornitore con cui unire non esiste."));
+            if (altro.getId().equals(f.getId())) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Per unire scegli un fornitore diverso.");
+            }
+        }
+        movimenti.spostaFornitore(f.getId(), altro);
+        ricorrenze.spostaFornitore(f.getId(), altro);
+        fornitori.deleteById(f.getId());
+    }
+
+    @Transactional
+    public void eliminaDipendente(long id, Long sostituisciCon) {
+        Dipendente d = dipendenti.findById(id).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Dipendente non trovato."));
+        Dipendente altro = null;
+        if (sostituisciCon != null) {
+            altro = dipendenti.findById(sostituisciCon).orElseThrow(() -> new ErroreApi(HttpStatus.NOT_FOUND, "Il dipendente con cui unire non esiste."));
+            if (altro.getId().equals(d.getId())) {
+                throw new ErroreApi(HttpStatus.BAD_REQUEST, "Per unire scegli un dipendente diverso.");
+            }
+        }
+        movimenti.spostaDipendente(d.getId(), altro);
+        ricorrenze.spostaDipendente(d.getId(), altro);
+        dipendenti.deleteById(d.getId());
+    }
+
+    // ---- conversioni (con il conteggio degli usi) ----
+
+    @Transactional(readOnly = true)
+    public CategoriaDto vista(Categoria c) {
+        return new CategoriaDto(c.getId(), c.getNome(), c.getTipo(), c.isRetribuzione(), movimenti.countByCategoriaId(c.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public FornitoreDto vista(Fornitore f) {
+        return new FornitoreDto(f.getId(), f.getNome(), f.getPartitaIva(), movimenti.countByFornitoreId(f.getId()));
+    }
+
+    @Transactional(readOnly = true)
+    public DipendenteDto vista(Dipendente d) {
+        return new DipendenteDto(d.getId(), d.getNome(), movimenti.countByDipendenteId(d.getId()));
     }
 }

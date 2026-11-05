@@ -15,16 +15,17 @@ public final class Dto {
     private Dto() {
     }
 
-    public record CategoriaDto(Long id, String nome, Tipo tipo, boolean personalizzata) {
+    /** {@code usi}: quanti movimenti usano la voce. */
+    public record CategoriaDto(Long id, String nome, Tipo tipo, boolean retribuzione, long usi) {
     }
 
-    public record FornitoreDto(Long id, String nome, String partitaIva) {
+    public record FornitoreDto(Long id, String nome, String partitaIva, long usi) {
     }
 
-    public record DipendenteDto(Long id, String nome) {
+    public record DipendenteDto(Long id, String nome, long usi) {
     }
 
-    public record NomeInput(String nome, Tipo tipo, String partitaIva) {
+    public record NomeInput(String nome, Tipo tipo, String partitaIva, Boolean retribuzione) {
     }
 
     public record Rif(Long id, String nome) {
@@ -41,14 +42,18 @@ public final class Dto {
     public record MovimentoInput(LocalDate data, Tipo tipo, Documento documento, Long importoCent,
                                  String categoria, String fornitore, String dipendente,
                                  String descrizione, String numeroDocumento, String note,
-                                 RicorrenzaInput ricorrenza, Long sedeId) {
+                                 RicorrenzaInput ricorrenza, Long sedeId, Boolean pagata) {
     }
 
     public record MovimentoDto(Long id, LocalDate data, Tipo tipo, Documento documento, long importoCent,
                                Rif categoria, Rif fornitore, Rif dipendente, Rif sede,
                                String descrizione, String numeroDocumento, String note,
-                               Origine origine, RicorrenzaRif ricorrenza, String allegatoNome,
+                               Origine origine, boolean pagata, RicorrenzaRif ricorrenza, String allegatoNome,
                                LocalDateTime creatoIl, LocalDateTime modificatoIl) {
+    }
+
+    /** Corpo di {@code PUT /api/movimenti/{id}/pagata}. */
+    public record PagataInput(Boolean pagata) {
     }
 
     public record Totali(long ricaviCent, long costiCent, long saldoCent) {
@@ -57,19 +62,21 @@ public final class Dto {
     public record ElencoMovimenti(List<MovimentoDto> elementi, Totali totali) {
     }
 
-    /** {@code altreVoci}: i ricavi di categoria personalizzata, una riga per categoria. */
-    public record Ricavi(long fatturatiCent, long extraCent, List<VoceFissa> altreVoci, long totaleCent) {
+    /** Una riga per categoria; {@code id} e' null per «Senza categoria». */
+    public record VoceCategoria(Long id, String categoria, long importoCent) {
     }
 
-    /** {@code altreVoci}: i costi variabili di categoria personalizzata, una riga per categoria. */
-    public record CostiVariabili(long fattureCent, long scontriniCent, List<VoceFissa> altreVoci, long totaleCent) {
+    /** {@code fatturatiCent} e {@code extraCent} sono "di cui": non si sommano al totale. */
+    public record Ricavi(List<VoceCategoria> voci, long fatturatiCent, long extraCent, long totaleCent) {
     }
 
-    public record VoceFissa(String categoria, long importoCent) {
+    /** {@code fattureCent} (fatture - note di credito) e {@code scontriniCent} sono "di cui". */
+    public record CostiVariabili(List<VoceCategoria> voci, long fattureCent, long scontriniCent, long totaleCent) {
     }
 
-    public record CostiFissi(long retribuzioneRegolareCent, long retribuzioneExtraCent,
-                             List<VoceFissa> altreVoci, long totaleCent) {
+    /** Le due retribuzioni sono "di cui". */
+    public record CostiFissi(List<VoceCategoria> voci, long retribuzioneRegolareCent, long retribuzioneExtraCent,
+                             long totaleCent) {
     }
 
     public record Riepilogo(LocalDate da, LocalDate a, Ricavi ricavi, CostiVariabili costiVariabili,

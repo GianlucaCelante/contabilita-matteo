@@ -19,9 +19,9 @@ public class Categoria {
     @Column(nullable = false)
     private Tipo tipo;
 
-    /** Vera per le categorie create da chi usa l'app; falsa per le predefinite (che non si rinominano). */
+    /** Vera per le categorie di COSTO_FISSO che sono retribuzioni: i loro movimenti hanno documento RETRIBUZIONE_*. */
     @Column(nullable = false)
-    private boolean personalizzata = true;
+    private boolean retribuzione = false;
 
     protected Categoria() {
     }
@@ -32,19 +32,18 @@ public class Categoria {
         this.tipo = tipo;
     }
 
-    public Categoria(String nome, String nomeChiave, Tipo tipo, boolean personalizzata) {
-        this(nome, nomeChiave, tipo);
-        this.personalizzata = personalizzata;
-    }
-
     public void rinomina(String nome, String nomeChiave) {
         this.nome = nome;
         this.nomeChiave = nomeChiave;
+    }
+
+    public void setRetribuzione(boolean retribuzione) {
+        this.retribuzione = retribuzione;
     }
 
     public Long getId() { return id; }
     public String getNome() { return nome; }
     public String getNomeChiave() { return nomeChiave; }
     public Tipo getTipo() { return tipo; }
-    public boolean isPersonalizzata() { return personalizzata; }
+    public boolean isRetribuzione() { return retribuzione; }
 }

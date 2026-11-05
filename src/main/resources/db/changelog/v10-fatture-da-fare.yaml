@@ -1,0 +1,29 @@
+databaseChangeLog:
+  # Versione 10: «Fatture da fare» (docs/api.md): caselle (una per cliente o tipo di fattura) e stato mensile di ciascuna.
+  # - fattura_casella: nome_chiave (nome in minuscolo) con indice unico; dal_mese 'yyyy-MM'; giorno_scadenza 1-31 o NULL;
+  # - fattura_mese: una riga per (casella, mese) solo se lo stato non e' quello predefinito (DA_FARE senza importo e nota).
+  # Il contesto «fatture» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 100-fatture-da-fare
+      author: contabilita
+      context: fatture
+      changes:
+        - sql:
+            sql: >
+              CREATE TABLE fattura_casella (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              nome TEXT NOT NULL,
+              nome_chiave TEXT NOT NULL,
+              dal_mese TEXT NOT NULL,
+              giorno_scadenza INTEGER)
+        - sql:
+            sql: CREATE UNIQUE INDEX ux_fattura_casella_nome ON fattura_casella (nome_chiave)
+        - sql:
+            sql: >
+              CREATE TABLE fattura_mese (
+              casella_id INTEGER NOT NULL REFERENCES fattura_casella (id),
+              mese TEXT NOT NULL,
+              stato TEXT NOT NULL,
+              importo_cent INTEGER,
+              nota TEXT,
+              PRIMARY KEY (casella_id, mese))

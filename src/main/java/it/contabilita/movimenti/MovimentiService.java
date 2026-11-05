@@ -9,6 +9,7 @@ import it.contabilita.api.Dto.Totali;
 import it.contabilita.allegati.AllegatiService;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Ambito;
+import it.contabilita.dati.Categoria;
 import it.contabilita.dati.Documento;
 import it.contabilita.dati.Movimento;
 import it.contabilita.dati.MovimentoRepository;
@@ -63,7 +64,11 @@ public class MovimentiService {
     /** Movimenti del periodo, in ordine di data e id decrescenti, con i totali (di tutto l'elenco filtrato). */
     @Transactional(readOnly = true)
     public ElencoMovimenti elenca(LocalDate da, LocalDate a, Tipo tipo, String q, Long dipendenteId, Set<Long> sediIds,
-                                   Set<Long> categorieIds) {
+                                   Set<Long> categorieIds, Long fornitoreId, String senza, Boolean soloRetribuzioni, Boolean pagata) {
+        Voce senzaVoce = Voce.da(senza);
+        if (senzaVoce == Voce.CATEGORIA && categorieIds != null) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "I filtri categorie e senza=CATEGORIA non si usano insieme.");
+        }
         if (da != null && a != null && da.isAfter(a)) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "La data iniziale non può essere dopo quella finale.");
         }
@@ -87,6 +92,19 @@ public class MovimentiService {
             if (categorieIds != null) {
                 // i movimenti senza categoria (es. le retribuzioni) restano fuori
                 p.add(root.get("categoria").get("id").in(categorieIds));
+            }
+            if (fornitoreId != null) {
+                p.add(cb.equal(root.get("fornitore").get("id"), fornitoreId));
+            }
+            if (senzaVoce != null) {
+                p.add(cb.isNull(root.get(senzaVoce.attributo)));
+            }
+            if (Boolean.TRUE.equals(soloRetribuzioni)) {
+                p.add(root.get("documento").in(Documento.RETRIBUZIONE_REGOLARE, Documento.RETRIBUZIONE_EXTRA));
+            }
+            if (pagata != null) {
+                p.add(cb.equal(root.get("documento"), Documento.FATTURA));
+                p.add(cb.equal(root.get("pagata"), pagata));
             }
             return cb.and(p.toArray(new Predicate[0]));
         };
@@ -189,7 +207,7 @@ public class MovimentiService {
             }
             MovimentoInput perSede = new MovimentoInput(input.data(), input.tipo(), input.documento(), parte,
                     input.categoria(), input.fornitore(), input.dipendente(), input.descrizione(),
-                    input.numeroDocumento(), input.note(), input.ricorrenza(), null);
+                    input.numeroDocumento(), input.note(), input.ricorrenza(), null, input.pagata());
             creati.add(creaIn(perSede, attive.get(i)));
         }
         return creati;
@@ -228,6 +246,20 @@ public class MovimentiService {
             ricorrenze.generaOccorrenzeMancanti(LocalDate.now(clock));
         }
         return risultato;
+    }
+
+    /** Segna una fattura come pagata o da pagare; cambia solo questo campo (nemmeno {@code modificatoIl}). */
+    @Transactional
+    public MovimentoDto segnaPagata(Long id, Boolean pagata) {
+        Movimento m = trova(id);
+        if (pagata == null) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Il campo pagata è obbligatorio (vero o falso).");
+        }
+        if (m.getDocumento() != Documento.FATTURA) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Solo una fattura si segna come pagata.");
+        }
+        m.setPagata(pagata);
+        return dto(movimenti.save(m));
     }
 
     @Transactional
@@ -285,8 +317,16 @@ public class MovimentiService {
         m.setTipo(in.tipo());
         m.setDocumento(in.documento());
         m.setImportoCent(in.importoCent());
-        m.setCategoria(AnagraficheService.pulisci(in.categoria()) == null ? null
-                : anagrafiche.categoria(in.categoria(), in.tipo()).valore());
+        // «pagata» esiste solo per le fatture: per gli altri documenti e' sempre false; se manca nel corpo resta com'e'
+        if (in.documento() != Documento.FATTURA) {
+            m.setPagata(false);
+        } else if (in.pagata() != null) {
+            m.setPagata(in.pagata());
+        }
+        Categoria categoria = AnagraficheService.pulisci(in.categoria()) == null ? null
+                : anagrafiche.categoria(in.categoria(), in.tipo()).valore();
+        validaRetribuzione(in.tipo(), in.documento(), categoria);
+        m.setCategoria(categoria);
         m.setFornitore(AnagraficheService.pulisci(in.fornitore()) == null ? null
                 : anagrafiche.fornitore(in.fornitore(), null).valore());
         m.setDipendente(AnagraficheService.pulisci(in.dipendente()) == null ? null
@@ -294,6 +334,28 @@ public class MovimentiService {
         m.setDescrizione(vuotoANull(in.descrizione()));
         m.setNumeroDocumento(vuotoANull(in.numeroDocumento()));
         m.setNote(vuotoANull(in.note()));
+    }
+
+    /**
+     * Retribuzione e categoria vanno sempre insieme: il documento RETRIBUZIONE_* richiede una categoria con il flag
+     * retribuzione, e una categoria con il flag non ammette il documento NESSUNO. Vale solo per i dati nuovi: quelli
+     * gia' presenti non si rivalidano.
+     */
+    static void validaRetribuzione(Tipo tipo, Documento documento, Categoria categoria) {
+        if (tipo != Tipo.COSTO_FISSO) {
+            return;
+        }
+        boolean retribuzione = documento == Documento.RETRIBUZIONE_REGOLARE || documento == Documento.RETRIBUZIONE_EXTRA;
+        if (retribuzione && categoria == null) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "Una retribuzione ha bisogno di una categoria di tipo retribuzione.");
+        }
+        if (retribuzione && !categoria.isRetribuzione()) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "La categoria «" + categoria.getNome() + "» non è una retribuzione.");
+        }
+        if (!retribuzione && categoria != null && categoria.isRetribuzione()) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST,
+                    "La categoria «" + categoria.getNome() + "» è una retribuzione: scegli Regolare o Extra.");
+        }
     }
 
     private static String vuotoANull(String testo) {
@@ -307,7 +369,7 @@ public class MovimentiService {
                 m.getFornitore() == null ? null : new Rif(m.getFornitore().getId(), m.getFornitore().getNome()),
                 m.getDipendente() == null ? null : new Rif(m.getDipendente().getId(), m.getDipendente().getNome()),
                 new Rif(m.getSede().getId(), m.getSede().getNome()),
-                m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(),
+                m.getDescrizione(), m.getNumeroDocumento(), m.getNote(), m.getOrigine(), m.isPagata(),
                 r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo(), r.getProssimaData()),
                 m.getAllegatoNome(), m.getCreatoIl(),
                 // la colonna e' sempre valorizzata (uguale a creato_il alla nascita): "mai modificato" = null
