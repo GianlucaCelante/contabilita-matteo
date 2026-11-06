@@ -18,9 +18,10 @@ import {
   meseBreve,
   meseInEvidenza,
   nomeMeseDi,
-  OPZIONI_TIPO_CATEGORIA,
+  opzioniTipoCategoria,
   piuAnni,
   RAGGRUPPAMENTI,
+  tipoCategoriaDa,
   tipoPerServizio,
   totaliPerMese,
   vociDelMese,
@@ -306,7 +307,7 @@ export default function StatisticheVoci() {
   const filtro = sedi.parametro;
   const [params, setParams] = useSearchParams();
   const raggruppa = RAGGRUPPAMENTI.find((r) => r.valore === params.get("v"))?.valore ?? "FORNITORE";
-  const tipoScelto: SceltaTipo = OPZIONI_TIPO_CATEGORIA.find((o) => o.valore === params.get("t"))?.valore ?? "COSTI";
+  const tipoScelto: SceltaTipo = tipoCategoriaDa(params.get("t"));
   const tipoServizio = tipoPerServizio(raggruppa, tipoScelto);
   const [meseScelto, setMeseScelto] = useState<string | null>(null);
   const posizione = useLocation();
@@ -387,7 +388,7 @@ export default function StatisticheVoci() {
 
         {raggruppa === "CATEGORIA" && (
           <div role="group" aria-label="Che cosa" className="segmenti mb-3 w-full md:mb-4 md:w-auto md:self-start">
-            {OPZIONI_TIPO_CATEGORIA.map((o) => (
+            {opzioniTipoCategoria(tipoScelto).map((o) => (
               <button
                 key={o.valore}
                 type="button"

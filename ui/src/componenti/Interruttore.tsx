@@ -7,12 +7,14 @@ interface ProprietaInterruttore {
   // La riga piccola sotto il titolo.
   sotto?: ReactNode;
   disabled?: boolean;
+  // Senza la parola «Acceso»/«Spento»: restano pallino e colore (e aria-checked per chi usa lo screen reader).
+  senzaParola?: boolean;
 }
 
 // Interruttore accessibile: role="switch" con aria-checked, nome dal titolo e
 // descrizione dalla riga sotto. Lo stato si legge in tre segni: posizione del
 // pallino, colore e la parola «Acceso»/«Spento». Tutta la riga e' il bersaglio.
-export default function Interruttore({ acceso, onCambia, titolo, sotto, disabled }: ProprietaInterruttore) {
+export default function Interruttore({ acceso, onCambia, titolo, sotto, disabled, senzaParola }: ProprietaInterruttore) {
   const id = useId();
   return (
     <button
@@ -35,9 +37,11 @@ export default function Interruttore({ acceso, onCambia, titolo, sotto, disabled
           </span>
         )}
       </span>
-      <span className="text-[13px] font-bold text-spento" aria-hidden="true">
-        {acceso ? "Acceso" : "Spento"}
-      </span>
+      {!senzaParola && (
+        <span className="text-[13px] font-bold text-spento" aria-hidden="true">
+          {acceso ? "Acceso" : "Spento"}
+        </span>
+      )}
       <span className={"interruttore" + (acceso ? "" : " off")} aria-hidden="true" />
     </button>
   );

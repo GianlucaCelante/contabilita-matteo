@@ -27,6 +27,34 @@ export const OPZIONI_TIPO_CATEGORIA: { valore: TipoVoci | "TUTTI"; etichetta: st
   { valore: "TUTTI", etichetta: "Tutti" },
 ];
 
+// «Costi fissi» non e' una chip fissa: compare solo se e' il tipo scelto (si arriva dal blocco del Riepilogo); intanto «Costi» resta spenta.
+export function opzioniTipoCategoria(scelto: TipoVoci | "TUTTI"): { valore: TipoVoci | "TUTTI"; etichetta: string }[] {
+  if (scelto !== "COSTO_FISSO") return OPZIONI_TIPO_CATEGORIA;
+  const [costi, ...altre] = OPZIONI_TIPO_CATEGORIA;
+  return [costi!, { valore: "COSTO_FISSO", etichetta: "Costi fissi" }, ...altre];
+}
+
+// Il tipo delle categorie dall'indirizzo: le chip e, in piu', COSTO_FISSO; altrimenti «Costi».
+export function tipoCategoriaDa(grezzo: string | null): TipoVoci | "TUTTI" {
+  if (grezzo === "COSTO_FISSO") return "COSTO_FISSO";
+  return OPZIONI_TIPO_CATEGORIA.find((o) => o.valore === grezzo)?.valore ?? "COSTI";
+}
+
+export type BloccoRiepilogo = "ricavi" | "variabili" | "fissi";
+
+// Dal blocco del Riepilogo alla lista «per voce» dello stesso periodo (tipo + riferimento, oppure da/a per il periodo libero).
+export function indirizzoStatisticheDelBlocco(blocco: BloccoRiepilogo, periodo: { tipo: string; da: string; a: string }): string {
+  const p = new URLSearchParams({ v: blocco === "variabili" ? "FORNITORE" : "CATEGORIA" });
+  if (blocco === "ricavi") p.set("t", "RICAVO");
+  if (blocco === "fissi") p.set("t", "COSTO_FISSO");
+  p.set("p", periodo.tipo);
+  if (periodo.tipo === "periodo") {
+    p.set("da", periodo.da);
+    p.set("a", periodo.a);
+  } else p.set("r", periodo.da);
+  return `/statistiche/voci?${p.toString()}`;
+}
+
 // Il tipo da mandare al servizio: per le categorie «Tutti» e' l'assenza del parametro; per i dipendenti non si manda
 // (il servizio considera solo le retribuzioni e ignora il tipo).
 export function tipoPerServizio(raggruppa: RaggruppaVoci, scelta: TipoVoci | "TUTTI"): TipoVoci | undefined {

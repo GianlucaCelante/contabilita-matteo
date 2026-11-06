@@ -76,3 +76,39 @@ describe("meseInEvidenza: il mese a cui portare lo scorrimento all'apertura", ()
     expect(meseInEvidenza([], [], "2026-11-04")).toBe(-1);
   });
 });
+
+import { indirizzoStatisticheDelBlocco, opzioniTipoCategoria, tipoCategoriaDa } from "./statisticheVoci";
+
+describe("indirizzoStatisticheDelBlocco", () => {
+  const mese = { tipo: "mese" as const, da: "2026-10-01", a: "2026-10-31" };
+  it("ricavi: categorie dei ricavi, stesso periodo", () => {
+    expect(indirizzoStatisticheDelBlocco("ricavi", mese)).toBe("/statistiche/voci?v=CATEGORIA&t=RICAVO&p=mese&r=2026-10-01");
+  });
+  it("costi variabili: fornitori", () => {
+    expect(indirizzoStatisticheDelBlocco("variabili", mese)).toBe("/statistiche/voci?v=FORNITORE&p=mese&r=2026-10-01");
+  });
+  it("costi fissi: categorie dei soli costi fissi", () => {
+    expect(indirizzoStatisticheDelBlocco("fissi", mese)).toBe("/statistiche/voci?v=CATEGORIA&t=COSTO_FISSO&p=mese&r=2026-10-01");
+  });
+  it("periodo libero: da e a", () => {
+    expect(indirizzoStatisticheDelBlocco("ricavi", { tipo: "periodo", da: "2026-10-05", a: "2026-10-20" })).toBe(
+      "/statistiche/voci?v=CATEGORIA&t=RICAVO&p=periodo&da=2026-10-05&a=2026-10-20",
+    );
+  });
+});
+
+describe("tipo delle categorie con i costi fissi", () => {
+  it("legge COSTO_FISSO dall'indirizzo, il resto torna a COSTI", () => {
+    expect(tipoCategoriaDa("COSTO_FISSO")).toBe("COSTO_FISSO");
+    expect(tipoCategoriaDa("RICAVO")).toBe("RICAVO");
+    expect(tipoCategoriaDa("boh")).toBe("COSTI");
+    expect(tipoCategoriaDa(null)).toBe("COSTI");
+  });
+  it("la chip «Costi fissi» c'e' solo quando e' il tipo scelto", () => {
+    expect(opzioniTipoCategoria("COSTI").map((o) => o.etichetta)).toEqual(["Costi", "Ricavi", "Tutti"]);
+    expect(opzioniTipoCategoria("COSTO_FISSO").map((o) => o.etichetta)).toEqual(["Costi", "Costi fissi", "Ricavi", "Tutti"]);
+  });
+  it("il servizio riceve COSTO_FISSO", () => {
+    expect(tipoPerServizio("CATEGORIA", "COSTO_FISSO")).toBe("COSTO_FISSO");
+  });
+});

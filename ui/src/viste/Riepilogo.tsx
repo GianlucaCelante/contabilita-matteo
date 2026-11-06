@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, chiavi } from "../api/client";
 import type { Riepilogo as DatiRiepilogo, VoceRiepilogo } from "../api/tipi";
+import { IconaDestra } from "../componenti/Icone";
 import BadgeSede from "../componenti/BadgeSede";
 import SchedaFattureDaFare from "../componenti/SchedaFattureDaFare";
 import SchedaScontrinoMedio from "../componenti/SchedaScontrinoMedio";
@@ -11,6 +13,7 @@ import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
 import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { useSedi } from "../hooks/useSedi";
+import { indirizzoStatisticheDelBlocco, type BloccoRiepilogo } from "../util/statisticheVoci";
 import { euro, NOME_PERIODO, numeroCent, percentuale } from "../util/formato";
 
 // Una riga di una scheda. `sotto` e' il sottotesto accanto al nome (solo sul computer);
@@ -63,19 +66,28 @@ function DiCui({ nomeA, valoreA, nomeB, valoreB }: { nomeA: string; valoreA: num
 
 // Sul computer il totale e' ancorato al fondo della scheda (la scheda si allunga
 // fino in fondo alla pagina); sul telefono sta nell'intestazione, accanto al titolo.
-function Blocco({ titolo, totaleNome, totale, peso = 1, children }: { titolo: string; totaleNome: string; totale: number; peso?: number; children: ReactNode }) {
+function Blocco({ titolo, totaleNome, totale, peso = 1, verso, children }: { titolo: string; totaleNome: string; totale: number; peso?: number; verso: string; children: ReactNode }) {
   return (
     <section
       className="scheda flex min-w-0 flex-col px-[18px] pb-1 pt-3.5 max-md:rounded-2xl md:flex-1 md:px-6 md:pb-5 md:pt-5"
       style={{ flexGrow: peso }}
       aria-label={titolo}
     >
-      <div className="flex items-baseline justify-between gap-3 md:mb-3">
+      <Link
+        to={verso}
+        aria-label={`${titolo}: apri le statistiche del periodo`}
+        className="-mx-2 flex min-h-[44px] items-center justify-between gap-3 rounded-lg px-2 hover:bg-sabbia md:mb-1"
+      >
         <h2 className="text-[18px] font-bold md:text-[20px]">{titolo}</h2>
-        <span className="num text-[18px] font-bold md:hidden" aria-label={`${totaleNome} ${euro(totale)}`}>
-          {euro(totale)}
+        <span className="flex items-center gap-1.5">
+          <span className="num text-[18px] font-bold md:hidden" aria-hidden="true">
+            {euro(totale)}
+          </span>
+          <span className="text-spento" aria-hidden="true">
+            <IconaDestra larghezza={18} spessoreTratto={2.2} />
+          </span>
         </span>
-      </div>
+      </Link>
       <ul className="m-0 mt-2 list-none p-0 md:mt-0">{children}</ul>
       <div className="flex-1" />
       <div className="flex h-[52px] items-center justify-between gap-3 border-t-2 border-testo text-[17px] font-bold max-md:hidden">
@@ -187,6 +199,7 @@ export default function Riepilogo() {
   const nomePeriodo = NOME_PERIODO[periodo.tipo];
   const titoloRisultato = sedi.piu ? `${nomePeriodo} · ${sedi.incluse ?? "tutte le sedi"}` : nomePeriodo;
   const perSede = sedi.piu && sedi.selezionate.length >= 2 ? (d?.perSede ?? []) : [];
+  const verso = (b: BloccoRiepilogo) => indirizzoStatisticheDelBlocco(b, { tipo: periodo.tipo, da, a });
   const coloreRisultato = d && d.risultatoCent < 0 ? "text-rosso" : "text-verdescuro";
 
   return (
@@ -256,15 +269,15 @@ export default function Riepilogo() {
             )}
 
             <div className="flex flex-col gap-3 md:flex-1 md:flex-row md:gap-4">
-              <Blocco titolo="Ricavi" totaleNome="Totale ricavi" totale={d.ricavi.totaleCent}>
+              <Blocco verso={verso("ricavi")} titolo="Ricavi" totaleNome="Totale ricavi" totale={d.ricavi.totaleCent}>
                 <RigheVoci voci={d.ricavi.voci} />
                 <DiCui nomeA="Fatturati" valoreA={d.ricavi.fatturatiCent} nomeB="Extra" valoreB={d.ricavi.extraCent} />
               </Blocco>
-              <Blocco titolo="Costi variabili" totaleNome="Totale variabili" totale={d.costiVariabili.totaleCent}>
+              <Blocco verso={verso("variabili")} titolo="Costi variabili" totaleNome="Totale variabili" totale={d.costiVariabili.totaleCent}>
                 <RigheVoci voci={d.costiVariabili.voci} />
                 <DiCui nomeA="Fatture" valoreA={d.costiVariabili.fattureCent} nomeB="Scontrini" valoreB={d.costiVariabili.scontriniCent} />
               </Blocco>
-              <Blocco titolo="Costi fissi" totaleNome="Totale fissi" totale={d.costiFissi.totaleCent} peso={1.15}>
+              <Blocco verso={verso("fissi")} titolo="Costi fissi" totaleNome="Totale fissi" totale={d.costiFissi.totaleCent} peso={1.15}>
                 <RigheVoci voci={d.costiFissi.voci} />
                 <DiCui nomeA="Retribuzione regolare" valoreA={d.costiFissi.retribuzioneRegolareCent} nomeB="Retribuzione extra" valoreB={d.costiFissi.retribuzioneExtraCent} />
               </Blocco>

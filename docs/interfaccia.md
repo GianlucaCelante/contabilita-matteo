@@ -52,6 +52,8 @@ File: `Main.dc.html`
 
 **Regole visibili.** Costi = costi variabili + costi fissi. Risultato = ricavi − costi. Le percentuali della barra sono calcolate sui ricavi (costi variabili / ricavi, costi fissi / ricavi, risultato / ricavi) e sommano 100%. Nel mockup le righe del blocco dei costi fissi sono elencate per categoria.
 
+**Dai blocchi alle statistiche.** L'intestazione di ciascun blocco (Ricavi, Costi variabili, Costi fissi; sul telefono titolo e importo insieme, con una freccia) è un collegamento: apre «Per voce» dello stesso periodo e delle stesse sedi. Ricavi: categorie dei ricavi; Costi variabili: fornitori; Costi fissi: categorie dei soli costi fissi (compare allora una scelta «Costi fissi» accanto a Costi, Ricavi, Tutti). Le righe delle categorie restano come sono.
+
 ### 2.2 Movimenti (computer)
 
 File: `Movimenti.dc.html`

@@ -475,6 +475,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
       {campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile === "FATTURA" && (
         <Interruttore
           acceso={campi.pagata}
+          senzaParola
           onCambia={() => onCambia({ pagata: !campi.pagata })}
           titolo={modifica ? "Fattura pagata" : "Già pagata"}
           sotto={campi.pagata ? "Segnata come pagata." : "Da pagare: la segni pagata quando paghi, da Fatture › Ricevute."}
