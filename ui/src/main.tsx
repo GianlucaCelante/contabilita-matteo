@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, createHashRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
+import { osservaAccesso } from "./api/accesso";
 import { ProviderAvviso } from "./componenti/Avviso";
+import Cancello from "./componenti/Cancello";
 import { ProviderSedi } from "./componenti/ProviderSedi";
 import "./index.css";
 
@@ -15,6 +17,7 @@ if (demo) {
   installaDemo();
   document.title = "Contabilità · demo";
 }
+osservaAccesso();
 
 const client = new QueryClient({
   defaultOptions: {
@@ -35,9 +38,11 @@ const router = (demo ? createHashRouter : createBrowserRouter)([
     path: "*",
     element: (
       <ProviderAvviso>
-        <ProviderSedi>
-          <App />
-        </ProviderSedi>
+        <Cancello>
+          <ProviderSedi>
+            <App />
+          </ProviderSedi>
+        </Cancello>
       </ProviderAvviso>
     ),
   },

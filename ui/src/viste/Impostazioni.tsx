@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { accesso, CHIAVE_ACCESSO, impostaAccesso } from "../api/accesso";
 import { api, chiavi, messaggioErrore, urlQr } from "../api/client";
 import type { IndirizzoRete, Programma } from "../api/tipi";
 import { Caricamento, ErroreCaricamento } from "../componenti/Stati";
@@ -237,6 +238,137 @@ function DatiECopie() {
   );
 }
 
+// «Password»: chi apre l'app (anche dal telefono) deve scriverla. Senza password l'app e' aperta a chiunque sia sulla rete.
+function CampoPassword({ id, etichetta, valore, onCambia, focus }: { id: string; etichetta: string; valore: string; onCambia: (v: string) => void; focus?: boolean }) {
+  return (
+    <div>
+      <label htmlFor={id} className="etichetta">
+        {etichetta}
+      </label>
+      <div className="campo">
+        <input id={id} type="password" data-focus-iniziale={focus ? true : undefined} autoComplete="off" value={valore} onChange={(e) => onCambia(e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
+function CambiaPassword({ protetta, togli, onChiudi }: { protetta: boolean; togli: boolean; onChiudi: () => void }) {
+  const client = useQueryClient();
+  const avvisa = useAvviso();
+  const [attuale, setAttuale] = useState("");
+  const [nuova, setNuova] = useState("");
+  const [ripeti, setRipeti] = useState("");
+  const [errore, setErrore] = useState<string | null>(null);
+  const salva = useMutation({
+    mutationFn: () => accesso.cambiaPassword(attuale, togli ? "" : nuova),
+    onSuccess: (stato) => {
+      client.setQueryData(CHIAVE_ACCESSO, stato);
+      avvisa(togli ? "Password tolta: l'app è aperta a tutti" : protetta ? "Password cambiata" : "Password impostata");
+      onChiudi();
+    },
+    onError: (e) => setErrore(messaggioErrore(e)),
+  });
+  const invia = () => {
+    if (!togli && nuova.length < 4) return setErrore("La password deve avere almeno 4 caratteri.");
+    if (!togli && nuova !== ripeti) return setErrore("Le due password non sono uguali.");
+    setErrore(null);
+    salva.mutate();
+  };
+
+  return (
+    <Finestra
+      titolo={togli ? "Togli la password" : protetta ? "Cambia la password" : "Imposta la password"}
+      sottotitolo={togli ? "Dopo, chiunque sia sulla rete potrà aprire l'app senza password." : undefined}
+      onChiudi={salva.isPending ? undefined : onChiudi}
+      piede={
+        <>
+          <button type="button" className="btn" disabled={salva.isPending} onClick={onChiudi}>
+            Annulla
+          </button>
+          <button type="button" className="btn primario" disabled={salva.isPending} onClick={invia}>
+            {salva.isPending ? "Un momento…" : togli ? "Togli" : "Salva"}
+          </button>
+        </>
+      }
+    >
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          invia();
+        }}
+      >
+        {protetta && <CampoPassword id="password-attuale" etichetta="Password attuale" valore={attuale} onCambia={setAttuale} focus />}
+        {!togli && <CampoPassword id="password-nuova" etichetta="Nuova password" valore={nuova} onCambia={setNuova} focus={!protetta} />}
+        {!togli && <CampoPassword id="password-ripeti" etichetta="Ripeti la nuova password" valore={ripeti} onCambia={setRipeti} />}
+        {errore && (
+          <p role="alert" className="m-0 text-[14px] text-rosso">
+            {errore}
+          </p>
+        )}
+      </form>
+    </Finestra>
+  );
+}
+
+function SezionePassword() {
+  const client = useQueryClient();
+  const avvisa = useAvviso();
+  const q = useQuery({ queryKey: CHIAVE_ACCESSO, queryFn: accesso.stato, staleTime: Infinity });
+  const [finestra, setFinestra] = useState<"cambia" | "togli" | null>(null);
+  const esci = useMutation({
+    mutationFn: accesso.esci,
+    onSuccess: () => {
+      impostaAccesso(client, { protetta: true, autenticato: false });
+    },
+    onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
+  });
+  const protetta = q.data?.protetta ?? false;
+
+  return (
+    <Sezione titolo="Password">
+      {q.isPending && <Caricamento />}
+      {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
+      {q.data && (
+        <div>
+          <Dato
+            nome={protetta ? "L'app si apre solo con la password" : "L'app non ha password"}
+            valore={protetta ? "Vale anche dal telefono. Va scritta ogni volta che apri l&apos;app, e dopo mezz&apos;ora che non la usi." : "Chi è sulla stessa rete può aprirla e vedere tutti i dati."}
+            azione={
+              <button type="button" className={CLASSE_BOTTONE} onClick={() => setFinestra("cambia")}>
+                {protetta ? "Cambia" : "Imposta"}
+              </button>
+            }
+          />
+          {protetta && (
+            <Dato
+              nome="Togli la password"
+              valore="L'app torna aperta a tutti"
+              azione={
+                <button type="button" className={CLASSE_BOTTONE} onClick={() => setFinestra("togli")}>
+                  Togli
+                </button>
+              }
+            />
+          )}
+          {protetta && (
+            <Dato
+              nome="Esci da questo dispositivo"
+              valore="La prossima volta serve la password"
+              azione={
+                <button type="button" className={CLASSE_BOTTONE} disabled={esci.isPending} onClick={() => esci.mutate()}>
+                  Esci
+                </button>
+              }
+            />
+          )}
+        </div>
+      )}
+      {finestra && <CambiaPassword protetta={protetta} togli={finestra === "togli"} onChiudi={() => setFinestra(null)} />}
+    </Sezione>
+  );
+}
+
 export default function Impostazioni() {
   return (
     <>
@@ -244,6 +376,7 @@ export default function Impostazioni() {
       <div className="flex flex-col gap-4 px-4 pb-24 md:px-8 md:pb-7">
         <SezioneSedi />
         <SezioneElenchi />
+        <SezionePassword />
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
           <DalTelefono />
           <DatiECopie />

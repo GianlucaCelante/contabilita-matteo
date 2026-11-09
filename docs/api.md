@@ -1,6 +1,6 @@
 # API del servizio (contratto, fase 1)
 
-Fonte di verità condivisa tra servizio (`src/`) e interfaccia (`ui/`). Base: `/api`, porta 8766. Nessun login. Le schermate sono descritte in [`interfaccia.md`](interfaccia.md).
+Fonte di verità condivisa tra servizio (`src/`) e interfaccia (`ui/`). Base: `/api`, porta 8766. La password per entrare è facoltativa (vedi «Accesso con password»): senza, nessun login. Le schermate sono descritte in [`interfaccia.md`](interfaccia.md).
 
 ## Convenzioni
 
@@ -269,6 +269,16 @@ Le fatture **ricevute dai fornitori** (movimenti `COSTO_VARIABILE` con `document
 - `PUT /api/movimenti/{id}/pagata` `{pagata: boolean}` → il `Movimento` aggiornato. 404 se non esiste; 400 «Solo una fattura si segna come pagata.» se il `documento` non è `FATTURA`; `pagata` mancante o non booleano → 400. Cambia solo questo campo (non `modificatoIl` di altro).
 - `GET /api/movimenti?pagata=true|false` (vedi Movimenti) filtra le fatture; le note di credito non hanno stato.
 - `GET /api/statistiche/voci?raggruppa=FORNITORE` dà `pagataCent` per fornitore (vedi «Statistiche per voce»): è il confronto «totale delle fatture del fornitore nel mese / quanto già pagato».
+
+## Accesso con password
+
+Facoltativa: finché non è impostata l'app è aperta (come prima). Impostata, ogni `/api/**` risponde `401 {"errore":"Accesso richiesto."}` a chi non ha la sessione. Restano aperti `/api/accesso` e `/api/versione`; l'interfaccia (file statici) è pubblica, i dati no.
+
+- `GET /api/accesso` → `{protetta, autenticato}` (`autenticato` è vero anche senza password).
+- `POST /api/accesso {password}` → 200 `{protetta:true, autenticato:true}` e cookie `contabilita_sessione` (HttpOnly, SameSite=Lax, «di sessione»: sparisce chiudendo il browser; la sessione cade comunque dopo 30 minuti senza richieste, ogni richiesta la rinnova: la password si chiede ad ogni accesso); 401 «Password sbagliata.»; 429 dopo 5 errori di fila, per 30 secondi.
+- `DELETE /api/accesso` → 204, chiude la sessione.
+- `PUT /api/accesso/password {attuale, nuova}` → imposta, cambia o toglie (`nuova` vuota) la password. Con una password già impostata serve `attuale` (403 se sbagliata); `nuova` ha 4–200 caratteri (400). Le altre sessioni cadono; chi cambia riceve il cookie nuovo.
+- La password è salvata solo come impronta PBKDF2-SHA256 con sale (chiave interna `accesso.password`, invisibile e non scrivibile da `/api/impostazioni`). Le sessioni stanno in memoria: riavviando il servizio si rientra con la password.
 
 ## Programma, rete, impostazioni
 

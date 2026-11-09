@@ -22,7 +22,8 @@ import java.util.TreeMap;
 @RequestMapping("/api/impostazioni")
 public class ImpostazioniController {
 
-    private static final String PREFISSO_CHIAVE_INTERNA = "backup.";
+    // «backup.» e' lo stato di BackupService, «accesso.» e' la password: non si vedono e non si scrivono.
+    private static final java.util.List<String> PREFISSI_CHIAVE_INTERNA = java.util.List.of("backup.", "accesso.");
     private static final int CHIAVE_MASSIMA = 100;
     private static final int VALORE_MASSIMO = 2000;
 
@@ -37,7 +38,7 @@ public class ImpostazioniController {
     public Map<String, String> tutte() {
         Map<String, String> mappa = new TreeMap<>();
         repository.findAll().stream()
-                .filter(i -> !i.getChiave().startsWith(PREFISSO_CHIAVE_INTERNA))
+                .filter(i -> !eInterna(i.getChiave()))
                 .forEach(i -> mappa.put(i.getChiave(), i.getValore()));
         return mappa;
     }
@@ -50,11 +51,15 @@ public class ImpostazioniController {
         return tutte();
     }
 
+    private static boolean eInterna(String chiave) {
+        return PREFISSI_CHIAVE_INTERNA.stream().anyMatch(chiave::startsWith);
+    }
+
     private static void valida(String chiave, String valore) {
         if (chiave == null || chiave.isBlank() || chiave.length() > CHIAVE_MASSIMA) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "Chiave di impostazione non valida.");
         }
-        if (chiave.startsWith(PREFISSO_CHIAVE_INTERNA)) {
+        if (eInterna(chiave)) {
             throw new ErroreApi(HttpStatus.BAD_REQUEST, "impostazione non riconosciuta: " + chiave);
         }
         if (valore == null) {

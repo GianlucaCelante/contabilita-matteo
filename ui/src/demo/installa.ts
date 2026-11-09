@@ -1,7 +1,7 @@
 // Mette la demo al posto del servizio: ogni fetch verso /api/... va a demo/backend.ts, il resto passa com'e'.
 // Si importa solo dalla pagina della demo (main.tsx con VITE_DEMO), mai nell'app vera.
+import { demoAperta, rispondiAccesso } from "./accesso";
 import { rispondi } from "./backend";
-import { modalitaVuota } from "./stato";
 
 const fetchVera = window.fetch.bind(window);
 
@@ -23,14 +23,19 @@ async function corpoDi(init?: RequestInit): Promise<unknown> {
 }
 
 export function installaDemo(): void {
-  // Con ?vuoto nell'indirizzo (prima del #) la demo parte senza dati di prova, come un'installazione nuova.
-  modalitaVuota(new URLSearchParams(window.location.search).has("vuoto"));
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, window.location.href);
     if (!url.pathname.startsWith("/api/")) return fetchVera(input, init);
     const metodo = (init?.method ?? "GET").toUpperCase();
     await new Promise((r) => setTimeout(r, 60)); // un attimo, come un servizio vero
-    const r = rispondi(metodo, url.pathname.slice(4), url.searchParams, await corpoDi(init));
+    const percorso = url.pathname.slice(4);
+    const corpo = await corpoDi(init);
+    // Prima la password: senza di lei le API rispondono 401, come nel servizio vero.
+    const r =
+      rispondiAccesso(metodo, percorso, corpo) ??
+      (percorso !== "/versione" && !demoAperta()
+        ? { stato: 401, corpo: { errore: "Accesso richiesto." } }
+        : rispondi(metodo, percorso, url.searchParams, corpo));
     if (r.testo) {
       return new Response(new Blob([r.testo.contenuto as BlobPart], { type: r.testo.tipo }), {
         status: r.stato,

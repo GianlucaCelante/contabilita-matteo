@@ -433,7 +433,8 @@ let corrente: StatoDemo | null = null;
 
 // Demo «vuota» (indirizzo con ?vuoto): si parte come un'installazione nuova, senza dati di prova, con la sola «Sede principale».
 // Ha una memoria sua: non tocca i dati di prova e, a differenza di questi, non si rigenera il giorno dopo.
-let vuota = false;
+// Nella demo pubblicata (VITE_DEMO=1) e' sempre cosi': il generatore dei dati inventati resta solo per i test e non entra nella build.
+let vuota = import.meta.env.VITE_DEMO === "1";
 const chiave = () => (vuota ? `${CHIAVE}-vuoto` : CHIAVE);
 const chiavePrecedente = () => (vuota ? `${CHIAVE_PRECEDENTE}-vuoto` : CHIAVE_PRECEDENTE);
 
@@ -492,7 +493,8 @@ export function stato(): StatoDemo {
   } catch {
     // niente memoria del browser: si riparte dai dati di partenza
   }
-  corrente = vuota ? generaVuoto(oggi) : generaDaZero(oggi);
+  // Il controllo su VITE_DEMO e' una costante della build: nella demo pubblicata il generatore sparisce dal codice.
+  corrente = import.meta.env.VITE_DEMO === "1" || vuota ? generaVuoto(oggi) : generaDaZero(oggi);
   salva();
   return corrente;
 }

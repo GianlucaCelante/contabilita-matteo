@@ -1,6 +1,8 @@
 # Demo per GitHub Pages
 
-Una versione dell'app che gira **tutta nel browser**, con dati di prova inventati (nessun dato vero, nessun servizio). Serve per far vedere design e funzioni, anche da iPhone.
+Una versione dell'app che gira **tutta nel browser** (nessun dato vero, nessun servizio). Serve per far vedere design e funzioni, anche da iPhone.
+
+**Password e dati.** La demo pubblicata si apre con una schermata della password (sfondo da campo di calcio, titolo «Area soci», pensata per non dare nell'occhio): la password è `123` (`ui/src/demo/accesso.ts`). Essendo un sito statico è solo un cancello nel browser, non protegge niente di segreto; si ricorda per la sessione della scheda. **Parte vuota**: nessun dato inventato (solo «Sede principale»), e il generatore dei dati di prova non entra nella build pubblicata (resta nel codice solo per i test). Chi aveva la demo di prima riparte vuoto. Le sezioni qui sotto descrivono il comportamento del servizio finto e i dati di prova che i test generano.
 
 - Si costruisce con `npm run build:demo` (in `ui/`): modalità `demo` di Vite (`ui/.env.demo`, `VITE_DEMO=1`), cartella `ui/dist-demo/` (ignorata da git), percorsi relativi e router con `#` perché la pagina sta in una sottocartella di GitHub Pages.
 - Il «servizio» finto è in `ui/src/demo/`: `installa.ts` intercetta le chiamate `/api/...`, `backend.ts` le gestisce con gli stessi contratti di [`api.md`](api.md), `stato.ts` genera i dati di prova (circa cinque mesi, rigenerati ogni giorno) e li ricorda nel browser (`localStorage`), `xlsx.ts` costruisce il file Excel.
