@@ -8,19 +8,20 @@ import Finestra from "../componenti/Finestra";
 import RipristinaDaCopia from "../componenti/RipristinaDaCopia";
 import SezioneElenchi from "../componenti/SezioneElenchi";
 import SezioneSedi from "../componenti/SezioneSedi";
+import { BOTTONE_RIGA_LARGO, DETTAGLIO_RIGA, TESTO_SCHEDA, TITOLO_RIGA, TITOLO_SCHEDA } from "../componenti/stileImpostazioni";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { dataOraRelativa } from "../util/formato";
 
 // I pulsanti compatti delle righe di «Dati e copie» (44 px, angoli 10 px, testo 14 px).
-const CLASSE_BOTTONE = "btn !rounded-[10px] !px-4 !text-[14px]";
+const CLASSE_BOTTONE = BOTTONE_RIGA_LARGO;
 
 const NOME_RETE: Record<IndirizzoRete["tipo"], string> = { WIFI: "Wi-Fi", CAVO: "Cavo", ALTRO: "Altra rete" };
 
 function Sezione({ titolo, children }: { titolo: string; children: ReactNode }) {
   return (
     <section className="scheda min-w-0 flex-1 px-6 py-[22px]" aria-label={titolo}>
-      <h2 className="mb-3 text-[20px] font-bold">{titolo}</h2>
+      <h2 className={TITOLO_SCHEDA}>{titolo}</h2>
       {children}
     </section>
   );
@@ -45,7 +46,7 @@ function DalTelefono() {
       {q.isPending && <Caricamento />}
       {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
       {q.data && !attuale && (
-        <p className="m-0 text-[16px] text-tenue">Il computer non risulta collegato a nessuna rete: collegalo al Wi-Fi e riprova.</p>
+        <p className={TESTO_SCHEDA}>Il computer non risulta collegato a nessuna rete: collegalo al Wi-Fi e riprova.</p>
       )}
       {q.data && attuale && (
         <div className="flex flex-col gap-4">
@@ -58,7 +59,7 @@ function DalTelefono() {
               )}
             </div>
             <div className="min-w-0 flex-1 basis-[200px]">
-              <p className="m-0 text-[15px]">Inquadra il codice o scrivi l&apos;indirizzo, con il telefono sulla stessa rete Wi-Fi.</p>
+              <p className={`${TESTO_SCHEDA} !text-testo`}>Inquadra il codice o scrivi l&apos;indirizzo, con il telefono sulla stessa rete Wi-Fi.</p>
               <p className="num m-0 mt-2 break-all font-titolo text-[18px] font-bold">
                 http://{attuale.ip}:{q.data.porta}/
               </p>
@@ -86,10 +87,10 @@ function DalTelefono() {
 
 function Dato({ nome, valore, azione }: { nome: string; valore: ReactNode; azione?: ReactNode }) {
   return (
-    <div className="flex min-h-[40px] flex-wrap items-center justify-between gap-3 border-t border-riga py-1 first:border-t-0">
-      <div className="min-w-0">
-        <div className="text-[15px]">{nome}</div>
-        <div className="break-words text-[13px] text-spento">{valore}</div>
+    <div className="flex min-h-[64px] items-center justify-between gap-3 border-t border-riga py-2 first:border-t-0">
+      <div className="min-w-0 flex-1">
+        <div className={TITOLO_RIGA}>{nome}</div>
+        <div className={`break-words ${DETTAGLIO_RIGA}`}>{valore}</div>
       </div>
       {azione}
     </div>
@@ -285,13 +286,14 @@ function CambiaPassword({ protetta, togli, onChiudi }: { protetta: boolean; togl
           <button type="button" className="btn" disabled={salva.isPending} onClick={onChiudi}>
             Annulla
           </button>
-          <button type="button" className="btn primario" disabled={salva.isPending} onClick={invia}>
+          <button type="submit" form="form-password" className="btn primario" disabled={salva.isPending}>
             {salva.isPending ? "Un momento…" : togli ? "Togli" : "Salva"}
           </button>
         </>
       }
     >
       <form
+        id="form-password"
         className="flex flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
@@ -333,7 +335,7 @@ function SezionePassword() {
         <div>
           <Dato
             nome={protetta ? "L'app si apre solo con la password" : "L'app non ha password"}
-            valore={protetta ? "Vale anche dal telefono. Va scritta ogni volta che apri l&apos;app, e dopo mezz&apos;ora che non la usi." : "Chi è sulla stessa rete può aprirla e vedere tutti i dati."}
+            valore={protetta ? "Vale anche dal telefono. Va scritta ogni volta che apri l’app, e dopo mezz’ora che non la usi." : "Chi è sulla stessa rete può aprirla e vedere tutti i dati."}
             azione={
               <button type="button" className={CLASSE_BOTTONE} onClick={() => setFinestra("cambia")}>
                 {protetta ? "Cambia" : "Imposta"}

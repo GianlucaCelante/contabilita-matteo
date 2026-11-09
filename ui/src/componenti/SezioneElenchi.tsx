@@ -5,6 +5,7 @@ import type { Anagrafica, Tipo } from "../api/tipi";
 import { testoMovimenti } from "../util/voci";
 import AzioniVoce, { type FaseVoce, type VoceGestita } from "./AzioniVoce";
 import { Caricamento, ErroreCaricamento } from "./Stati";
+import { BOTTONE_RIGA, DETTAGLIO_RIGA, TESTO_INTRO, TITOLO_RIGA, TITOLO_SCHEDA } from "./stileImpostazioni";
 
 // Impostazioni > «Elenchi»: le categorie, i fornitori e i dipendenti in un posto solo, con quanti movimenti li usano, per correggere
 // un errore di battitura (Rinomina), fondere due doppioni (Unisci) o togliere una voce (Elimina). Solo computer: sul telefono le stesse
@@ -31,18 +32,18 @@ interface Aperta {
 }
 
 function RigaVoce({ anagrafica, voce, onApri }: { anagrafica: Anagrafica; voce: Riga; onApri: (fase: FaseVoce) => void }) {
-  const classe = "btn !min-h-[44px] !rounded-[10px] !px-4 !text-[14px]";
+  const classe = BOTTONE_RIGA;
   return (
     <li className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-riga py-2">
       <div className="min-w-0 flex-1 basis-[220px]">
         <div className="flex items-center gap-2">
-          <span className="min-w-0 truncate text-[16px] font-bold">{voce.nome}</span>
+          <span className={`min-w-0 truncate ${TITOLO_RIGA}`}>{voce.nome}</span>
           {/* Un contrassegno a parole, non solo di colore: la categoria chiede dipendente, regolare ed extra. */}
           {voce.retribuzione && <span className="shrink-0 rounded-md border border-verdebordo bg-verdechiaro px-1.5 py-px text-[12px] font-bold text-verdescuro">Retribuzione</span>}
         </div>
-        <div className="num text-[13px] text-spento">{testoMovimenti(voce.usi)}</div>
+        <div className={`num ${DETTAGLIO_RIGA}`}>{testoMovimenti(voce.usi)}</div>
       </div>
-      <div className="flex shrink-0 gap-2">
+      <div className="ml-auto flex shrink-0 gap-2">
         <button type="button" className={classe} aria-label={`Rinomina «${voce.nome}»`} onClick={() => onApri("rinomina")}>
           Rinomina
         </button>
@@ -115,13 +116,13 @@ export default function SezioneElenchi() {
 
   return (
     <section className="scheda min-w-0 px-6 py-[22px]" aria-label="Elenchi">
-      <h2 className="text-[20px] font-bold">Elenchi</h2>
-      <p className="m-0 mb-4 mt-1 max-w-[60ch] text-[14px] text-tenue">
+      <h2 className={TITOLO_SCHEDA}>Elenchi</h2>
+      <p className={TESTO_INTRO}>
         Correggi un nome scritto male, unisci due voci uguali o togli quelle che non servono. I movimenti già registrati restano: se elimini una voce, restano senza.
       </p>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div role="group" aria-label="Quale elenco" className="segmenti">
+        <div role="group" aria-label="Quale elenco" className="segmenti max-md:w-full max-md:[&>button]:flex-1 max-md:[&>button]:justify-center max-md:[&>button]:!px-2">
           {SCHEDE.map((s) => (
             <button
               key={s.valore}

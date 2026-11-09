@@ -11,8 +11,6 @@ interface Voce {
   percorso: string;
   etichetta: string;
   Icona: ComponentType<ProprietaIcona>;
-  // Solo sul computer: sul telefono la barra ha quattro voci.
-  soloComputer?: boolean;
 }
 
 const VOCI: Voce[] = [
@@ -20,7 +18,7 @@ const VOCI: Voce[] = [
   { percorso: "/movimenti", etichetta: "Movimenti", Icona: IconaMovimenti },
   { percorso: "/statistiche", etichetta: "Statistiche", Icona: IconaStatistiche },
   { percorso: "/esporta", etichetta: "Esporta", Icona: IconaEsporta },
-  { percorso: "/impostazioni", etichetta: "Impostazioni", Icona: IconaImpostazioni, soloComputer: true },
+  { percorso: "/impostazioni", etichetta: "Impostazioni", Icona: IconaImpostazioni },
 ];
 
 // Impianto della pagina: barra laterale larga 88 px sul computer, barra in
@@ -95,14 +93,13 @@ export default function Guscio() {
         <div className="mb-3 hidden h-11 w-11 items-center justify-center rounded-xl bg-verde text-white md:flex" aria-hidden="true">
           <IconaMarchio larghezza={24} spessoreTratto={2} />
         </div>
-        {VOCI.map(({ percorso, etichetta, Icona, soloComputer }) => (
+        {VOCI.map(({ percorso, etichetta, Icona }) => (
           <NavLink
             key={percorso}
             to={percorso}
             className={({ isActive }) =>
               // Telefono: la voce attiva e' solo colorata. Computer: pillola verde chiaro.
               "flex min-h-[var(--d-nav)] flex-1 flex-col items-center justify-center gap-[3px] text-[11px] font-bold no-underline md:h-16 md:w-[72px] md:flex-none md:gap-1 md:rounded-xl md:text-[12px] " +
-              (soloComputer ? "hidden md:flex " : "") +
               (isActive ? "text-verdescuro md:bg-verdechiaro" : "text-spento md:hover:bg-sabbia")
             }
           >

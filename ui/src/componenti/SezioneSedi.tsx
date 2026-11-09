@@ -5,11 +5,12 @@ import type { Sede } from "../api/tipi";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSedi } from "../hooks/useSedi";
 import BadgeSede from "./BadgeSede";
+import { BOTTONE_RIGA_LARGO, DETTAGLIO_RIGA, TESTO_INTRO, TITOLO_RIGA, TITOLO_SCHEDA } from "./stileImpostazioni";
 import Finestra from "./Finestra";
 import { IconaMatita } from "./Icone";
 import { Caricamento } from "./Stati";
 
-const CLASSE_BOTTONE = "btn !rounded-[10px] !px-4 !text-[14px]";
+const CLASSE_BOTTONE = BOTTONE_RIGA_LARGO;
 const INVALIDA = ["sedi", "movimenti", "movimento", "riepilogo"];
 
 function contaMovimenti(n: number): string {
@@ -156,21 +157,21 @@ export default function SezioneSedi() {
 
   return (
     <section className="scheda min-w-0 px-6 py-[22px]" aria-label="Sedi">
-      <h2 className="text-[20px] font-bold">Sedi</h2>
-      <p className="m-0 mb-2 mt-1 text-[14px] text-spento">Ogni movimento appartiene a una sede. Una sede con dei movimenti non si cancella: si archivia.</p>
+      <h2 className={TITOLO_SCHEDA}>Sedi</h2>
+      <p className={TESTO_INTRO}>Ogni movimento appartiene a una sede. Una sede con dei movimenti non si cancella: si archivia.</p>
       {!pronto && <Caricamento />}
       <ul className="m-0 list-none p-0">
         {sedi.map((s) => (
           <li key={s.id} className="flex min-h-[56px] flex-wrap items-center gap-x-3 gap-y-1 border-t border-riga py-2 first:border-t-0">
             <BadgeSede id={s.id} decorativo />
             <div className="min-w-0 flex-1 basis-[140px]">
-              <div className="break-words font-bold">
+              <div className={`break-words ${TITOLO_RIGA}`}>
                 {s.nome}
                 {s.archiviata && <span className="ml-2 rounded-md bg-riga px-1.5 py-px text-[11px] font-bold text-spento">Archiviata</span>}
               </div>
-              <div className="text-[13px] text-spento">{contaMovimenti(s.movimenti)}</div>
+              <div className={DETTAGLIO_RIGA}>{contaMovimenti(s.movimenti)}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-2">
               <button type="button" className="btnIcona" aria-label={`Rinomina ${s.nome}`} onClick={() => setRinomina(s)}>
                 <IconaMatita larghezza={18} spessoreTratto={2} />
               </button>
@@ -195,7 +196,7 @@ export default function SezioneSedi() {
         ))}
       </ul>
       {unicaAttiva && (
-        <p id="sedi-ultima" className="m-0 mt-1 text-[13px] text-spento">
+        <p id="sedi-ultima" className={`mt-1 ${DETTAGLIO_RIGA}`}>
           È l&apos;unica sede attiva: non si può archiviare. Ne serve almeno una.
         </p>
       )}
@@ -210,7 +211,7 @@ export default function SezioneSedi() {
           <span className="sr-only">Nome della nuova sede</span>
           <input type="text" autoComplete="off" maxLength={120} placeholder="Nuova sede" value={nuova} onChange={(e) => setNuova(e.target.value)} />
         </label>
-        <button type="submit" className="btn primario" disabled={!nuova.trim() || aggiungi.isPending}>
+        <button type="submit" className="btn primario !min-h-[52px] max-md:w-full" disabled={!nuova.trim() || aggiungi.isPending}>
           {aggiungi.isPending ? "Aggiungo…" : "Aggiungi sede"}
         </button>
       </form>
