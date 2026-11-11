@@ -8,6 +8,7 @@ import FattureRicevute from "../componenti/FattureRicevute";
 import { CLASSI_TONO, iconaStato } from "../componenti/statoFattura";
 import { FinestraCasellaFattura, FinestraMeseFattura } from "../componenti/FinestreFatture";
 import { IconaAllarme, IconaDestra, IconaMatita, IconaOrologio, IconaPiu, IconaSinistra } from "../componenti/Icone";
+import SelettoreSedi from "../componenti/SelettoreSedi";
 import { Caricamento, ErroreCaricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
@@ -32,9 +33,11 @@ import {
   ultimiMesi,
 } from "../util/fatture";
 
-// Fatture da fare: un promemoria mensile. L'utente crea le sue caselle (un cliente, un tipo di fattura) e ogni mese ne segna lo stato:
+// Fatture da emettere: un promemoria mensile. L'utente crea le sue caselle (un cliente, un tipo di fattura) e ogni mese ne segna lo stato:
 // Da fare, Emessa, Pagata. Due viste: «Mese» (una lista, una riga per casella: il tocco sul badge porta allo stato dopo) e «Panoramica»
 // (caselle per ultimi mesi, per controllare a colpo d'occhio cosa e' rimasto indietro).
+
+const MESE_VALIDO = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 type Vista = "mese" | "panoramica";
 type Scheda = "emettere" | "ricevute";
@@ -73,9 +76,10 @@ function NavigatoreMese({ mese, oggiMese, onVai }: { mese: string; oggiMese: str
 
 function Contatore({ etichetta, valore, sotto, evidenza }: { etichetta: string; valore: number; sotto: string; evidenza?: boolean }) {
   return (
-    <div className={"scheda min-w-0 px-2.5 py-1.5 max-md:rounded-2xl md:px-5 md:py-3.5 " + (evidenza ? "!border-ambrabordo !bg-ambrachiaro" : "")}>
-      <div className={"etichettaMaiuscola " + (evidenza ? "!text-ambra" : "")}>{etichetta}</div>
-      <div className={"num font-titolo text-[24px] font-bold leading-tight md:text-[32px] " + (evidenza ? "text-ambra" : "")}>{valore}</div>
+    // Sui telefoni stretti «Da emettere» va su due righe: il numero resta in basso, allineato a quello degli altri contatori.
+    <div className={"scheda flex min-w-0 flex-col px-2.5 py-1.5 max-md:rounded-2xl md:px-5 md:py-3.5 " + (evidenza ? "!border-ambrabordo !bg-ambrachiaro" : "")}>
+      <div className={"etichettaMaiuscola leading-tight " + (evidenza ? "!text-ambra" : "")}>{etichetta}</div>
+      <div className={"num mt-auto font-titolo text-[24px] font-bold leading-tight md:text-[32px] " + (evidenza ? "text-ambra" : "")}>{valore}</div>
       <div className="num truncate text-[11px] text-spento md:text-[13px]">{sotto}</div>
     </div>
   );
@@ -93,6 +97,8 @@ interface ProprietaRiga {
 }
 
 // Una riga della lista: a sinistra nome e (in piccolo) importo e nota; a destra il badge-comando (un tocco = stato dopo) e il tasto dei dettagli.
+// Il posto del badge e' largo quanto «Da emettere» (il piu' lungo), cosi' i badge delle righe restano in colonna. Sul telefono il
+// badge e' piu' compatto (e il posto piu' stretto) per lasciare spazio al nome della casella.
 function RigaCasella({ casella, mese, oggiMese, occupata, onAvanza, onDettagli }: ProprietaRiga) {
   const voce = meseDiCasella(casella, mese);
   const tono = tonoVoce(voce, oggiMese);
@@ -121,23 +127,23 @@ function RigaCasella({ casella, mese, oggiMese, occupata, onAvanza, onDettagli }
         )}
       </div>
       {tono === "inattiva" ? (
-        <span className="flex min-h-[44px] min-w-[96px] shrink-0 items-center justify-center text-[18px] text-spento md:min-w-[110px]" role="img" aria-label={`${casella.nome}: non attiva in questo mese, la casella parte da ${nomeMeseAnno(casella.dalMese).toLowerCase()}`}>
+        <span className="flex min-h-[44px] min-w-[114px] md:min-w-[128px] shrink-0 items-center justify-center text-[18px] text-spento" role="img" aria-label={`${casella.nome}: non attiva in questo mese, la casella parte da ${nomeMeseAnno(casella.dalMese).toLowerCase()}`}>
           —
         </span>
       ) : passo ? (
         <button
           type="button"
-          className="flex min-h-[44px] min-w-[96px] md:min-w-[110px] shrink-0 items-center justify-center rounded-lg border-0 bg-transparent p-0 hover:brightness-95 disabled:opacity-60"
+          className="flex min-h-[44px] min-w-[114px] md:min-w-[128px] shrink-0 items-center justify-center rounded-lg border-0 bg-transparent p-0 hover:brightness-95 disabled:opacity-60"
           aria-label={etichettaComandoStato(casella.nome, voce.stato)}
           title={passo.azione}
           disabled={occupata}
           onClick={() => onAvanza(casella, voce)}
         >
-          <BadgeStatoFattura stato={voce.stato} tono={tono} className="!h-[36px] w-full justify-center" />
+          <BadgeStatoFattura stato={voce.stato} tono={tono} className="!h-[36px] w-full justify-center max-md:gap-1 max-md:px-2 max-md:text-[13px]" />
         </button>
       ) : (
-        <span className="flex min-h-[44px] min-w-[96px] md:min-w-[110px] shrink-0 items-center justify-center" role="img" aria-label={etichettaComandoStato(casella.nome, voce.stato)}>
-          <BadgeStatoFattura stato={voce.stato} tono={tono} className="!h-[36px] w-full justify-center" />
+        <span className="flex min-h-[44px] min-w-[114px] md:min-w-[128px] shrink-0 items-center justify-center" role="img" aria-label={etichettaComandoStato(casella.nome, voce.stato)}>
+          <BadgeStatoFattura stato={voce.stato} tono={tono} className="!h-[36px] w-full justify-center max-md:gap-1 max-md:px-2 max-md:text-[13px]" />
         </span>
       )}
       <button type="button" className="btnIcona shrink-0 !border-transparent !bg-transparent hover:!bg-sabbia" aria-label={`Importo, nota e stato: ${casella.nome}`} title="Importo, nota e stato" onClick={() => onDettagli(casella)}>
@@ -153,7 +159,7 @@ function VistaMese({ dati, mese, oggiMese, occupataId, onAvanza, onDettagli }: O
   return (
     <>
       <div className="grid grid-cols-3 gap-2 md:gap-4" role="group" aria-label={`Riepilogo di ${nomeMeseAnno(mese)}`}>
-        <Contatore etichetta="Da fare" valore={c.daFare} sotto={attive === 0 ? "—" : c.daFare === 0 ? "tutto fatto" : c.daFare === 1 ? "fattura" : "fatture"} evidenza={c.daFare > 0} />
+        <Contatore etichetta="Da emettere" valore={c.daFare} sotto={attive === 0 ? "—" : c.daFare === 0 ? "tutto fatto" : c.daFare === 1 ? "fattura" : "fatture"} evidenza={c.daFare > 0} />
         <Contatore etichetta="Emesse" valore={c.emesse} sotto={c.emesse === 0 ? "nessuna" : c.daIncassareCent > 0 ? euro(c.daIncassareCent) : "da incassare"} />
         <Contatore etichetta="Pagate" valore={c.pagate} sotto={c.pagateCent > 0 ? euro(c.pagateCent) : c.pagate === 0 ? "nessuna" : "pagate"} />
       </div>
@@ -167,6 +173,7 @@ function VistaMese({ dati, mese, oggiMese, occupataId, onAvanza, onDettagli }: O
 }
 
 // ---- vista «Panoramica»: caselle per ultimi mesi ----
+// Nei riquadri, icona e parola stanno una sopra l'altra fino a xl: fra 1024 e 1280 px accanto all'icona «Da emettere» non ci sta.
 
 function Legenda() {
   return (
@@ -217,12 +224,12 @@ function Panoramica({ dati, mese, oggiMese, onApri }: { dati: DatiFatture; mese:
                     key={m}
                     type="button"
                     aria-label={`${casella.nome}, ${nomeMeseAnno(m).toLowerCase()}: ${tono === "inattiva" ? "non attivo, prima della casella" : ETICHETTA_STATO[voce.stato]}${voce.importoCent !== null ? `, ${euro(voce.importoCent)}` : ""}`}
-                    className={`${i === 0 ? "max-md:hidden " : ""}flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 text-[11px] font-bold hover:brightness-95 md:min-h-[46px] md:flex-row md:gap-1.5 md:px-1 md:text-[13px] ${CLASSI_TONO[tono]} ${m === mese ? "ring-2 ring-testo ring-offset-1" : ""}`}
+                    className={`${i === 0 ? "max-md:hidden " : ""}flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 text-[11px] font-bold hover:brightness-95 md:min-h-[46px] md:px-1 md:text-[13px] xl:flex-row xl:gap-1.5 ${CLASSI_TONO[tono]} ${m === mese ? "ring-2 ring-testo ring-offset-1" : ""}`}
                     onClick={() => onApri(casella, m)}
                   >
                     {Icona ? <Icona larghezza={18} spessoreTratto={2.25} /> : <span aria-hidden="true">—</span>}
                     <span className="md:hidden">{meseBreve(m)}</span>
-                    <span className="truncate max-md:hidden">{Icona ? ETICHETTA_STATO[voce.stato] : ""}</span>
+                    <span className="max-w-full truncate max-md:hidden">{Icona ? ETICHETTA_STATO[voce.stato] : ""}</span>
                   </button>
                 );
               })}
@@ -233,7 +240,7 @@ function Panoramica({ dati, mese, oggiMese, onApri }: { dati: DatiFatture; mese:
       <div className="mt-4 flex flex-col gap-2.5 md:flex-row md:items-center md:justify-between">
         <Legenda />
         <p className="m-0 text-[14px] font-bold text-tenue" aria-live="polite">
-          {dati.daFare === 0 ? "In questi mesi non c'è niente da fare." : `Ancora da fare in questi mesi: ${dati.daFare}`}
+          {dati.daFare === 0 ? "In questi mesi non c'è niente da emettere." : `Ancora da emettere in questi mesi: ${dati.daFare}`}
         </p>
       </div>
     </>
@@ -246,12 +253,26 @@ export default function Fatture() {
   const client = useQueryClient();
   const avvisa = useAvviso();
   const oggiMese = meseCorrente();
-  const [mese, setMese] = useState(oggiMese);
   const [vista, setVista] = useState<Vista>("mese");
-  // «Da emettere» (le caselle) o «Ricevute» (le fatture dei fornitori); l'indirizzo puo' aprire direttamente le Ricevute.
+  // Scheda e mese stanno nell'indirizzo, cosi' restano dopo aver aperto una fattura ed essere tornati indietro: `scheda=ricevute` apre
+  // le Ricevute (assente = «Da emettere», le caselle), `mese=yyyy-MM` e' il mese scelto (assente o non valido = il mese corrente).
   const [parametri, setParametri] = useSearchParams();
   const scheda: Scheda = parametri.get("scheda") === "ricevute" ? "ricevute" : "emettere";
-  const vaiA = (nuova: Scheda) => setParametri(nuova === "ricevute" ? { scheda: "ricevute" } : {}, { replace: true });
+  const meseGrezzo = parametri.get("mese");
+  const mese = meseGrezzo && MESE_VALIDO.test(meseGrezzo) ? meseGrezzo : oggiMese;
+  // Cambia un parametro senza toccare gli altri (null = lo toglie).
+  const impostaParametro = (nome: string, valore: string | null) =>
+    setParametri(
+      (prec) => {
+        const p = new URLSearchParams(prec);
+        if (valore === null) p.delete(nome);
+        else p.set(nome, valore);
+        return p;
+      },
+      { replace: true },
+    );
+  const setMese = (nuovo: string) => impostaParametro("mese", nuovo === oggiMese ? null : nuovo);
+  const vaiA = (nuova: Scheda) => impostaParametro("scheda", nuova === "ricevute" ? "ricevute" : null);
   const [aperto, setAperto] = useState<MeseAperto | null>(null);
   const [casellaAperta, setCasellaAperta] = useState<CasellaFattura | "nuova" | null>(null);
 
@@ -299,6 +320,8 @@ export default function Fatture() {
             Ricevute
           </button>
         </div>
+        {/* Le Ricevute sono movimenti: valgono le sedi scelte, come nelle altre viste. */}
+        {scheda === "ricevute" && <SelettoreSedi className="pb-3" />}
         <div className="flex flex-col gap-3 pb-3 md:flex-row md:items-center md:justify-between md:pb-4">
           <NavigatoreMese mese={mese} oggiMese={oggiMese} onVai={setMese} />
           {scheda === "emettere" && (

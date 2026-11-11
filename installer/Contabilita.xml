@@ -36,8 +36,15 @@
     <name>Contabilità Matteo</name>
     <description>Contabilità della pizzeria: ricavi, costi e riepiloghi. Interfaccia web su http://localhost:8766/</description>
 
+    <!--
+        -Xmx512m: il massimo di memoria del servizio (un tetto: la JVM ne prende solo quanta ne serve). Erano 256 MB,
+        pochi per l'importazione delle fatture: mentre si legge uno zip stanno in memoria insieme il caricamento, i file
+        estratti e le anteprime ancora da confermare. I limiti dell'importazione si regolano da soli su questo valore
+        (ImportazioneService: una lettura al massimo il 25% della memoria, le anteprime il 40%; docs/api.md): chi lo
+        abbassa ottiene limiti piu' stretti, non un servizio che finisce la memoria. Stesso valore nel plist del Mac.
+    -->
     <executable>%BASE%\..\runtime\bin\java.exe</executable>
-    <arguments>-Dcontabilita.sorveglia-padre=true -Xmx256m -jar "%BASE%\contabilita.jar"</arguments>
+    <arguments>-Dcontabilita.sorveglia-padre=true -Xmx512m -jar "%BASE%\contabilita.jar"</arguments>
 
     <!--
         CONTABILITA_DATA_DIR: cartella dati (database SQLite, log, backup).

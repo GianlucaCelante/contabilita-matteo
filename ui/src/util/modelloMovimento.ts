@@ -33,25 +33,41 @@ export interface CampiForm {
   // Il giorno del mese: serve per «Ogni mese» e per la personalizzata in mesi o anni.
   giorno: string;
   // La sede (con almeno due sedi attive si sceglie; null = non ancora scelta) e, solo in creazione, «dividi» fra piu' sedi:
-  // `dividi` e' acceso con due o piu' sedi scelte; `sediDivise` sono i loro id, vuoto = tutte le sedi attive.
+  // `dividi` e' acceso con due o piu' sedi scelte; `sediDivise` sono i loro id, vuoto = tutte le sedi del locale (attive non personali).
   sedeId: number | null;
   dividi: boolean;
   sediDivise: number[];
 }
 
-// Una pillola sede toccata in creazione: si possono scegliere una, due o tutte le sedi attive. Con una sola il movimento
-// sta in quella sede; con due o piu' si divide l'importo (se tutte, `sediDivise` resta vuoto).
-export function alternaSede(c: Pick<CampiForm, "sedeId" | "dividi" | "sediDivise">, id: number, attive: number[]): Pick<CampiForm, "sedeId" | "dividi" | "sediDivise"> {
-  const scelte = c.dividi ? (c.sediDivise.length > 0 ? c.sediDivise : attive) : c.sedeId !== null ? [c.sedeId] : [];
+// Una pillola sede toccata in creazione: si possono scegliere una, due o tutte le sedi attive (personali comprese). Con una sola il
+// movimento sta in quella sede; con due o piu' si divide l'importo. `locale` sono le sedi attive non personali: se le scelte sono
+// esattamente quelle, `sediDivise` resta vuoto (= «dividi» senza `sedi`, che nel servizio esclude le personali).
+export function alternaSede(
+  c: Pick<CampiForm, "sedeId" | "dividi" | "sediDivise">,
+  id: number,
+  locale: number[],
+  attive: number[] = locale,
+): Pick<CampiForm, "sedeId" | "dividi" | "sediDivise"> {
+  const scelte = c.dividi ? (c.sediDivise.length > 0 ? c.sediDivise : locale) : c.sedeId !== null ? [c.sedeId] : [];
   const nuove = attive.filter((s) => (s === id ? !scelte.includes(s) : scelte.includes(s)));
   if (nuove.length === 0) return { sedeId: null, dividi: false, sediDivise: [] };
   if (nuove.length === 1) return { sedeId: nuove[0]!, dividi: false, sediDivise: [] };
-  return { sedeId: null, dividi: true, sediDivise: nuove.length === attive.length ? [] : nuove };
+  const tuttoIlLocale = nuove.length === locale.length && locale.every((s) => nuove.includes(s));
+  return { sedeId: null, dividi: true, sediDivise: tuttoIlLocale ? [] : nuove };
 }
 
-// Le sedi fra cui si divide (gli id), con «dividi» acceso: quelle scelte o, se vuoto, tutte le attive.
-export function sediDelleDivisione(c: Pick<CampiForm, "sediDivise">, attive: number[]): number[] {
-  return c.sediDivise.length > 0 ? c.sediDivise.filter((s) => attive.includes(s)) : attive;
+// Le sedi fra cui si divide (gli id), con «dividi» acceso: quelle scelte (fra le attive) o, se vuoto, tutto il locale.
+export function sediDelleDivisione(c: Pick<CampiForm, "sediDivise">, locale: number[], attive: number[] = locale): number[] {
+  return c.sediDivise.length > 0 ? c.sediDivise.filter((s) => attive.includes(s)) : locale;
+}
+
+// Il filtro `sedi` per i conti accanto al modulo («Dove finisce»: totale della settimana, costo del dipendente): le sedi dove finira'
+// il movimento (la sede scelta, anche personale, o quelle della divisione). Niente con una sede sola o senza scelta: il servizio usa le
+// sedi del locale (senza `sedi` le personali restano fuori).
+export function sediDelMovimento(c: Pick<CampiForm, "sedeId" | "dividi" | "sediDivise">, locale: number[], attive: number[], piu: boolean): string | undefined {
+  if (!piu) return undefined;
+  if (c.dividi) return sediDelleDivisione(c, locale, attive).join(",") || undefined;
+  return c.sedeId !== null ? String(c.sedeId) : undefined;
 }
 
 export type Errori = Partial<Record<keyof CampiForm, string>>;
@@ -129,6 +145,25 @@ export function campiVuoti(): CampiForm {
   };
 }
 
+// «Salva e aggiungine un altro»: un modulo vuoto dello stesso tipo, con la stessa data e le stesse sedi. Un costo fisso tiene la voce.
+// Dopo una nota di credito si riparte da Fattura: la nota e' un caso raro, e il documento dopo e' quasi sempre una fattura che,
+// lasciata la scelta com'era, finirebbe salvata come nota (col segno sbagliato). Lo scontrino invece resta: se ne inseriscono piu' di fila.
+export function campiPerUnAltro(c: CampiForm): CampiForm {
+  return {
+    ...campiVuoti(),
+    tipo: c.tipo,
+    categoria: c.tipo === "COSTO_FISSO" ? c.categoria : "",
+    eRetribuzione: c.eRetribuzione,
+    retribuzione: c.retribuzione,
+    data: c.data,
+    documentoVariabile: c.documentoVariabile === "NOTA_DI_CREDITO" ? "FATTURA" : c.documentoVariabile,
+    tipoRicavo: c.tipoRicavo,
+    sedeId: c.sedeId,
+    dividi: c.dividi,
+    sediDivise: c.sediDivise,
+  };
+}
+
 export function daMovimento(m: Movimento): CampiForm {
   const base = campiVuoti();
   return {
@@ -165,12 +200,40 @@ export function documentoDi(c: CampiForm): Documento {
   return "NESSUNO";
 }
 
-// La ripetizione mensile e' solo dei costi fissi, e non della retribuzione extra.
+// I documenti di un costo variabile, nell'ordine del modulo (i piu' usati prima). La nota di credito e' ammessa solo qui: il servizio
+// la rifiuta per ricavi e costi fissi (docs/api.md, combinazioni Tipo -> Documento).
+export const DOCUMENTI_VARIABILI: { valore: CampiForm["documentoVariabile"]; etichetta: string }[] = [
+  { valore: "FATTURA", etichetta: "Fattura" },
+  { valore: "SCONTRINO", etichetta: "Scontrino" },
+  { valore: "NOTA_DI_CREDITO", etichetta: "Nota di credito" },
+];
+
+const eNotaDiCredito = (c: Pick<CampiForm, "tipo" | "documentoVariabile">): boolean => c.tipo === "COSTO_VARIABILE" && c.documentoVariabile === "NOTA_DI_CREDITO";
+
+// L'etichetta del campo col numero del documento (c'e' per fattura e nota di credito, non per lo scontrino). `corta`: sul telefono il
+// campo sta in mezza riga accanto alla Foto, e «N. nota di credito (facoltativo)» andrebbe su due righe spostando il campo in basso.
+export function etichettaNumero(c: Pick<CampiForm, "tipo" | "documentoVariabile">, corta = false): string {
+  if (!eNotaDiCredito(c)) return "N. fattura";
+  return corta ? "N. nota" : "N. nota di credito";
+}
+
+// La riga sotto la scelta «Documento»: serve solo per la nota di credito, che si scrive con l'importo positivo ma toglie.
+export function aiutoDocumento(c: Pick<CampiForm, "tipo" | "documentoVariabile">): string | null {
+  return eNotaDiCredito(c) ? "Riduce i costi e quanto devi al fornitore. Scrivi l'importo senza il meno." : null;
+}
+
+// Quanto il movimento sposta il totale della sua voce (riquadro «Dove finisce»): la nota di credito lo riduce.
+export function effettoSulTotale(c: Pick<CampiForm, "tipo" | "documentoVariabile">, cent: number): number {
+  return eNotaDiCredito(c) ? -cent : cent;
+}
+
+// La ripetizione e' solo dei costi fissi, e non della retribuzione extra: fatture, scontrini e note di credito non si ripetono.
 export function ripetibile(c: CampiForm): boolean {
   return c.tipo === "COSTO_FISSO" && documentoDi(c) !== "RETRIBUZIONE_EXTRA";
 }
 
-// La categoria che verra' mandata (la voce fissa e' obbligatoria; per i ricavi e' facoltativa).
+// La categoria che verra' mandata: obbligatoria per i costi (la voce fissa, la categoria di fatture e scontrini), facoltativa per i
+// ricavi. Le fatture importate da XML possono restare senza: la si chiede solo quando si salva dal modulo.
 export function categoriaDi(c: CampiForm): string {
   return c.categoria.trim();
 }
@@ -180,15 +243,41 @@ export function chiedeFornitore(c: CampiForm): "si" | "facoltativo" | "no" {
   if (c.tipo === "COSTO_FISSO" && !c.eRetribuzione) return "facoltativo";
   return "no";
 }
-// La descrizione (facoltativa) c'e' per ricavi, costi fissi e scontrini.
+// La descrizione (facoltativa) c'e' per ricavi, costi fissi e scontrini: fattura e nota di credito non ce l'hanno.
 export function chiedeDescrizione(c: CampiForm): boolean {
   return c.tipo !== "COSTO_VARIABILE" || c.documentoVariabile === "SCONTRINO";
+}
+
+// Cambiando documento (da scontrino a fattura o nota di credito) o tipo (da ricavo a costo variabile) il campo Descrizione sparisce
+// e il testo gia' scritto non verrebbe salvato: lo si porta nelle Note (in coda, se ce ne sono gia'), cosi' non si perde niente.
+// Se il documento ha la descrizione, o non c'e' niente da spostare, tornano gli stessi campi.
+export function spostaDescrizioneNelleNote(c: CampiForm): CampiForm {
+  const descrizione = c.descrizione.trim();
+  if (chiedeDescrizione(c) || !descrizione) return c;
+  const note = c.note.trim();
+  return { ...c, descrizione: "", note: note ? `${note} · ${descrizione}` : descrizione };
+}
+
+// «Nuovo movimento» sul telefono non ha il campo Note (si aggiungono dal dettaglio). Ma se le Note hanno gia' del testo (la descrizione
+// passata li' cambiando documento, o un modello che le porta) il campo compare: quel testo si salva, quindi si deve poter leggere e
+// correggere. `giaMostrate`: una volta comparso resta finche' il modulo e' aperto, anche se lo si svuota.
+export function noteInNuovoSulTelefono(c: Pick<CampiForm, "note">, giaMostrate: boolean): boolean {
+  return giaMostrate || c.note.trim() !== "";
+}
+
+// Nel dettaglio: un costo variabile che all'apertura era gia' senza categoria (fattura importata da XML, movimento vecchio, categoria
+// eliminata dagli elenchi) si deve poter salvare lo stesso, qualunque cosa si modifichi (per esempio «Fattura pagata»). La categoria
+// si chiede solo se all'apertura c'era, o se chi usa l'app ha messo mano al campo (anche lasciandolo vuoto).
+export function categoriaRichiestaInModifica(iniziali: Pick<CampiForm, "categoria">, toccata: boolean): boolean {
+  return iniziali.categoria.trim() !== "" || toccata;
 }
 
 // Controlla i campi e, se vanno bene, prepara il corpo per il servizio.
 // `conRipetizione`: se false la ripetizione non e' gestita da qui (dettaglio).
 // `sedeObbligatoria`: ci sono almeno due sedi attive, quindi la sede va scelta (una o piu' d'una); con una sola il servizio usa quella.
-export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligatoria = false): { errori: Errori; input: MovimentoInput | null } {
+// `categoriaObbligatoria`: la categoria di un costo variabile va scelta. Falso solo nel dettaglio di un movimento che era gia' senza
+// (vedi `categoriaRichiestaInModifica`); la voce fissa di un costo fisso e' obbligatoria sempre.
+export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligatoria = false, categoriaObbligatoria = true): { errori: Errori; input: MovimentoInput | null } {
   const errori: Errori = {};
   if (sedeObbligatoria && c.sedeId === null && !c.dividi) errori.sedeId = "Scegli una o più sedi.";
   if (!dataValida(c.data)) errori.data = "Scrivi una data valida.";
@@ -197,6 +286,7 @@ export function preparaInput(c: CampiForm, conRipetizione: boolean, sedeObbligat
   else if (cent <= 0) errori.importo = "L'importo deve essere maggiore di zero.";
   if (chiedeFornitore(c) === "si" && !c.fornitore.trim()) errori.fornitore = "Scegli o crea un fornitore.";
   if (c.tipo === "COSTO_FISSO" && !c.categoria.trim()) errori.categoria = "Scegli una voce o scrivine una nuova.";
+  else if (c.tipo === "COSTO_VARIABILE" && categoriaObbligatoria && !c.categoria.trim()) errori.categoria = "Scegli o crea una categoria.";
   else if (categoriaDi(c).length > MASSIMO_NOME_CATEGORIA) errori.categoria = `Il nome può avere al massimo ${MASSIMO_NOME_CATEGORIA} caratteri.`;
   let ripetizione: NonNullable<MovimentoInput["ricorrenza"]> | null = null;
   if (conRipetizione && c.ripeti && ripetibile(c)) {

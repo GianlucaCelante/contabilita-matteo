@@ -1,6 +1,6 @@
-import { useId, useMemo, useState, type InputHTMLAttributes, type ReactNode } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import AzioniVoce, { type EsitoVoce } from "./AzioniVoce";
-import BadgeSede from "./BadgeSede";
+import BadgeSede, { SegnoPersonale } from "./BadgeSede";
 import Combobox, { type ModificaVoci } from "./Combobox";
 import Interruttore from "./Interruttore";
 import SceltaFrequenza from "./SceltaFrequenza";
@@ -8,20 +8,26 @@ import { useSchermoGrande } from "../hooks/useSchermoGrande";
 import { useSedi } from "../hooks/useSedi";
 import { useSuggerimentiCategorie, useSuggerimentiDipendenti, useSuggerimentiFornitori, type VoceSuggerita } from "../hooks/useSuggerimenti";
 import {
+  aiutoDocumento,
   alternaSede,
   campiDaVoceFissa,
   chiedeDescrizione,
   chiedeFornitore,
+  DOCUMENTI_VARIABILI,
+  etichettaNumero,
   opzioniVoce,
   ripetibile,
   sediDelleDivisione,
+  noteInNuovoSulTelefono,
+  spostaDescrizioneNelleNote,
   voceFissaNuova,
   type CampiForm,
   type Errori,
 } from "../util/modelloMovimento";
 import type { Anagrafica, Tipo } from "../api/tipi";
+import { aiutoPagata } from "../util/fattureRicevute";
 import { leggiEuro } from "../util/formato";
-import { anteprimaDivisione } from "../util/sedi";
+import { anteprimaDivisione, localePoiPersonali } from "../util/sedi";
 
 interface Opzione<T extends string> {
   valore: T;
@@ -37,7 +43,10 @@ function Scelte<T extends string>({
   opzioni,
   onScegli,
   bassa,
+  descrittoDa,
 }: {
+  // L'id di una riga di aiuto sotto le scelte: il lettore di schermo la legge col gruppo.
+  descrittoDa?: string | undefined;
   legenda: string;
   valore: T;
   opzioni: Opzione<T>[];
@@ -51,14 +60,16 @@ function Scelte<T extends string>({
       <div id={id} className="etichetta">
         {legenda}
       </div>
-      <div role="radiogroup" aria-labelledby={id} className="flex flex-wrap gap-2 md:gap-2.5">
+      <div role="radiogroup" aria-labelledby={id} aria-describedby={descrittoDa} className="flex flex-wrap gap-2 md:gap-2.5">
         {opzioni.map((o) => (
           <button
             key={o.valore}
             type="button"
             role="radio"
             aria-checked={valore === o.valore}
-            className={"scelta max-md:min-h-[52px] max-md:px-0 max-md:text-[15px]" + (bassa ? " min-h-[52px]" : "") + (o.ambra ? " ambra" : "") + (o.bruno ? " bruno" : "")}
+            // Sul telefono il margine interno resta quello di .scelta (8 px, 4 sotto i 340): il testo non tocca mai il bordo. A 320 px tre
+            // scelte («Ricavo», «Costo variabile», «Costo fisso») stanno in una riga solo misurate sul testo, con lo stesso margine tutte.
+            className={"scelta max-md:min-h-[52px] max-md:text-[15px]" + (opzioni.length > 2 ? " max-[359px]:basis-auto" : "") + (bassa ? " min-h-[52px]" : "") + (o.ambra ? " ambra" : "") + (o.bruno ? " bruno" : "")}
             onClick={() => onScegli(o.valore)}
           >
             {o.etichetta}
@@ -120,16 +131,6 @@ const OPZIONI_RICAVO: Opzione<"RICAVO_FATTURATO" | "RICAVO_EXTRA">[] = [
             { valore: "RICAVO_EXTRA", etichetta: "Senza fattura (extra)" },
           ];
 
-const OPZIONI_DOCUMENTO: Opzione<"FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO">[] = [
-            { valore: "FATTURA", etichetta: "Fattura" },
-            { valore: "SCONTRINO", etichetta: "Scontrino" },
-          ];
-// Una nota di credito arriva dall'importazione: a mano non si crea, ma se c'e' si puo' modificare senza cambiarne il documento.
-const OPZIONI_CON_NOTA: Opzione<"FATTURA" | "NOTA_DI_CREDITO" | "SCONTRINO">[] = [
-  ...OPZIONI_DOCUMENTO,
-  { valore: "NOTA_DI_CREDITO", etichetta: "Nota di credito" },
-];
-
 const OPZIONI_RETRIBUZIONE: Opzione<"REGOLARE" | "EXTRA">[] = [
                 { valore: "REGOLARE", etichetta: "Regolare" },
                 { valore: "EXTRA", etichetta: "Extra" },
@@ -144,7 +145,9 @@ interface ProprietaForm {
   errori: Errori;
   // In modifica il tipo di movimento non si cambia e la ripetizione si gestisce a parte.
   modifica?: boolean;
-  // Il campo dell'allegato (solo in «Nuovo»): sul computer sta accanto alle Note, sul telefono accanto al N. fattura.
+  // Il campo compatto dell'allegato: in «Nuovo» sul computer sta accanto alle Note, sul telefono accanto al N. fattura. Nel dettaglio
+  // c'e' solo sul telefono e solo finche' il movimento non ha un allegato (poi c'e' la scheda «Allegato»): sta accanto al N. fattura
+  // come in «Nuovo», con le Note sotto.
   allegato?: ReactNode;
 }
 
@@ -174,22 +177,25 @@ function RigaRipeti({ campi, onAccendi, onCambia, errori }: { campi: CampiForm; 
   );
 }
 
-// «Di quale sede»: una pillola con la lettera per ogni sede attiva. In creazione si possono scegliere una, due o tutte le sedi
-// (si toccano le pillole che servono; «Tutte, dividi» le sceglie in un colpo): con due o piu' un movimento per sede, importo
-// diviso in parti uguali. In modifica la sede si puo' cambiare ma non dividere. Compare solo con almeno due sedi attive.
+// «Di quale sede»: una pillola con la lettera per ogni sede attiva (le personali dopo, col contrassegno «Personale»). In creazione si
+// possono scegliere una, due o tutte le sedi (si toccano le pillole che servono; «Tutte, dividi» sceglie in un colpo le sedi del locale,
+// mai le personali): con due o piu' un movimento per sede, importo diviso in parti uguali. In modifica la sede si puo' cambiare ma non
+// dividere. Compare solo con almeno due sedi attive; «Tutte, dividi» solo con almeno due sedi del locale.
 function SceltaSede({ campi, onCambia, errore, modifica }: { campi: CampiForm; onCambia: (parziale: Partial<CampiForm>) => void; errore?: string | undefined; modifica?: boolean }) {
   const sedi = useSedi();
   const id = useId();
   if (!sedi.piu) return null;
   // Una sede archiviata resta visibile se e' quella del movimento che si sta modificando.
   const archiviataAttuale = modifica ? sedi.sedi.find((s) => s.archiviata && s.id === campi.sedeId) : undefined;
-  const opzioni = archiviataAttuale ? [archiviataAttuale, ...sedi.attive] : sedi.attive;
+  const ordinate = localePoiPersonali(sedi.attive);
+  const opzioni = archiviataAttuale ? [archiviataAttuale, ...ordinate] : ordinate;
+  const idLocale = sedi.locale.map((s) => s.id);
   const idAttive = sedi.attive.map((s) => s.id);
-  const divise = campi.dividi ? sediDelleDivisione(campi, idAttive) : [];
+  const divise = campi.dividi ? sediDelleDivisione(campi, idLocale, idAttive) : [];
   const importo = leggiEuro(campi.importo);
   const anteprima = campi.dividi && importo !== null && importo > 0 ? anteprimaDivisione(importo, divise.length) : "";
-  const tutteScelte = campi.dividi && divise.length === idAttive.length;
-  const nomi = sedi.attive.filter((s) => divise.includes(s.id)).map((s) => s.nome);
+  const tutteScelte = campi.dividi && campi.sediDivise.length === 0;
+  const nomi = ordinate.filter((s) => divise.includes(s.id)).map((s) => s.nome);
   const nomiDivise = nomi.length > 1 ? `${nomi.slice(0, -1).join(", ")} e ${nomi[nomi.length - 1]}` : nomi.join("");
   return (
     <div>
@@ -206,19 +212,21 @@ function SceltaSede({ campi, onCambia, errore, modifica }: { campi: CampiForm; o
               role={modifica ? "radio" : "checkbox"}
               aria-checked={scelta}
               className="pillaSede"
-              onClick={() => onCambia(modifica ? { sedeId: s.id, dividi: false, sediDivise: [] } : alternaSede(campi, s.id, idAttive))}
+              onClick={() => onCambia(modifica ? { sedeId: s.id, dividi: false, sediDivise: [] } : alternaSede(campi, s.id, idLocale, idAttive))}
             >
               <BadgeSede id={s.id} taglia="piccolo" decorativo />
               {s.nome}
               {s.archiviata ? " (archiviata)" : ""}
+              {s.personale && <SegnoPersonale />}
             </button>
           );
         })}
-        {!modifica && (
+        {!modifica && sedi.piuLocale && (
           <button
             type="button"
             role="checkbox"
             aria-checked={tutteScelte}
+            aria-label={sedi.locale.length < sedi.attive.length ? "Tutte, dividi (senza le sedi personali)" : undefined}
             className="pillaSede senzaBadge"
             onClick={() => onCambia(tutteScelte ? { dividi: false, sedeId: null, sediDivise: [] } : { dividi: true, sedeId: null, sediDivise: [] })}
           >
@@ -262,10 +270,23 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const [gestita, setGestita] = useState<{ anagrafica: Anagrafica; campo: CampoVoce; voce: VoceSuggerita } | null>(null);
   const modificaPer = (anagrafica: Anagrafica, campo: CampoVoce, voci: VoceSuggerita[]): ModificaVoci => {
     const cerca = (nome: string) => voci.find((v) => v.nome.toLowerCase() === nome.trim().toLowerCase());
-    return { puo: (nome) => !!cerca(nome), apri: (nome) => { const voce = cerca(nome); if (voce) setGestita({ anagrafica, campo, voce }); } };
+    return { campo, puo: (nome) => !!cerca(nome), apri: (nome) => { const voce = cerca(nome); if (voce) setGestita({ anagrafica, campo, voce }); } };
   };
+  // Fatta l'azione (elimina, rinomina, unisci) il fuoco torna sul campo: la matita che aveva aperto la finestra non c'e' piu' (voce
+  // eliminata: il campo e' vuoto; matita di un suggerimento: la lista e' chiusa) o sparisce finche' l'elenco non e' riletto, e il
+  // fuoco finirebbe sul contenuto. Si sposta in un effetto di layout alla chiusura della finestra, prima che useModale lo restituisca
+  // (useModale non tocca un fuoco gia' messo altrove). Se si annulla ci pensa useModale: la matita e' ancora li'.
+  const rifModulo = useRef<HTMLDivElement>(null);
+  const fuocoSulCampo = useRef<CampoVoce | null>(null);
+  useLayoutEffect(() => {
+    if (gestita || !fuocoSulCampo.current) return;
+    const campo = fuocoSulCampo.current;
+    fuocoSulCampo.current = null;
+    rifModulo.current?.querySelector<HTMLElement>(`[data-campo-voce="${campo}"]`)?.focus();
+  }, [gestita]);
   function dopoGestione(esito: EsitoVoce) {
     if (!gestita) return;
+    fuocoSulCampo.current = gestita.campo;
     const { campo, voce } = gestita;
     const attuale = campo === "voceFissa" ? campi.categoria : campi[campo];
     if (attuale.trim().toLowerCase() !== voce.nome.toLowerCase()) return;
@@ -283,9 +304,21 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   const retribuzione = campi.tipo === "COSTO_FISSO" && campi.eRetribuzione;
   const nomeNuovo = campi.tipo === "COSTO_FISSO" && voceFissaNuova(campi, categorieFisse.voci);
   const fattura = campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile !== "SCONTRINO";
+  const aiuto = aiutoDocumento(campi);
+  const idAiuto = useId();
+  // Sul telefono le Note ci sono nel dettaglio; in «Nuovo» solo quando hanno del testo (vedi noteInNuovoSulTelefono), e poi restano.
+  const [noteMostrate, setNoteMostrate] = useState(false);
+  const noteSulTelefono = modifica === true || noteInNuovoSulTelefono(campi, noteMostrate);
+  if (noteSulTelefono && !noteMostrate) setNoteMostrate(true);
 
   function cambiaTipo(tipo: Tipo) {
-    onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", eRetribuzione: false, fornitore: "" });
+    onCambia({ tipo, ripeti: tipo === "COSTO_FISSO" ? campi.ripeti : false, categoria: "", eRetribuzione: false, fornitore: "", ...descrizioneNelleNote({ tipo }) });
+  }
+
+  // Se col nuovo documento (o tipo) il campo Descrizione sparisce, il testo scritto passa nelle Note invece di perdersi.
+  function descrizioneNelleNote(cambio: Partial<CampiForm>): Pick<CampiForm, "descrizione" | "note"> {
+    const { descrizione, note } = spostaDescrizioneNelleNote({ ...campi, ...cambio });
+    return { descrizione, note };
   }
 
   function accendiRipeti() {
@@ -311,7 +344,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
     />
   );
   const campoFattura = fattura ? (
-    <Campo key="fattura" etichetta="N. fattura" type="text" value={campi.numeroDocumento} onChange={(e) => onCambia({ numeroDocumento: e.target.value })} />
+    <Campo key="fattura" etichetta={etichettaNumero(campi, !grande)} facoltativo type="text" value={campi.numeroDocumento} onChange={(e) => onCambia({ numeroDocumento: e.target.value })} />
   ) : null;
   const campoDipendente = retribuzione ? (
     <Combobox key="dip" etichetta="Dipendente" cosa="dipendente" genere="m" value={campi.dipendente} onChange={(v) => onCambia({ dipendente: v })} facoltativo={!modifica} nota={campi.dipendente.trim() ? undefined : "Indica chi: serve per le statistiche per dipendente."} modifica={modificaPer("dipendenti", "dipendente", dipendenti.voci)} {...dipendenti} />
@@ -335,7 +368,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
   );
 
   return (
-    <div className={"flex flex-col [&_.etichetta]:leading-4 " + (modifica ? "gap-[18px] max-md:gap-3.5" : "gap-5 max-md:gap-4")}>
+    <div ref={rifModulo} className={"flex flex-col [&_.etichetta]:leading-4 " + (modifica ? "gap-[18px] max-md:gap-3.5" : "gap-5 max-md:gap-4")}>
       {!modifica && <Scelte legenda="Che cos'è" valore={campi.tipo} opzioni={TIPI} onScegli={cambiaTipo} />}
 
       {campi.tipo === "RICAVO" && (
@@ -345,9 +378,16 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
         </div>
       )}
 
-      {/* Nel dettaglio sul telefono il documento non si cambia: il modulo parte dai campi. */}
-      {campi.tipo === "COSTO_VARIABILE" && (grande || !modifica) && (
-        <Scelte legenda="Documento" valore={campi.documentoVariabile} opzioni={campi.documentoVariabile === "NOTA_DI_CREDITO" ? OPZIONI_CON_NOTA : OPZIONI_DOCUMENTO} onScegli={(v) => onCambia({ documentoVariabile: v })} />
+      {/* Fattura, Scontrino o Nota di credito: si sceglie in «Nuovo» e nel dettaglio, sul computer e sul telefono. */}
+      {campi.tipo === "COSTO_VARIABILE" && (
+        <div>
+          <Scelte legenda="Documento" valore={campi.documentoVariabile} opzioni={DOCUMENTI_VARIABILI} onScegli={(v) => onCambia({ documentoVariabile: v, ...descrizioneNelleNote({ documentoVariabile: v }) })} descrittoDa={aiuto ? idAiuto : undefined} />
+          {aiuto && (
+            <p id={idAiuto} className="m-0 mt-1.5 text-[13px] text-spento">
+              {aiuto}
+            </p>
+          )}
+        </div>
       )}
 
       {campi.tipo === "COSTO_FISSO" && (
@@ -456,16 +496,19 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
         )
       ) : (
         <>
-          {modifica ? (
-            <div className="grid grid-cols-2 gap-3">
-              {campoFattura}
-              <div className={campoFattura ? "" : "col-span-2"}>{campoNote}</div>
-            </div>
-          ) : (
-            allegato && (
+          {allegato ? (
+            <>
               <div className="grid grid-cols-2 gap-3">
                 {campoFattura}
                 <div className={campoFattura ? "" : "col-span-2"}>{allegato}</div>
+              </div>
+              {noteSulTelefono && campoNote}
+            </>
+          ) : (
+            noteSulTelefono && (
+              <div className="grid grid-cols-2 gap-3">
+                {campoFattura}
+                <div className={campoFattura ? "" : "col-span-2"}>{campoNote}</div>
               </div>
             )
           )}
@@ -475,10 +518,9 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
       {campi.tipo === "COSTO_VARIABILE" && campi.documentoVariabile === "FATTURA" && (
         <Interruttore
           acceso={campi.pagata}
-          senzaParola
           onCambia={() => onCambia({ pagata: !campi.pagata })}
           titolo={modifica ? "Fattura pagata" : "Già pagata"}
-          sotto={campi.pagata ? "Segnata come pagata." : "Da pagare: la segni pagata quando paghi, da Fatture › Ricevute."}
+          sotto={aiutoPagata(modifica === true, campi.pagata)}
         />
       )}
 

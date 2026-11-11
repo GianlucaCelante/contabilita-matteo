@@ -142,10 +142,10 @@ export function mesiDelPeriodo(da: string, a: string): string[] {
 const RAGGRUPPAMENTI: RaggruppaVoci[] = ["FORNITORE", "DIPENDENTE", "CATEGORIA"];
 export const TIPI_VOCI = ["RICAVO", "COSTO_VARIABILE", "COSTO_FISSO", "COSTI"] as const;
 
-// Il tipo predefinito di ogni raggruppamento (docs/api.md): null = tutti i tipi.
+// Il tipo predefinito di ogni raggruppamento (docs/api.md): null = tutti i tipi; per i fornitori i costi variabili, come il servizio.
 // Per i dipendenti il tipo non si usa: contano solo le retribuzioni.
 export function tipoPredefinito(raggruppa: RaggruppaVoci): (typeof TIPI_VOCI)[number] | null {
-  return raggruppa === "FORNITORE" ? "COSTI" : null;
+  return raggruppa === "FORNITORE" ? "COSTO_VARIABILE" : null;
 }
 
 export const eRetribuzione = (m: Movimento) => m.documento === "RETRIBUZIONE_REGOLARE" || m.documento === "RETRIBUZIONE_EXTRA";
@@ -170,8 +170,13 @@ export function statisticheVoci(st: StatoDemo, p: ParametriVoci): StatisticheVoc
   const mesi = mesiDelPeriodo(p.da, p.a);
   const tipi: Tipo[] | null = p.tipo === null ? null : p.tipo === "COSTI" ? ["COSTO_VARIABILE", "COSTO_FISSO"] : [p.tipo];
   const gruppi = new Map<number | null, VoceStatistica>();
+  // Fatture e pagato (totali e per mese) esistono solo per i fornitori: null con gli altri raggruppamenti.
+  const perFornitore = p.raggruppa === "FORNITORE";
   let totaleCent = 0;
   let movimenti = 0;
+  // I conteggi: le parti di un movimento diviso fra sedi (stesso `divisione`) nella stessa voce e nello stesso mese contano una volta,
+  // anche se il filtro delle sedi ne prende solo alcune. Gli importi restano la somma delle parti. Come il servizio.
+  const contate = new Set<string>();
   for (const m of st.movimenti) {
     if (m.data < p.da || m.data > p.a) continue;
     if (p.ids && !p.ids.has(m.sede.id)) continue;
@@ -190,25 +195,45 @@ export function statisticheVoci(st: StatoDemo, p: ParametriVoci): StatisticheVoc
         movimenti: 0,
         regolareCent: 0,
         extraCent: 0,
-        pagataCent: p.raggruppa === "FORNITORE" ? 0 : null,
+        pagataCent: perFornitore ? 0 : null,
+        fattureCent: perFornitore ? 0 : null,
         perMese: mesi.map(() => 0),
+        movimentiPerMese: mesi.map(() => 0),
+        pagataPerMese: perFornitore ? mesi.map(() => 0) : null,
+        fatturePerMese: perFornitore ? mesi.map(() => 0) : null,
       };
       gruppi.set(chiave, g);
     }
     const importo = effetto(m);
     g.totaleCent += importo;
-    g.movimenti += 1;
     const indice = mesi.indexOf(m.data.slice(0, 7));
-    if (indice >= 0) g.perMese[indice] = (g.perMese[indice] ?? 0) + importo;
-    if (g.pagataCent !== null && m.documento === "FATTURA" && m.pagata) g.pagataCent += m.importoCent;
+    const chiaveDivisione = m.divisione ? `${chiave}\n${indice}\n${m.divisione}` : null;
+    const daContare = chiaveDivisione === null || !contate.has(chiaveDivisione);
+    if (chiaveDivisione !== null) contate.add(chiaveDivisione);
+    if (daContare) g.movimenti += 1;
+    if (indice >= 0) {
+      g.perMese[indice] = (g.perMese[indice] ?? 0) + importo;
+      if (daContare) g.movimentiPerMese[indice] = (g.movimentiPerMese[indice] ?? 0) + 1;
+    }
+    // Il «da pagare» riguarda solo le fatture (meno le note di credito): gli scontrini sono gia' pagati alla cassa.
+    if (g.fattureCent !== null && g.fatturePerMese && (m.documento === "FATTURA" || m.documento === "NOTA_DI_CREDITO")) {
+      g.fattureCent += importo;
+      if (indice >= 0) g.fatturePerMese[indice] = (g.fatturePerMese[indice] ?? 0) + importo;
+    }
+    if (g.pagataCent !== null && g.pagataPerMese && m.documento === "FATTURA" && m.pagata) {
+      g.pagataCent += m.importoCent;
+      if (indice >= 0) g.pagataPerMese[indice] = (g.pagataPerMese[indice] ?? 0) + m.importoCent;
+    }
     if (p.raggruppa === "DIPENDENTE") {
       if (m.documento === "RETRIBUZIONE_REGOLARE") g.regolareCent += importo;
       else if (m.documento === "RETRIBUZIONE_EXTRA") g.extraCent += importo;
     }
     totaleCent += importo;
-    movimenti += 1;
+    if (daContare) movimenti += 1;
   }
   // Per totale decrescente, a parita' per nome; la riga senza voce in fondo.
   const voci = [...gruppi.values()].sort((x, y) => Number(x.id === null) - Number(y.id === null) || y.totaleCent - x.totaleCent || x.nome.localeCompare(y.nome, "it"));
-  return { da: p.da, a: p.a, raggruppa: p.raggruppa, mesi, totaleCent, movimenti, voci };
+  // Il tipo effettivo, come il servizio: per i dipendenti non si usa (null), per le categorie null = tutti i tipi.
+  const tipo = p.raggruppa === "DIPENDENTE" ? null : p.tipo;
+  return { da: p.da, a: p.a, raggruppa: p.raggruppa, tipo, mesi, totaleCent, movimenti, voci };
 }

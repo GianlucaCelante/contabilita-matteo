@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { StatisticheSettimana } from "../api/tipi";
 import { aggiungiGiorni } from "./formato";
 import {
+  bannerUtile,
   campiIniziali,
   elencoNomi,
   intervalloUltimeSettimane,
@@ -11,15 +12,21 @@ import {
   numeroSettimanaIso,
   pizzePerOrdine,
   preparaSalvataggio,
+  ricavoPerPizzaCent,
   puoAndareAvanti,
+  riassuntoRighe,
   scontrinoLive,
   scontrinoMedioCent,
   settimaneInserite,
   settimanaCorta,
   spostaSettimana,
+  titoloTotaleSettimana,
   totaleParziale,
   ultimaIncompleta,
+  etichettaStatoSede,
+  notaSenzaIncassi,
   ultimeSettimane,
+  valoreSempreScritto,
   validaRiga,
   type CampiRiga,
 } from "./statistiche";
@@ -31,6 +38,9 @@ const sett = (settimana: string, scontrino: number | null, mancanti: number[] = 
   ricaviCent: scontrino === null ? 0 : scontrino * ordini,
   scontrinoMedioCent: scontrino,
   sediMancanti: mancanti.map((id) => ({ id, nome: `Sede ${id}` })),
+  ricaviConDatiCent: scontrino === null ? 0 : scontrino * ordini,
+  ricaviTotaliCent: scontrino === null ? 0 : scontrino * ordini,
+  ricaviExtraCent: 0,
 });
 
 describe("scontrino medio e pizze per ordine (stessi arrotondamenti del servizio)", () => {
@@ -47,7 +57,28 @@ describe("scontrino medio e pizze per ordine (stessi arrotondamenti del servizio
   it("senza ordini non c'è scontrino", () => {
     expect(scontrinoMedioCent(10000, 0)).toBeNull();
     expect(scontrinoMedioCent(10000, -1)).toBeNull();
-    expect(scontrinoMedioCent(0, 5)).toBe(0);
+  });
+
+  it("ricavi negativi: mezzo in giù sul valore assoluto come il servizio (−5 / 2 = −3)", () => {
+    expect(scontrinoMedioCent(-5, 2)).toBe(-3);
+    expect(scontrinoMedioCent(-10000, 3)).toBe(-3333);
+    expect(scontrinoMedioCent(-2, 3)).toBe(-1);
+  });
+
+  it("ricavo per pizza: con pizze ma nessun ricavo è null («—»)", () => {
+    expect(ricavoPerPizzaCent(0, 90)).toBeNull();
+    expect(ricavoPerPizzaCent(9000, 90)).toBe(100);
+    expect(ricavoPerPizzaCent(9000, 0)).toBeNull();
+  });
+
+  it("con ordini ma nessun ricavo lo scontrino non c'è (null, «—»), come nel servizio", () => {
+    expect(scontrinoMedioCent(0, 5)).toBeNull();
+    const c = (pizze: string, ordini: string): CampiRiga => ({ pizze, ordini });
+    expect(scontrinoLive([{ ricaviCent: 0, campi: c("90", "30") }])).toBeNull();
+    expect(riassuntoRighe([{ ricaviCent: 0, campi: c("90", "30") }]).scontrinoMedioCent).toBeNull();
+    expect(totaleParziale([[{ ricaviCent: 0, campi: c("90", "30") }], [{ ricaviCent: 0, campi: c("10", "5") }]]).scontrinoMedioCent).toBeNull();
+    // con ricavi in una sede lo scontrino del totale c'e'
+    expect(totaleParziale([[{ ricaviCent: 0, campi: c("90", "30") }], [{ ricaviCent: 3500, campi: c("10", "5") }]]).scontrinoMedioCent).toBe(100);
   });
 
   it("pizze per ordine con due decimali", () => {
@@ -145,15 +176,52 @@ describe("campi Pizze e Ordini", () => {
 });
 
 describe("scontrino medio mentre si scrive", () => {
-  it("ricavi / ordini, arrotondato come il servizio", () => {
-    expect(scontrinoLive(984000, { pizze: "1412", ordini: "486" })).toBe(2025);
-    expect(scontrinoLive(10000, { pizze: "7", ordini: "3" })).toBe(3333);
+  const una = (ricaviCent: number, campi: CampiRiga) => [{ ricaviCent, campi }];
+  it("totale della settimana: ricavi della settimana / ordini, arrotondato come il servizio", () => {
+    expect(scontrinoLive(una(984000, { pizze: "1412", ordini: "486" }))).toBe(2025);
+    expect(scontrinoLive(una(10000, { pizze: "7", ordini: "3" }))).toBe(3333);
   });
   it("niente finché la riga non è valida o gli ordini sono 0", () => {
-    expect(scontrinoLive(10000, { pizze: "", ordini: "" })).toBeNull();
-    expect(scontrinoLive(10000, { pizze: "7", ordini: "" })).toBeNull();
-    expect(scontrinoLive(10000, { pizze: "0", ordini: "0" })).toBeNull();
-    expect(scontrinoLive(10000, { pizze: "x", ordini: "3" })).toBeNull();
+    expect(scontrinoLive(una(10000, { pizze: "", ordini: "" }))).toBeNull();
+    expect(scontrinoLive(una(10000, { pizze: "7", ordini: "" }))).toBeNull();
+    expect(scontrinoLive(una(10000, { pizze: "0", ordini: "0" }))).toBeNull();
+    expect(scontrinoLive(una(10000, { pizze: "x", ordini: "3" }))).toBeNull();
+  });
+  it("giorno per giorno: solo i ricavi dei giorni con dati e ordini, non quelli di tutta la settimana", () => {
+    // 7 giorni da 100 € di ricavi; inseriti solo lunedì (4 ordini) e martedì (0 e 0, chiuso a metà): 100 € / 4 = 25 €
+    const giorni = [
+      { ricaviCent: 10000, campi: { pizze: "9", ordini: "4" } },
+      { ricaviCent: 10000, campi: { pizze: "0", ordini: "0" } },
+      ...Array.from({ length: 5 }, () => ({ ricaviCent: 10000, campi: { pizze: "", ordini: "" } })),
+    ];
+    expect(scontrinoLive(giorni)).toBe(2500);
+    expect(riassuntoRighe(giorni)).toMatchObject({ stato: "completa", inserite: 2, pizze: 9, ordini: 4, ricaviConDatiCent: 10000, pizzePerOrdine: 2.25 });
+  });
+  it("3 giorni inseriti su 7: lo scontrino usa i ricavi di quei 3 giorni, non quelli di tutta la settimana", () => {
+    // ricavi: 200 € il lunedì, 300 € il martedì, 100 € il mercoledì, 400 € al giorno da giovedì a domenica (non inseriti)
+    const ricavi = [20000, 30000, 10000, 40000, 40000, 40000, 40000];
+    const campi = [
+      { pizze: "25", ordini: "10" },
+      { pizze: "36", ordini: "12" },
+      { pizze: "10", ordini: "4" },
+      { pizze: "", ordini: "" },
+      { pizze: "", ordini: "" },
+      { pizze: "", ordini: "" },
+      { pizze: "", ordini: "" },
+    ];
+    const giorni = ricavi.map((ricaviCent, i) => ({ ricaviCent, campi: campi[i]! }));
+    // 600 € / 26 ordini = 23,08 € (con tutta la settimana sarebbe 2.200 € / 26 = 84,62 €)
+    expect(scontrinoLive(giorni)).toBe(2308);
+    expect(riassuntoRighe(giorni)).toMatchObject({ inserite: 3, ordini: 26, ricaviConDatiCent: 60000 });
+    expect(totaleParziale([giorni])).toMatchObject({ ricaviCent: 60000, scontrinoMedioCent: 2308 });
+  });
+  it("un giorno sbagliato rende la sede incompleta ma i giorni validi restano nel conto", () => {
+    const giorni = [
+      { ricaviCent: 6000, campi: { pizze: "7", ordini: "3" } },
+      { ricaviCent: 9000, campi: { pizze: "5", ordini: "" } },
+    ];
+    expect(riassuntoRighe(giorni)).toMatchObject({ stato: "incompleta", inserite: 1, ordini: 3, ricaviConDatiCent: 6000, scontrinoMedioCent: 2000 });
+    expect(riassuntoRighe([]).stato).toBe("vuota");
   });
 });
 
@@ -192,12 +260,23 @@ describe("salvataggio della settimana", () => {
   });
 });
 
+describe("titolo del totale della settimana", () => {
+  it("parziale: «1 sede su 2» al singolare, «2 sedi su 3» al plurale", () => {
+    expect(titoloTotaleSettimana(1, 2)).toBe("Totale parziale, 1 sede su 2");
+    expect(titoloTotaleSettimana(2, 3)).toBe("Totale parziale, 2 sedi su 3");
+    expect(titoloTotaleSettimana(0, 2)).toBe("Totale parziale, 0 sedi su 2");
+  });
+  it("tutte le sedi complete", () => {
+    expect(titoloTotaleSettimana(3, 3)).toBe("Totale della settimana, tutte le sedi");
+  });
+});
+
 describe("totale parziale della settimana", () => {
   it("somma solo le sedi complete e dice «n su m»", () => {
     const t = totaleParziale([
-      { ricaviCent: 984000, campi: { pizze: "1412", ordini: "486" } },
-      { ricaviCent: 726000, campi: { pizze: "1038", ordini: "301" } },
-      { ricaviCent: 412000, campi: { pizze: "", ordini: "" } },
+      [{ ricaviCent: 984000, campi: { pizze: "1412", ordini: "486" } }],
+      [{ ricaviCent: 726000, campi: { pizze: "1038", ordini: "301" } }],
+      [{ ricaviCent: 412000, campi: { pizze: "", ordini: "" } }],
     ]);
     expect(t).toMatchObject({ sediComplete: 2, sediTotali: 3, pizze: 2450, ordini: 787, ricaviCent: 1710000 });
     expect(t.scontrinoMedioCent).toBe(2173);
@@ -206,8 +285,8 @@ describe("totale parziale della settimana", () => {
 
   it("una sede con 0 ordini è completa ma non entra nelle medie", () => {
     const t = totaleParziale([
-      { ricaviCent: 5000, campi: { pizze: "0", ordini: "0" } },
-      { ricaviCent: 10000, campi: { pizze: "7", ordini: "3" } },
+      [{ ricaviCent: 5000, campi: { pizze: "0", ordini: "0" } }],
+      [{ ricaviCent: 10000, campi: { pizze: "7", ordini: "3" } }],
     ]);
     expect(t.sediComplete).toBe(2);
     expect(t.ricaviCent).toBe(10000);
@@ -215,8 +294,17 @@ describe("totale parziale della settimana", () => {
   });
 
   it("senza righe complete non ci sono medie", () => {
-    const t = totaleParziale([{ ricaviCent: 5000, campi: { pizze: "", ordini: "" } }]);
+    const t = totaleParziale([[{ ricaviCent: 5000, campi: { pizze: "", ordini: "" } }]]);
     expect(t).toMatchObject({ sediComplete: 0, sediTotali: 1, scontrinoMedioCent: null, pizzePerOrdine: null });
+  });
+
+  it("una sede a giorni e una col totale: per i giorni contano solo i ricavi dei giorni con dati", () => {
+    const giorni = [
+      { ricaviCent: 8000, campi: { pizze: "9", ordini: "4" } },
+      ...Array.from({ length: 6 }, () => ({ ricaviCent: 9000, campi: { pizze: "", ordini: "" } })),
+    ];
+    const t = totaleParziale([giorni, [{ ricaviCent: 5000, campi: { pizze: "10", ordini: "4" } }]]);
+    expect(t).toMatchObject({ sediComplete: 2, pizze: 19, ordini: 8, ricaviCent: 13000, scontrinoMedioCent: 1625 });
   });
 });
 
@@ -292,5 +380,66 @@ describe("banner e elenco delle settimane", () => {
       ["2026-10-19", 2],
       ["2026-10-12", 3],
     ]);
+  });
+});
+
+describe("scontrino delle ultime settimane: senza dati e senza incassi sono diversi", () => {
+  const punti = ultimeSettimane([
+    sett("2026-10-19", null, [1], 0), // nessun dato
+    sett("2026-10-26", null, [], 40), // ordini ma nessun incasso
+    sett("2026-11-02", 2000),
+    sett("2026-11-09", 2100),
+  ]);
+
+  it("ogni settimana ha il suo tipo", () => {
+    expect(punti.map((p) => p.tipo)).toEqual(["senzaDati", "senzaIncassi", "valore", "valore"]);
+  });
+
+  it("sul telefono si scrivono sempre la prima, l'ultima e le settimane senza incassi", () => {
+    expect(punti.map((p, i) => valoreSempreScritto(p, i))).toEqual([true, true, false, true]);
+  });
+
+  it("la riga di spiegazione nomina le settimane con ordini e senza incassi, e non c'è senza", () => {
+    expect(notaSenzaIncassi(punti)).toBe("«—» in S44 (26 ott – 1 nov): ci sono ordini ma nessun incasso registrato.");
+    const due = ultimeSettimane([sett("2026-10-26", null, [], 40), sett("2026-11-02", null, [], 10)]);
+    expect(notaSenzaIncassi(due)).toBe("«—» in S44 (26 ott – 1 nov) e S45 (2 – 8 nov): ci sono ordini ma nessun incasso registrato.");
+    expect(notaSenzaIncassi(ultimeSettimane([sett("2026-10-19", null, [1], 0), sett("2026-11-02", 2000)]))).toBeNull();
+  });
+});
+
+describe("stato di una sede in Pizze e ordini", () => {
+  const r = (stato: "vuota" | "completa" | "incompleta", inserite: number) => ({ stato, inserite, pizze: 0, ordini: 0, ricaviConDatiCent: 0, scontrinoMedioCent: null, pizzePerOrdine: null });
+  it("totale della settimana: «Totale inserito» (non «Completa»: la settimana può essere in corso)", () => {
+    expect(etichettaStatoSede(r("completa", 1), "SETTIMANA")).toEqual({ testo: "Totale inserito", inserito: true });
+  });
+  it("giorno per giorno: «N giorni su 7»; niente: «Da inserire»", () => {
+    expect(etichettaStatoSede(r("completa", 1), "GIORNI")).toEqual({ testo: "1 giorno su 7", inserito: true });
+    expect(etichettaStatoSede(r("completa", 5), "GIORNI")).toEqual({ testo: "5 giorni su 7", inserito: true });
+    expect(etichettaStatoSede(r("vuota", 0), "GIORNI")).toEqual({ testo: "Da inserire", inserito: false });
+    expect(etichettaStatoSede(r("incompleta", 2), "SETTIMANA")).toEqual({ testo: "Da inserire", inserito: false });
+  });
+});
+
+
+describe("Statistiche senza dati: il banner non ripete la scheda vuota", () => {
+  const settimana = { da: "2026-11-09", a: "2026-11-15" };
+
+  it("con dati nel periodo il banner c'è sempre", () => {
+    expect(bannerUtile(false, "2026-11-09", settimana)).toBe(true);
+    expect(bannerUtile(false, "2026-10-05", settimana)).toBe(true);
+  });
+
+  it("periodo vuoto: il banner di una settimana del periodo non si ripete, quello di un'altra settimana resta", () => {
+    expect(bannerUtile(true, "2026-11-09", settimana)).toBe(false);
+    expect(bannerUtile(true, "2026-11-02", settimana)).toBe(true);
+    // la settimana a cavallo dell'inizio del mese tocca il periodo
+    expect(bannerUtile(true, "2026-10-26", { da: "2026-11-01", a: "2026-11-30" })).toBe(false);
+    expect(bannerUtile(true, "2026-10-19", { da: "2026-11-01", a: "2026-11-30" })).toBe(true);
+  });
+
+  it("periodo vuoto: il banner resta se parla anche di una sede che non si sta guardando", () => {
+    // «vuoto» riguarda le sedi scelte, il banner tutte: la scheda vuota non dice niente della sede non scelta.
+    expect(bannerUtile(true, "2026-11-09", settimana, true)).toBe(true);
+    expect(bannerUtile(true, "2026-11-09", settimana, false)).toBe(false);
   });
 });

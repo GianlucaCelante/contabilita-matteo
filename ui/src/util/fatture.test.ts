@@ -58,7 +58,7 @@ describe("fatture: stati", () => {
     expect(passoSuccessivo("PAGATA")).toBeNull();
   });
   it("l'etichetta del badge dice lo stato e cosa succede al tocco; da Pagata non si avanza", () => {
-    expect(etichettaComandoStato("Fatture eventi", "DA_FARE")).toBe("Fatture eventi: Da fare. Segna come emessa");
+    expect(etichettaComandoStato("Fatture eventi", "DA_FARE")).toBe("Fatture eventi: Da emettere. Segna come emessa");
     expect(etichettaComandoStato("Fatture eventi", "EMESSA")).toBe("Fatture eventi: Emessa. Segna come pagata");
     expect(etichettaComandoStato("Fatture eventi", "PAGATA")).toBe("Fatture eventi: Pagata. Per cambiarla usa «Importo, nota e stato»");
   });
@@ -132,11 +132,11 @@ describe("fatture: scadenze", () => {
     expect(tonoVoce({ ...voce, mese: "2026-11", attiva: true }, "2026-11")).toBe("fare");
     expect(tonoVoce({ ...voce, stato: "PAGATA", attiva: true }, "2026-11")).toBe("pagata");
   });
-  it("il testo della Home", () => {
+  it("il testo del Riepilogo", () => {
     expect(testoDaEmettere(3)).toBe("Fatture da emettere questo mese: 3");
     expect(testoDaEmettere(1)).toBe("Fatture da emettere questo mese: 1");
   });
-  it("le righe in evidenza della Home: al massimo due, poi «e altre N»", () => {
+  it("le righe in evidenza del Riepilogo: al massimo due, poi «e altre N»", () => {
     const s = (nome: string, giorni: number) => ({ casellaId: 1, nome, mese: "2026-11", scadenza: "2026-11-07", giorniMancanti: giorni });
     expect(righePromemoria([])).toEqual({ righe: [], altre: 0 });
     expect(righePromemoria([s("Fattura a Rossi", 3)])).toEqual({ righe: ["Fattura a Rossi: scade tra 3 giorni"], altre: 0 });

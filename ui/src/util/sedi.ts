@@ -2,7 +2,8 @@ import type { Sede } from "../api/tipi";
 import { numeroCent } from "./formato";
 
 // Logica pura delle sedi: colori e lettera di ogni sede, selezione (singola o mista), divisione di un importo.
-// Regola chiave: con UNA sola sede attiva l'app e' quella di prima (nessun selettore, badge o scheda «Per sede»).
+// Regola chiave: con UNA sola sede attiva l'app e' quella di prima (nessun selettore, badge o scheda «Per sede»). Una sede vera
+// piu' una personale sono due sedi attive: il selettore c'e' (per vedere la personale), «Per sede» e pizze per sede no.
 
 // ---- colori e lettera ----
 
@@ -74,29 +75,89 @@ export function sediAttive(sedi: readonly Sede[]): Sede[] {
   return ordinaPerOrdine(sedi).filter((s) => !s.archiviata);
 }
 
-// Le novita' (selettore, badge, «Per sede», scelta della sede nei moduli) compaiono solo con almeno due sedi attive.
+// Le sedi del locale: le attive non personali. Una sede personale (spese dei titolari) non ha pizze e ordini e resta fuori dai
+// totali finche' non la si sceglie. Il servizio garantisce che ce ne sia sempre almeno una; se mancasse valgono tutte le attive.
+export function sediDelLocale(sedi: readonly Sede[]): Sede[] {
+  const attive = sediAttive(sedi);
+  const locale = attive.filter((s) => !s.personale);
+  return locale.length > 0 ? locale : attive;
+}
+
+// Le novita' (selettore, badge, scelta della sede nei moduli) compaiono con almeno due sedi attive, personali comprese: con una sede
+// vera e una personale serve il selettore per vedere la personale, e un movimento nuovo chiede la sede.
 export function conPiuSedi(sedi: readonly Sede[]): boolean {
   return sediAttive(sedi).length >= 2;
 }
 
-// ---- selezione ----
-
-// null = tutte le sedi attive (anche quelle che verranno aggiunte). Altrimenti l'elenco degli id scelti.
-export type Scelta = number[] | null;
-
-// Gli id davvero selezionati: quelli scelti che sono ancora attive; se non ne resta nessuna, tutte le attive.
-export function idSelezionati(sedi: readonly Sede[], scelta: Scelta): number[] {
-  const attive = sediAttive(sedi).map((s) => s.id);
-  if (scelta === null) return attive;
-  const validi = attive.filter((id) => scelta.includes(id));
-  return validi.length > 0 ? validi : attive;
+// Per le scelte (selettore, pillole dei moduli): prima le sedi del locale, poi le personali, ognuna nel suo ordine.
+export function localePoiPersonali<T extends Pick<Sede, "personale">>(sedi: readonly T[]): T[] {
+  return [...sedi.filter((s) => !s.personale), ...sedi.filter((s) => s.personale)];
 }
 
-// Il valore da salvare: se sono selezionate tutte le attive diventa null («tutte»).
+// Le sedi che il selettore lascia scegliere: le attive (prima il locale, poi le personali) e in fondo le personali archiviate che hanno
+// movimenti (le spese passate dei titolari restano raggiungibili; le archiviate del locale entrano gia' in «Tutte le sedi»).
+export function sediSelezionabili(sedi: readonly Sede[]): Sede[] {
+  const archiviatePersonali = ordinaPerOrdine(sedi).filter((s) => s.archiviata && s.personale && s.movimenti > 0);
+  return [...localePoiPersonali(sediAttive(sedi)), ...archiviatePersonali];
+}
+
+// Il selettore compare con almeno due sedi da scegliere (anche una sola attiva piu' una personale archiviata con movimenti).
+export function conSelettore(sedi: readonly Sede[]): boolean {
+  return sediSelezionabili(sedi).length >= 2;
+}
+
+// Una sede appena diventata personale esce da una scelta salvata (altrimenti resterebbe accesa senza che nessuno l'abbia scelta come
+// personale). Se non resta niente si torna a «tutte».
+export function senzaSede(scelta: Scelta, id: number): Scelta {
+  if (scelta === null) return null;
+  const resto = scelta.filter((x) => x !== id);
+  return resto.length > 0 ? resto : null;
+}
+
+// Pizze e ordini per sede, «Per sede» e «Tutte, dividi»: solo con almeno due sedi del locale.
+export function conPiuSediDelLocale(sedi: readonly Sede[]): boolean {
+  return sediAttive(sedi).filter((s) => !s.personale).length >= 2;
+}
+
+// ---- selezione ----
+
+// null = tutte le sedi del locale (anche quelle che verranno aggiunte), senza le personali. Altrimenti l'elenco degli id scelti,
+// personali comprese.
+export type Scelta = number[] | null;
+
+const stesseSedi = (a: readonly number[], b: readonly number[]) => a.length === b.length && a.every((id) => b.includes(id));
+
+// Gli id davvero selezionati, nell'ordine del selettore: quelli scelti che si possono ancora scegliere (sediSelezionabili); se non ne
+// resta nessuno, il locale.
+export function idSelezionati(sedi: readonly Sede[], scelta: Scelta): number[] {
+  const locale = sediDelLocale(sedi).map((s) => s.id);
+  if (scelta === null) return locale;
+  const validi = sediSelezionabili(sedi)
+    .map((s) => s.id)
+    .filter((id) => scelta.includes(id));
+  return validi.length > 0 ? validi : locale;
+}
+
+// Vero se la selezione e' esattamente il locale («Tutte le sedi»).
+export function tutteDelLocale(sedi: readonly Sede[], scelta: Scelta): boolean {
+  return stesseSedi(
+    idSelezionati(sedi, scelta),
+    sediDelLocale(sedi).map((s) => s.id),
+  );
+}
+
+// Il valore da salvare: se la selezione e' esattamente il locale diventa null («tutte»).
 export function normalizzaScelta(sedi: readonly Sede[], ids: readonly number[]): Scelta {
-  const attive = sediAttive(sedi).map((s) => s.id);
-  const validi = attive.filter((id) => ids.includes(id));
-  return validi.length === 0 || validi.length === attive.length ? null : validi;
+  const validi = sediSelezionabili(sedi)
+    .map((s) => s.id)
+    .filter((id) => ids.includes(id));
+  return validi.length === 0 ||
+    stesseSedi(
+      validi,
+      sediDelLocale(sedi).map((s) => s.id),
+    )
+    ? null
+    : validi;
 }
 
 // Accende o spegne una sede. L'ultima sede selezionata non si spegne.
@@ -104,7 +165,10 @@ export function alternaSede(sedi: readonly Sede[], scelta: Scelta, id: number): 
   const correnti = idSelezionati(sedi, scelta);
   if (correnti.includes(id)) {
     if (correnti.length === 1) return normalizzaScelta(sedi, correnti);
-    return normalizzaScelta(sedi, correnti.filter((x) => x !== id));
+    return normalizzaScelta(
+      sedi,
+      correnti.filter((x) => x !== id),
+    );
   }
   return normalizzaScelta(sedi, [...correnti, id]);
 }
@@ -113,35 +177,50 @@ export function soloSede(sedi: readonly Sede[], id: number): Scelta {
   return normalizzaScelta(sedi, [id]);
 }
 
-// Il filtro `sedi` da mandare al servizio: niente se sono tutte le attive (cosi' il servizio include anche le archiviate e i
-// totali del passato restano completi), altrimenti «1,2».
+// Il filtro `sedi` da mandare al servizio. Niente se la selezione e' il locale: il servizio fa lo stesso (tutte le non personali)
+// e include anche le archiviate, cosi' i totali del passato restano completi. Con una personale il filtro e' esplicito; se la
+// selezione comprende tutto il locale si aggiungono le sedi archiviate non personali, per la stessa ragione; se comprende tutte le
+// personali attive (almeno una) si aggiungono le personali archiviate.
 export function parametroSedi(sedi: readonly Sede[], scelta: Scelta): string | undefined {
-  if (!conPiuSedi(sedi)) return undefined;
+  if (!conSelettore(sedi) || tutteDelLocale(sedi, scelta)) return undefined;
   const ids = idSelezionati(sedi, scelta);
-  return ids.length === sediAttive(sedi).length ? undefined : ids.join(",");
+  const archiviate = ordinaPerOrdine(sedi).filter((s) => s.archiviata && !ids.includes(s.id));
+  const conTuttoIlLocale = sediDelLocale(sedi).every((s) => ids.includes(s.id));
+  const personaliAttive = sediAttive(sedi).filter((s) => s.personale);
+  const conTutteLePersonali = personaliAttive.length > 0 && personaliAttive.every((s) => ids.includes(s.id));
+  const delLocale = conTuttoIlLocale ? archiviate.filter((s) => !s.personale).map((s) => s.id) : [];
+  const personali = conTutteLePersonali ? archiviate.filter((s) => s.personale).map((s) => s.id) : [];
+  return [...ids, ...delLocale, ...personali].join(",");
 }
 
-// «Tutte le sedi», «Via Roma», «Via Roma + Lungomare».
+// «Tutte le sedi», «Via Roma», «Via Roma + Lungomare», «Tutte le sedi + Casa» (tutto il locale piu' una personale).
 export function etichettaSedi(sedi: readonly Sede[], scelta: Scelta): string {
+  if (tutteDelLocale(sedi, scelta)) return "Tutte le sedi";
   const ids = idSelezionati(sedi, scelta);
-  if (ids.length === sediAttive(sedi).length) return "Tutte le sedi";
-  return ids.map((id) => sedi.find((s) => s.id === id)?.nome ?? "").join(" + ");
+  const nome = (id: number) => sedi.find((s) => s.id === id)?.nome ?? "";
+  const locale = sediDelLocale(sedi).map((s) => s.id);
+  if (locale.length >= 2 && locale.every((id) => ids.includes(id))) {
+    return ["Tutte le sedi", ...ids.filter((id) => !locale.includes(id)).map(nome)].join(" + ");
+  }
+  return ids.map(nome).join(" + ");
 }
 
-// Per i titoli: quali sedi sono incluse, o niente se sono tutte. Oltre tre nomi: «4 sedi su 5».
+// Per i titoli: quali sedi sono incluse, o niente se e' il locale. Oltre tre nomi: «4 sedi su 5» (sulle attive).
 export function sediIncluse(sedi: readonly Sede[], scelta: Scelta): string | null {
-  if (!conPiuSedi(sedi)) return null;
+  if (!conSelettore(sedi) || tutteDelLocale(sedi, scelta)) return null;
+  const etichetta = etichettaSedi(sedi, scelta);
   const ids = idSelezionati(sedi, scelta);
-  const tot = sediAttive(sedi).length;
-  if (ids.length === tot) return null;
-  return ids.length <= 3 ? etichettaSedi(sedi, scelta) : `${ids.length} sedi su ${tot}`;
+  if (ids.length <= 3 || etichetta.startsWith("Tutte le sedi")) return etichetta;
+  return `${ids.length} sedi su ${sediAttive(sedi).length}`;
 }
 
-// Preselezione di un movimento nuovo: la sede singola selezionata, altrimenti nessuna (si sceglie).
+// La sede singola selezionata, se non e' personale. I moduli partono da `sedeDiPartenza` (util/ultimaSede.ts), che aggiunge l'ultima
+// sede usata: questa resta come regola di base, con i suoi test.
 export function sedePreselezionata(sedi: readonly Sede[], scelta: Scelta): number | null {
   if (!conPiuSedi(sedi)) return null;
   const ids = idSelezionati(sedi, scelta);
-  return ids.length === 1 ? ids[0]! : null;
+  if (ids.length !== 1) return null;
+  return sedi.find((s) => s.id === ids[0])?.personale ? null : ids[0]!;
 }
 
 // ---- persistenza ----

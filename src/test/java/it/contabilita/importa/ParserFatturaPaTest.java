@@ -99,9 +99,11 @@ class ParserFatturaPaTest {
     @Test
     void fileNonXmlOSenzaDatiUtiliDannoErroreChiaro() {
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt("questo non è xml")))
-                .isInstanceOf(ParserFatturaPa.ErroreLettura.class);
+                .isInstanceOf(ParserFatturaPa.ErroreLettura.class)
+                .hasMessageContaining("fattura elettronica") // il messaggio lo legge il cliente: niente «XML»
+                .hasMessageNotContaining("XML");
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt("<?xml version=\"1.0\"?><altro><a/></altro>")))
-                .isInstanceOf(ParserFatturaPa.ErroreLettura.class).hasMessageContaining("FatturaPA");
+                .isInstanceOf(ParserFatturaPa.ErroreLettura.class).hasMessage("Il file non è una fattura elettronica.");
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt(fattura(denominazione("X", "1")))))
                 .isInstanceOf(ParserFatturaPa.ErroreLettura.class);
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt(fattura("<CedentePrestatore/>",
@@ -131,12 +133,62 @@ class ParserFatturaPaTest {
     void xxeConDtdEsternaViaReteERifiutato() {
         String xml = "<?xml version=\"1.0\"?>\n<!DOCTYPE FatturaElettronica SYSTEM \"http://127.0.0.1:1/x.dtd\">\n<FatturaElettronica/>";
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt(xml))).isInstanceOf(ParserFatturaPa.ErroreLettura.class)
-                .hasMessageContaining("DOCTYPE");
+                .hasMessage("Il file contiene istruzioni non ammesse e non è stato letto.");
     }
 
     @Test
     void billionLaughsEFermatoDalDivietoDiDoctype() {
         String xml = "<?xml version=\"1.0\"?><!DOCTYPE lolz [<!ENTITY a \"aaaaaaaaaa\"><!ENTITY b \"&a;&a;&a;&a;&a;&a;&a;&a;\">]><lolz>&b;</lolz>";
         assertThatThrownBy(() -> ParserFatturaPa.leggi(byt(xml))).isInstanceOf(ParserFatturaPa.ErroreLettura.class);
+    }
+
+    // s35: i messaggi li legge il cliente. Niente nomi dei campi del tracciato, sigle o numeri di riga: quelli restano nel dettaglio (log).
+    private static final java.util.regex.Pattern GERGO = java.util.regex.Pattern.compile(
+            "FatturaPA|XML|DOCTYPE|DTD|entità|TD\\d\\d|CedentePrestatore|Denominazione|DatiGenerali|FatturaElettronicaBody|Importo[A-Z]|Imposta|riga \\d");
+
+    private static ParserFatturaPa.ErroreLettura errore(String xml) {
+        try {
+            ParserFatturaPa.leggi(byt(xml));
+        } catch (ParserFatturaPa.ErroreLettura e) {
+            assertThat(GERGO.matcher(e.getMessage()).find()).as("gergo in «%s»", e.getMessage()).isFalse();
+            return e;
+        }
+        throw new AssertionError("la lettura doveva fallire");
+    }
+
+    @Test
+    void iMessaggiPerIlClienteSonoInItalianoSempliceEIlDettaglioTecnicoRestaAParte() {
+        String ok = denominazione("X", "1");
+        assertThat(errore("riga uno\nquesto non è xml")).hasMessage("Il file non è una fattura elettronica valida.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("riga 1"));
+        assertThat(errore("<?xml version=\"1.0\"?><altro><a/></altro>")).hasMessage("Il file non è una fattura elettronica.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("altro"));
+        assertThat(errore("<?xml version=\"1.0\"?><!DOCTYPE x [<!ENTITY a \"b\">]><x/>"))
+                .hasMessage("Il file contiene istruzioni non ammesse e non è stato letto.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("DOCTYPE"));
+        assertThat(errore(fattura("<CedentePrestatore/>", body("TD01", "1", "2026-04-04", "10.00", "8.20", "1.80"))))
+                .hasMessage("Nella fattura manca il nome del fornitore.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("CedentePrestatore"));
+        assertThat(errore(fattura("<CedentePrestatore><DatiAnagrafici><Anagrafica/></DatiAnagrafici></CedentePrestatore>",
+                body("TD01", "1", "2026-04-04", "10.00", "8.20", "1.80"))))
+                .hasMessage("Nella fattura manca il nome del fornitore.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("Denominazione"));
+        assertThat(errore(fattura(ok))).hasMessage("Il file non contiene nessuna fattura.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("FatturaElettronicaBody"));
+        assertThat(errore(fattura(ok, "<FatturaElettronicaBody><DatiGenerali/></FatturaElettronicaBody>")))
+                .hasMessage("Nella fattura mancano numero e data.")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("DatiGeneraliDocumento"));
+        assertThat(errore(fattura(ok, body("TD01", "", "2026-04-04", "10.00", "8.20", "1.80")))).hasMessage("Manca il numero della fattura.");
+        assertThat(errore(fattura(ok, body("TD01", "1", "31/12/2026", "10.00", "8.20", "1.80"))))
+                .hasMessage("La data della fattura manca o non è valida: «31/12/2026».");
+        assertThat(errore(fattura(ok, body("TD01", "1", "2026-04-04", "abc", "8.20", "1.80"))))
+                .hasMessage("Il totale della fattura non è un importo valido: «abc».")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("ImportoTotaleDocumento"));
+        assertThat(errore(fattura(ok, body("TD01", "1", "2026-04-04", "10.00", "x", "1.80"))))
+                .hasMessage("L'imponibile della fattura non è un importo valido: «x».")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("ImponibileImporto"));
+        assertThat(errore(fattura(ok, body("TD01", "1", "2026-04-04", "10.00", "8.20", "y"))))
+                .hasMessage("L'IVA della fattura non è un importo valido: «y».")
+                .satisfies(e -> assertThat(e.dettaglio()).contains("Imposta"));
     }
 }

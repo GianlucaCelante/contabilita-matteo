@@ -1,17 +1,19 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useSedi } from "../hooks/useSedi";
-import BadgeSede from "./BadgeSede";
+import BadgeSede, { SegnoPersonale } from "./BadgeSede";
 import Finestra from "./Finestra";
 import { IconaGiu, IconaPiu, IconaSede, IconaSpunta } from "./Icone";
 
-// Quali sedi vedere: una sola (vista singola) o piu' d'una (vista mista). Compare solo con almeno due sedi attive.
+// Quali sedi vedere: una sola (vista singola) o piu' d'una (vista mista). Compare con almeno due sedi da scegliere (anche una sede vera
+// piu' una personale: serve per vedere la personale). «Tutte» sono le sedi del locale; le personali stanno dopo, col contrassegno
+// «Personale», e si accendono a mano; in fondo le personali archiviate che hanno movimenti («(archiviata)»).
 // Telefono: un chip con le sedi scelte che apre un foglio con le caselle, «Solo» e «Tutte le sedi».
 // Computer: una barra di pillole, una per sede (si accendono e si spengono; l'ultima accesa resta accesa).
 export default function SelettoreSedi({ className = "" }: { className?: string }) {
   const sedi = useSedi();
   const [aperto, setAperto] = useState(false);
-  if (!sedi.piu) return null;
+  if (!sedi.selettore) return null;
 
   return (
     <div className={className}>
@@ -43,14 +45,20 @@ export default function SelettoreSedi({ className = "" }: { className?: string }
           </span>
           Tutte
         </button>
-        {sedi.attive.map((s) => {
+        {sedi.selezionabili.map((s, i, elenco) => {
           const acceso = sedi.selezionate.some((x) => x.id === s.id);
+          const primaPersonale = s.personale && !elenco[i - 1]?.personale;
           return (
-            <button key={s.id} type="button" className="pillaSede" aria-pressed={acceso} onClick={() => sedi.alterna(s.id)}>
-              <BadgeSede id={s.id} taglia="piccolo" decorativo />
-              {s.nome}
-              {acceso && <IconaSpunta larghezza={16} spessoreTratto={3} />}
-            </button>
+            <span key={s.id} className="contents">
+              {primaPersonale && <span aria-hidden="true" className="mx-1 h-6 w-px bg-bordo2" />}
+              <button type="button" className="pillaSede" aria-pressed={acceso} onClick={() => sedi.alterna(s.id)}>
+                <BadgeSede id={s.id} taglia="piccolo" decorativo />
+                {s.nome}
+                {s.archiviata ? " (archiviata)" : ""}
+                {s.personale && <SegnoPersonale />}
+                {acceso && <IconaSpunta larghezza={16} spessoreTratto={3} />}
+              </button>
+            </span>
           );
         })}
       </div>
@@ -74,7 +82,8 @@ function FoglioSedi({ onChiudi }: { onChiudi: () => void }) {
       onChiudi={onChiudi}
       piede={
         <button type="button" className="btn primario w-full" data-focus-iniziale onClick={onChiudi}>
-          Mostra {sedi.etichetta}
+          {/* «Mostra tutte le sedi», non «Mostra Tutte le sedi»; i nomi delle sedi restano come sono. */}
+          Mostra {sedi.etichetta.replace(/^Tutte le sedi/, "tutte le sedi")}
         </button>
       }
     >
@@ -89,24 +98,36 @@ function FoglioSedi({ onChiudi }: { onChiudi: () => void }) {
           <Casella acceso={sedi.tutteSelezionate} />
           Tutte le sedi
         </button>
-        {sedi.attive.map((s) => {
+        {sedi.selezionabili.map((s, i, elenco) => {
           const acceso = sedi.selezionate.some((x) => x.id === s.id);
+          const primaPersonale = s.personale && !elenco[i - 1]?.personale;
           return (
-            <div key={s.id} className="flex items-center gap-2 border-t border-riga">
-              <button
-                type="button"
-                role="checkbox"
-                aria-checked={acceso}
-                className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 text-left text-[16px] font-bold"
-                onClick={() => sedi.alterna(s.id)}
-              >
-                <Casella acceso={acceso} />
-                <BadgeSede id={s.id} decorativo />
-                <span className="min-w-0 truncate">{s.nome}</span>
-              </button>
-              <button type="button" className="pillaSede senzaBadge !min-h-[44px] !text-[13px]" aria-label={`Solo ${s.nome}`} onClick={() => sedi.solo(s.id)}>
-                Solo
-              </button>
+            <div key={s.id} className="contents">
+              {primaPersonale && (
+                <p className="m-0 border-t border-riga pt-3 pb-1 text-[13.5px] text-tenue">
+                  <b className="text-testo">Sedi personali</b> (spese dei titolari): restano fuori da «Tutte le sedi», accendile per vederle.
+                </p>
+              )}
+              <div className="flex items-center gap-2 border-t border-riga">
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={acceso}
+                  className="flex min-h-[56px] min-w-0 flex-1 items-center gap-3 text-left text-[16px] font-bold"
+                  onClick={() => sedi.alterna(s.id)}
+                >
+                  <Casella acceso={acceso} />
+                  <BadgeSede id={s.id} decorativo />
+                  <span className="min-w-0 truncate">
+                    {s.nome}
+                    {s.archiviata ? " (archiviata)" : ""}
+                  </span>
+                  {s.personale && <SegnoPersonale />}
+                </button>
+                <button type="button" className="pillaSede senzaBadge !min-h-[44px] !text-[13px]" aria-label={`Solo ${s.nome}`} onClick={() => sedi.solo(s.id)}>
+                  Solo
+                </button>
+              </div>
             </div>
           );
         })}

@@ -98,6 +98,16 @@ describe("demo: GET /statistiche/voci", () => {
     expect(r.voci[0]).toMatchObject({ totaleCent: 80000, movimenti: 1, perMese: [0, 80000, 0] });
     expect(r.voci[1]).toMatchObject({ totaleCent: 70000, movimenti: 3, perMese: [30000, 50000, -10000] });
     for (const v of r.voci) expect(v.perMese.reduce((t, x) => t + x, 0)).toBe(v.totaleCent);
+    // movimentiPerMese: quanti movimenti per mese (anche la nota di credito), lungo come mesi, somma = movimenti
+    expect(r.voci[1]!.movimentiPerMese).toEqual([1, 1, 1]);
+    for (const g of ["FORNITORE", "DIPENDENTE", "CATEGORIA"]) {
+      const s = get("/statistiche/voci", `da=2026-07-01&a=2026-11-30&raggruppa=${g}`).corpo as StatisticheVoci;
+      expect(s.voci.length, g).toBeGreaterThan(0);
+      for (const v of s.voci) {
+        expect(v.movimentiPerMese, g).toHaveLength(s.mesi.length);
+        expect(v.movimentiPerMese.reduce((t, x) => t + x, 0), g).toBe(v.movimenti);
+      }
+    }
     expect(r.totaleCent).toBe(150000);
     expect(r.movimenti).toBe(4);
   });
@@ -121,6 +131,25 @@ describe("demo: GET /statistiche/voci", () => {
     expect(d.voci).toEqual([]);
     expect((voci("raggruppa=DIPENDENTE&tipo=RICAVO").corpo as StatisticheVoci).voci).toEqual([]);
     expect(d.totaleCent).toBe(0);
+  });
+
+  it("fornitori senza tipo: solo i costi variabili, come il servizio (un costo fisso del fornitore resta fuori)", () => {
+    nuovo({ data: "2019-03-05", tipo: "COSTO_VARIABILE", documento: "FATTURA", importoCent: 1000, fornitore: "Doppio Uso" });
+    expect(nuovo({ data: "2019-03-06", tipo: "COSTO_FISSO", documento: "NESSUNO", importoCent: 50000, fornitore: "Doppio Uso" }).fornitore?.nome).toBe("Doppio Uso");
+    const f = voci("raggruppa=FORNITORE").corpo as StatisticheVoci;
+    expect(f).toMatchObject({ totaleCent: 1000, movimenti: 1 });
+    // con tipo=COSTI esplicito entrano anche i fissi
+    expect((voci("raggruppa=FORNITORE&tipo=COSTI").corpo as StatisticheVoci).totaleCent).toBe(51000);
+  });
+
+  it("la risposta porta il tipo effettivo, come il servizio: null per i dipendenti e per le categorie senza tipo", () => {
+    const tipo = (q: string) => (voci(q).corpo as StatisticheVoci).tipo;
+    expect(tipo("raggruppa=FORNITORE")).toBe("COSTO_VARIABILE");
+    expect(tipo("raggruppa=FORNITORE&tipo=COSTI")).toBe("COSTI");
+    expect(tipo("raggruppa=CATEGORIA")).toBeNull();
+    expect(tipo("raggruppa=CATEGORIA&tipo=RICAVO")).toBe("RICAVO");
+    expect(tipo("raggruppa=DIPENDENTE")).toBeNull();
+    expect(tipo("raggruppa=DIPENDENTE&tipo=COSTO_FISSO")).toBeNull();
   });
 
   it("dipendenti: regolare ed extra separati; il filtro per sedi vale", () => {

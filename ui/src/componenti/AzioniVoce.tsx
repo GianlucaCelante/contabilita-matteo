@@ -332,10 +332,11 @@ function Unisci({ anagrafica, voce, onIndietro, onChiudi, onFatto }: ProprietaFa
                   type="button"
                   role="radio"
                   aria-checked={attiva}
-                  className={"flex min-h-[48px] w-full shrink-0 items-center gap-3 rounded-xl border px-3.5 text-[16px] font-bold " + (attiva ? "border-verde bg-verdechiaro text-verdescuro" : "border-bordo2 bg-carta hover:bg-sabbia")}
+                  className={"flex min-h-[48px] w-full shrink-0 items-center gap-3 rounded-xl border px-3.5 py-2 text-left text-[16px] font-bold leading-snug " + (attiva ? "border-verde bg-verdechiaro text-verdescuro" : "border-bordo2 bg-carta hover:bg-sabbia")}
                   onClick={() => setScelta(x.id)}
                 >
-                  <span className="min-w-0 flex-1 truncate">{x.nome}</span>
+                  {/* Il nome va a capo, mai tagliato: due voci simili si distinguono dalla fine del nome. */}
+                  <span className="min-w-0 flex-1 break-words">{x.nome}</span>
                   <span className="num shrink-0 text-[13px] font-normal text-spento">{x.usi} mov.</span>
                   {attiva && <IconaSpunta larghezza={18} spessoreTratto={2.6} />}
                 </button>

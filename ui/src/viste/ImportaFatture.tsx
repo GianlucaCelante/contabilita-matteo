@@ -1,20 +1,28 @@
-import { useId, useMemo, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ErroreRichiesta, messaggioErrore } from "../api/client";
+import { chiavi, ErroreRichiesta, invalidaVoci, messaggioErrore } from "../api/client";
 import { apiImporta, type AnteprimaImportazione, type ErroreFileImportato, type FatturaLetta } from "../api/importa";
-import BadgeSede from "../componenti/BadgeSede";
+import BadgeSede, { SegnoPersonale } from "../componenti/BadgeSede";
 import Combobox from "../componenti/Combobox";
 import { IconaAllarme, IconaCarica, IconaCerca, IconaCercaDiNuovo, IconaGiu, IconaInfo } from "../componenti/Icone";
 import SelettoreModalita from "../componenti/SelettoreModalita";
 import { Caricamento, Vuoto } from "../componenti/Stati";
 import Testata from "../componenti/Testata";
+import { areaLibera, contenitoreScorrevole } from "../hooks/scorriInVista";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSedi } from "../hooks/useSedi";
 import { useSuggerimentiCategorie } from "../hooks/useSuggerimenti";
 import { useSoloTocco } from "../hooks/useSoloTocco";
-import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, filtraFatture, raggruppaErrori, riassuntoSelezione, testoRiassunto, titoloCaricamento, type Filtro } from "../util/anteprimaImportazione";
-import { dataBreve, euro } from "../util/formato";
+import { useTornaIndietro } from "../hooks/useTornaIndietro";
+import { altreDelFornitore, applicaCategoriaAlFornitore, conteggiFiltri, etichetteDocumento, filtraFatture, spiegazioniDocumento, raggruppaErrori, riassuntoSelezione, testoRiassunto, titoloCaricamento, totaleNettoCent, type Filtro } from "../util/anteprimaImportazione";
+import { sedeDellImportazione, sediDopoSalvataggio } from "../util/sedeDopoSalvataggio";
+import { avvisoImportazione } from "../util/avvisoSalvataggio";
+import { leggiFiltri, magazzinoBrowser, periodoDopoImportazione, salvaFiltri } from "../util/filtriSalvati";
+import { dataBreve, euro, oggiIso } from "../util/formato";
+import { seguePeriodoSalvato, senzaPeriodo } from "../util/ritorno";
+import { scorrimentoAnteprima } from "../util/scorriAnteprima";
+import { localePoiPersonali } from "../util/sedi";
+import { leggiUltimaSede, magazzinoUltimaSede, ricordaUltimaSede, sedeDiPartenza } from "../util/ultimaSede";
 
 const PAGINA = 50; // quante righe dell'anteprima si disegnano alla volta: con centinaia di fatture la pagina sarebbe lentissima
 const FILTRI: { valore: Filtro; etichetta: string }[] = [
@@ -25,7 +33,6 @@ const FILTRI: { valore: Filtro; etichetta: string }[] = [
   { valore: "integrazioni", etichetta: "Integrazioni" },
   { valore: "escluse", etichetta: "Escluse" },
 ];
-const INVALIDA = ["movimenti", "movimento", "riepilogo", "fornitori", "categorie", "sedi"];
 const SITO_AGENZIA = "https://www.agenziaentrate.gov.it";
 
 // ---- riquadro «Dove trovo le fatture?» ----
@@ -53,21 +60,21 @@ const PASSI: { id: string; testo: ReactNode }[] = [
     id: "scarico",
     testo: (
       <>
-        Scarica il file <b>.zip</b> e trascinalo qui: dentro ci sono tutti gli XML.
+        Scarica il file <b>.zip</b> e trascinalo qui: dentro ci sono tutte le fatture.
       </>
     ),
   },
 ];
 
-function RiquadroDove({ id }: { id: string }) {
+function RiquadroDove({ id, className = "" }: { id: string; className?: string }) {
   return (
-    <section id={id} aria-label="Dove trovo le fatture?" className="scheda flex flex-col gap-4 px-5 py-4 md:flex-row md:gap-7 md:px-6">
+    <section id={id} aria-label="Dove trovo le fatture?" className={"scheda flex flex-col gap-4 px-5 py-4 md:flex-row md:gap-7 md:px-6 " + className}>
       <div className="md:w-[240px] md:shrink-0">
         <h2 className="text-[18px] font-bold">Dove trovo le fatture?</h2>
         <p className="m-0 mt-1.5 text-[14px] leading-snug text-spento">
           Sul sito dell&apos;Agenzia delle Entrate, nell&apos;area riservata. Se non hai l&apos;accesso, il commercialista può scaricarle per te.
         </p>
-        <a href={SITO_AGENZIA} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[14px] font-bold text-verde underline">
+        <a href={SITO_AGENZIA} target="_blank" rel="noreferrer" className="mt-0.5 inline-flex min-h-[44px] items-center text-[14px] font-bold text-verde underline">
           Apri il sito dell&apos;Agenzia delle Entrate
         </a>
       </div>
@@ -90,12 +97,16 @@ function RiquadroDove({ id }: { id: string }) {
 
 // ---- zona di caricamento ----
 
-function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void; occupato: boolean }) {
+// `letti`: da cosa sono state lette le fatture che si vedono sotto («fatture.zip», «3 file»), o null se non c'e' ancora un'anteprima.
+// Con un'anteprima, sul telefono la zona si riduce a una riga («fatture.zip · Scegli altri file»): quello che conta e' sotto.
+function ZonaCaricamento({ onFile, occupato, letti }: { onFile: (file: File[]) => void; occupato: boolean; letti: string | null }) {
   const idInput = useId();
   const idRiquadro = useId();
   const [aperto, setAperto] = useState(false);
   const [sopra, setSopra] = useState(false);
   const soloTocco = useSoloTocco();
+  const ridotta = letti !== null;
+  const soloComputer = ridotta ? " max-md:hidden" : "";
 
   function suDrop(e: DragEvent<HTMLElement>) {
     e.preventDefault();
@@ -119,42 +130,46 @@ function ZonaCaricamento({ onFile, occupato }: { onFile: (file: File[]) => void;
         onDragLeave={() => setSopra(false)}
         onDrop={suDrop}
         className={
-          "flex flex-col gap-4 rounded-[18px] border-2 border-dashed px-5 py-4 md:min-h-[88px] md:flex-row md:items-center md:justify-between md:gap-6 md:px-7 md:py-2 " +
+          "flex gap-4 rounded-[18px] border-2 border-dashed px-5 py-4 md:min-h-[88px] md:flex-row md:items-center md:justify-between md:gap-6 md:px-7 md:py-2 " +
+          (ridotta ? "max-md:items-center max-md:justify-between max-md:gap-3 max-md:px-4 max-md:py-2 " : "flex-col ") +
           (sopra ? "border-verde bg-verdechiaro" : "border-tratteggio bg-crema")
         }
       >
-        <div className="flex min-w-0 items-center gap-4">
+        {ridotta && (
+          <p className="m-0 min-w-0 flex-1 text-[15px] font-bold leading-snug [overflow-wrap:anywhere] md:hidden">{letti}</p>
+        )}
+        <div className={"flex min-w-0 items-center gap-4" + soloComputer}>
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-verdechiaro text-verdescuro">
             <IconaCarica larghezza={24} />
           </span>
           <div className="min-w-0">
             <p className="m-0 text-[17px] font-bold">{titoloCaricamento(soloTocco)}</p>
             <p className="m-0 text-[14px] text-spento">
-              Uno o più file .xml (anche firmati, .xml.p7m), oppure uno .zip con dentro tutti gli XML. Vengono lette su questo dispositivo, non inviate da nessuna parte.
+              Uno o più file di fatture elettroniche (.xml, anche firmati .xml.p7m), oppure uno .zip che le contiene tutte. Vengono letti su questo dispositivo, non inviati da nessuna parte.
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3 md:shrink-0 md:flex-nowrap">
-          <button type="button" className="btn grande !gap-2 !px-[18px] !text-[15px] text-verdescuro" aria-expanded={aperto} aria-controls={idRiquadro} onClick={() => setAperto((a) => !a)}>
+        <div className="flex shrink-0 flex-wrap items-center gap-3 md:flex-nowrap">
+          <button type="button" className={"btn grande !gap-2 !px-[18px] !text-[15px] text-verdescuro" + soloComputer} aria-expanded={aperto} aria-controls={idRiquadro} onClick={() => setAperto((a) => !a)}>
             <IconaInfo larghezza={20} spessoreTratto={2} />
             <span>Dove trovo i file?</span>
           </button>
           <input id={idInput} type="file" multiple accept=".xml,.p7m,.zip" className="peer sr-only" disabled={occupato} onChange={suScelta} />
           <label
             htmlFor={idInput}
-            className="btn grande !px-[22px] peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-verde peer-disabled:opacity-55"
+            className={"btn grande !px-[22px] peer-focus-visible:outline-3 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-verde peer-disabled:opacity-55" + (ridotta ? " max-md:!min-h-[44px] max-md:!px-4 max-md:!text-[15px]" : "")}
           >
-            Scegli i file
+            {ridotta ? "Scegli altri file" : "Scegli i file"}
           </label>
           {import.meta.env.VITE_DEMO === "1" && (
             // Solo nella demo: chi la prova non ha fatture XML sotto mano.
-            <button type="button" className="btn grande primario !px-[22px]" disabled={occupato} onClick={() => onFile([new File(["demo"], "fatture-di-esempio.xml", { type: "text/xml" })])}>
+            <button type="button" className={"btn grande primario !px-[22px]" + soloComputer} disabled={occupato} onClick={() => onFile([new File(["demo"], "fatture-di-esempio.xml", { type: "text/xml" })])}>
               Prova con fatture di esempio
             </button>
           )}
         </div>
       </section>
-      {aperto && <RiquadroDove id={idRiquadro} />}
+      {aperto && <RiquadroDove id={idRiquadro} className={soloComputer} />}
     </>
   );
 }
@@ -174,7 +189,6 @@ interface ProprietaRiga {
 
 function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria, altre, onApplicaAlFornitore }: ProprietaRiga) {
   const sugg = useSuggerimentiCategorie("COSTO_VARIABILE", categoria);
-  const nota = f.notaDiCredito;
   const etichetta = `Categoria della fattura ${f.numero} di ${f.fornitore.nome}`;
   return (
     <li
@@ -184,25 +198,35 @@ function RigaFattura({ f, selezionata, categoria, onSeleziona, onCategoria, altr
         (f.duplicata ? "bg-ambrachiaro" : "")
       }
     >
-      <input
-        type="checkbox"
-        className="h-6 w-6 accent-verde"
-        checked={selezionata}
-        disabled={f.duplicata}
-        onChange={(e) => onSeleziona(e.target.checked)}
-        aria-label={`Importa la fattura ${f.numero} di ${f.fornitore.nome}`}
-      />
+      {/* La casella e' da 24 px: la label intorno porta l'area di tocco a 44 px senza spostare niente (margini negativi). */}
+      <label className="-m-2.5 flex h-11 w-11 items-center justify-center">
+        <input
+          type="checkbox"
+          className="h-6 w-6 accent-verde"
+          checked={selezionata}
+          disabled={f.duplicata}
+          onChange={(e) => onSeleziona(e.target.checked)}
+          aria-label={`Importa la fattura ${f.numero} di ${f.fornitore.nome}`}
+        />
+      </label>
       <div className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[15px] font-bold" title={f.fornitore.nome}>{f.fornitore.nome}</span>
-          {nota && <span className="etichettaTipo shrink-0 bg-verdechiaro text-verdescuro">Nota di credito</span>}
-          {f.integrazione && <span className="etichettaTipo shrink-0 bg-sabbia text-spento" title="Autofattura per un acquisto dall'estero: conta come costo">Integrazione</span>}
+          {etichetteDocumento(f).map((e) => (
+            <span key={e.testo} className={"etichettaTipo shrink-0 " + (e.tono === "credito" ? "bg-verdechiaro text-verdescuro" : "bg-sabbia text-spento")}>
+              {e.testo}
+            </span>
+          ))}
         </div>
         {f.duplicata ? (
           <div className="text-[13px] font-bold text-ambra">{f.motivo ?? "Già registrata"}: non verrà aggiunta</div>
         ) : (
           f.fornitore.partitaIva && <div className="text-[13px] text-spento">P.IVA {f.fornitore.partitaIva}</div>
         )}
+        {/* Che cosa vuol dire l'etichetta: testo normale, cosi' lo leggono anche il telefono (niente passaggio del mouse) e il lettore di schermo. */}
+        {spiegazioniDocumento(f).map((s) => (
+          <div key={s} className="spiegazioneDocumento text-[13px] text-spento">{s}</div>
+        ))}
       </div>
       <span className="num truncate text-[15px] @max-[999px]:hidden" title={f.numero}>{f.numero}</span>
       <span className="num text-[15px] @max-[999px]:hidden">{dataBreve(f.data).slice(0, 5)}</span>
@@ -289,17 +313,43 @@ function Scarti({ errori }: { errori: ErroreFileImportato[] }) {
 // ---- anteprima con conferma ----
 
 function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImportazione; fonte: string; onScaduta: () => void; onAltri: () => void }) {
-  const navigate = useNavigate();
+  const { torna, esci } = useTornaIndietro();
   const avvisa = useAvviso();
   const client = useQueryClient();
+  // A lettura finita il risultato va in cima alla parte visibile: altrimenti resta sotto la zona di caricamento, fuori schermo.
+  // Sul telefono la barra «Annulla | Importa» copre il fondo: si scorre quel tanto in piu' che serve perche' la prima fattura si veda
+  // tutta sopra la barra, senza mai passare il titolo «N fatture lette» (util/scorriAnteprima.ts).
+  // Si scorre soltanto: il fuoco resta dov'era, e chi usa lo screen reader lo sente dalla regione «status» della schermata.
+  const rifInizio = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const inizio = rifInizio.current;
+    if (!inizio) return;
+    const ridotto = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const comportamento: ScrollBehavior = ridotto ? "auto" : "smooth";
+    const contenitore = contenitoreScorrevole(inizio);
+    if (!contenitore) {
+      inizio.scrollIntoView({ block: "start", behavior: comportamento });
+      return;
+    }
+    const scheda = inizio.querySelector<HTMLElement>("[data-fatture-lette]");
+    const prima = scheda?.querySelector<HTMLElement>("li");
+    const delta = scorrimentoAnteprima({
+      inizio: inizio.getBoundingClientRect().top,
+      titolo: scheda && prima ? scheda.getBoundingClientRect().top : null,
+      primaBasso: prima ? prima.getBoundingClientRect().bottom : null,
+      ...areaLibera(contenitore),
+    });
+    if (Math.abs(delta) > 1) contenitore.scrollBy({ top: delta, behavior: comportamento });
+  }, []);
   const [escluse, setEscluse] = useState<Set<number>>(() => new Set());
   const [categorie, setCategorie] = useState<Record<number, string>>(() =>
     Object.fromEntries(dati.fatture.map((f) => [f.indice, f.categoriaSuggerita ?? ""])),
   );
 
-  // La sede delle fatture: con piu' sedi attive si parte dalla sola sede selezionata, altrimenti si sceglie. Con una sola il servizio usa quella.
+  // La sede delle fatture: con piu' sedi attive si parte dalla sola sede selezionata, altrimenti dall'ultima usata su questo
+  // dispositivo (util/ultimaSede.ts), altrimenti si sceglie. Con una sola il servizio usa quella.
   const sedi = useSedi();
-  const [sedeId, setSedeId] = useState<number | null>(sedi.sedePreselezionata);
+  const [sedeId, setSedeId] = useState<number | null>(() => sedeDiPartenza(sedi.sedi, sedi.selezionate.map((s) => s.id), leggiUltimaSede()));
   const [manca, setManca] = useState(false);
   const [testo, setTesto] = useState("");
   const [filtro, setFiltro] = useState<Filtro>("tutte");
@@ -309,7 +359,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
   const riassunto = useMemo(() => riassuntoSelezione(selezionate), [selezionate]);
   const conteggi = useMemo(() => conteggiFiltri(dati.fatture, escluse), [dati.fatture, escluse]);
   const visibili = useMemo(() => filtraFatture(dati.fatture, { testo, filtro }, escluse), [dati.fatture, testo, filtro, escluse]);
-  const cosa = riassunto.note > 0 ? "documenti" : "fatture";
+  const cosa: "documenti" | "fatture" = riassunto.note > 0 ? "documenti" : "fatture";
 
   const conferma = useMutation({
     mutationFn: () =>
@@ -319,17 +369,34 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
         sedi.piu && sedeId !== null ? sedeId : undefined,
       ),
     onSuccess: (esito) => {
-      for (const k of INVALIDA) void client.invalidateQueries({ queryKey: [k] });
+      // Nuove fatture: cambiano elenchi, riepilogo e statistiche (per voce comprese), e il conto dei movimenti della sede.
+      invalidaVoci(client);
+      void client.invalidateQueries({ queryKey: chiavi.sedi });
       const non = esito.ignorate.length;
       if (esito.importati === 0) {
         avvisa(non > 0 ? `Nessuna fattura importata: ${esito.ignorate[0]?.motivo ?? "controlla le righe"}` : "Nessuna fattura importata.", { tipo: "errore" });
         return;
       }
-      avvisa(
-        `${esito.importati === 1 ? "Importato 1 documento" : `Importati ${esito.importati} ${cosa}`}` +
-          (non > 0 ? `; ${non === 1 ? "1 non è stata aggiunta" : `${non} non sono state aggiunte`} (${esito.ignorate[0]?.motivo ?? "già presenti"}).` : "."),
-      );
-      void navigate("/movimenti");
+      // La prossima volta, con «Tutte le sedi», si parte da questa sede (mai da una personale).
+      if (sedi.piu && sedeId !== null) ricordaUltimaSede(magazzinoUltimaSede(), sedi.sedi, sedeId);
+      // Se le fatture importate non stanno tutte nel periodo mostrato (di solito la settimana in corso: le fatture sono di giorni
+      // prima), Movimenti e Riepilogo passano a un periodo che le contiene tutte: altrimenti si vedrebbe «Nessun movimento» e
+      // l'importazione sembrerebbe non riuscita. Come per un nuovo movimento, vale tornando ai Movimenti o al Riepilogo.
+      const nonAggiunte = new Set(esito.ignorate.map((i) => i.indice));
+      const date = selezionate.filter((f) => !nonAggiunte.has(f.indice)).map((f) => f.data);
+      const cambio = seguePeriodoSalvato(torna) ? periodoDopoImportazione(date, leggiFiltri(), oggiIso()) : null;
+      if (cambio) salvaFiltri(magazzinoBrowser(), cambio.filtri);
+      // Lo stesso per la sede: se e' una che il selettore non mostra si accende (mai una personale: l'avviso dice dove sono).
+      // Come in Nuovo movimento conta il selettore (lo controlla sediDopoSalvataggio), non `piu`: con una sola sede attiva e una
+      // personale archiviata con movimenti il selettore c'e', la schermata non chiede la sede e le fatture vanno sull'unica attiva.
+      const dove = sedeDellImportazione(sedi.attive, sedeId);
+      const sediDopo = seguePeriodoSalvato(torna) && dove !== null ? sediDopoSalvataggio(sedi.sedi, sedi.selezionate.map((s) => s.id), [dove]) : null;
+      if (sediDopo && sediDopo.daAggiungere.length > 0) sedi.aggiungi(sediDopo.daAggiungere);
+      avvisa(avvisoImportazione({ importati: esito.importati, cosa, nonAggiunte: non, motivo: esito.ignorate[0]?.motivo ?? null, oraVedi: cambio?.etichetta ?? null, sedi: sediDopo }));
+      // Si torna da dove si era aperto il nuovo movimento: un passo indietro, o all'indirizzo al posto della voce
+      // dell'importazione (util/ritorno). Il tasto indietro non la riapre. Con il periodo spostato si torna senza il periodo
+      // nell'indirizzo: vale quello appena salvato.
+      esci(cambio ? senzaPeriodo(torna) : torna);
     },
     onError: (e) => {
       if (e instanceof ErroreRichiesta && e.stato === 404) onScaduta();
@@ -368,7 +435,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
   const selezionabiliVisibili = visibili.filter((f) => !f.duplicata);
   const tutteVisibiliSelezionate = selezionabiliVisibili.length > 0 && selezionabiliVisibili.every((f) => !escluse.has(f.indice));
   return (
-    <>
+    <div ref={rifInizio} className="flex scroll-mt-3 flex-col gap-4">
       {dati.errori.length > 0 && <Scarti errori={dati.errori} />}
 
       {sedi.piu && n > 0 && (
@@ -377,7 +444,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
             Di quale sede sono queste fatture
           </div>
           <div role="radiogroup" aria-labelledby="sede-importa" aria-describedby={manca ? "sede-importa-e" : undefined} className="flex flex-wrap gap-2">
-            {sedi.attive.map((s) => (
+            {localePoiPersonali(sedi.attive).map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -391,6 +458,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               >
                 <BadgeSede id={s.id} taglia="piccolo" decorativo />
                 {s.nome}
+                {s.personale && <SegnoPersonale />}
               </button>
             ))}
           </div>
@@ -415,7 +483,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
           />
         </section>
       ) : (
-        <section className="scheda" aria-label="Fatture lette">
+        <section className="scheda" aria-label="Fatture lette" data-fatture-lette>
           <div className="flex min-h-[52px] items-center px-5 py-3">
             <h2 className="text-[18px] font-bold">
               {n === 1 ? "1 fattura letta" : `${n} fatture lette`} da {fonte} · controlla e conferma
@@ -480,22 +548,26 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
               </div>
             )}
           </div>
-          <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-b-[18px] border-t border-riga bg-crema px-5 py-4 max-md:bottom-[calc(var(--d-nav)+env(safe-area-inset-bottom))]">
-            <p className="m-0 text-[15px]" role="status">
-              {selezionate.length} da importare · <b className="num">{testoRiassunto(riassunto)}</b>
+          {/* La barra resta attaccata al fondo di <main>, che sul telefono finisce gia' sopra la barra di navigazione: nessuno scarto in piu'.
+              Telefono: il riassunto in una riga corta (il solo totale) e i due pulsanti sulla stessa riga. */}
+          <div data-barra-fissa data-azioni-modulo className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-b-[18px] border-t border-riga bg-crema px-4 py-3 md:gap-y-3 md:px-5 md:py-4">
+            <p className="m-0 text-[15px] max-md:w-full" role="status">
+              {selezionate.length} da importare ·{" "}
+              <b className="num max-md:hidden">{testoRiassunto(riassunto)}</b>
+              <b className="num whitespace-nowrap md:hidden">{selezionate.length === 0 ? "niente" : euro(totaleNettoCent(riassunto))}</b>
             </p>
-            <div className="flex flex-wrap gap-3">
-              <button type="button" className="btn grande" onClick={() => void navigate("/movimenti")}>
+            <div className="flex gap-3 max-md:w-full max-md:gap-2.5">
+              <button type="button" className="btn grande max-md:!px-4" onClick={() => esci()}>
                 Annulla
               </button>
-              <button type="button" className="btn primario grande" disabled={selezionate.length === 0 || conferma.isPending} onClick={() => (sedi.piu && sedeId === null ? setManca(true) : conferma.mutate())}>
+              <button type="button" className="btn primario grande max-md:min-w-0 max-md:flex-1 max-md:!whitespace-normal max-md:!px-3 max-md:text-center max-md:leading-tight" disabled={selezionate.length === 0 || conferma.isPending} onClick={() => (sedi.piu && sedeId === null ? setManca(true) : conferma.mutate())}>
                 {conferma.isPending ? "Importo…" : selezionate.length === 1 ? "Importa 1 documento" : `Importa ${selezionate.length} ${cosa}`}
               </button>
             </div>
           </div>
         </section>
       )}
-    </>
+    </div>
   );
 }
 
@@ -503,6 +575,7 @@ function Anteprima({ dati, fonte, onScaduta, onAltri }: { dati: AnteprimaImporta
 
 export default function ImportaFatture() {
   const avvisa = useAvviso();
+  const { torna, alClic } = useTornaIndietro();
   const [file, setFile] = useState<File[]>([]);
   const [dati, setDati] = useState<AnteprimaImportazione | null>(null);
   const [scaduta, setScaduta] = useState(false);
@@ -529,12 +602,18 @@ export default function ImportaFatture() {
   }
 
   const fonte = file.length === 1 ? (file[0]?.name ?? "il file") : `${file.length} file`;
+  // L'anteprima che si vede: i file sono stati letti e l'importazione non e' scaduta.
+  const anteprima = dati && !scaduta && !leggi.isPending ? dati : null;
 
   return (
     <>
-      <Testata titolo="Nuovo movimento" indietro="/movimenti" azioni={<SelettoreModalita attiva="importa" />} />
+      <Testata titolo="Nuovo movimento" indietro={torna} alClicIndietro={alClic()} azioni={<SelettoreModalita attiva="importa" />} />
       <div className="flex flex-col gap-4 px-4 pb-28 md:px-8 md:pb-8">
-        <ZonaCaricamento onFile={carica} occupato={leggi.isPending} />
+        <ZonaCaricamento onFile={carica} occupato={leggi.isPending} letti={anteprima ? fonte : null} />
+        {/* Sempre nel documento, anche vuota: lo screen reader annuncia la lettura finita senza che il fuoco si sposti. */}
+        <p className="sr-only" role="status">
+          {anteprima ? `${anteprima.fatture.length === 1 ? "1 fattura letta" : `${anteprima.fatture.length} fatture lette`} da ${fonte}. Controlla e conferma.` : ""}
+        </p>
 
         {leggi.isPending && (
           <div className="scheda">
@@ -563,7 +642,7 @@ export default function ImportaFatture() {
           </div>
         )}
 
-        {dati && !scaduta && !leggi.isPending && <Anteprima key={dati.importazioneId} dati={dati} fonte={fonte} onScaduta={() => setScaduta(true)} onAltri={altri} />}
+        {anteprima && <Anteprima key={anteprima.importazioneId} dati={anteprima} fonte={fonte} onScaduta={() => setScaduta(true)} onAltri={altri} />}
       </div>
     </>
   );

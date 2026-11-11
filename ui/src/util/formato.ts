@@ -209,3 +209,16 @@ export const NOME_PERIODO: Record<TipoPeriodo, string> = {
   anno: "dell'anno",
   periodo: "del periodo",
 };
+
+// L'etichetta di un periodo di cui si conoscono solo le date (il dettaglio di una voce, che le ha nell'indirizzo): un anno, un mese,
+// una settimana (lunedi'-domenica) o un giorno interi si chiamano come nel selettore del periodo («2026», «Novembre 2026»,
+// «9 – 15 novembre 2026»); il resto con le due date.
+export function etichettaDate(intervallo: Intervallo): string {
+  const { da, a } = intervallo;
+  const intero = (tipo: Exclude<TipoPeriodo, "periodo">) => {
+    const i = intervalloDi(tipo, da);
+    return i.da === da && i.a === a;
+  };
+  const tipo = (["giorno", "settimana", "mese", "anno"] as const).find(intero) ?? "periodo";
+  return etichettaIntervallo(tipo, intervallo);
+}

@@ -1,18 +1,62 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiAllegati } from "../api/allegati";
 import { messaggioErrore } from "../api/client";
 import { urlAllegato } from "../api/importa";
 import type { Movimento } from "../api/tipi";
+import { scorriInVista } from "../hooks/scorriInVista";
 import { useAvviso } from "../hooks/useAvviso";
+import { notaAllegato } from "../util/allegatoDemo";
 import { controllaAllegato, preparaAllegato } from "../util/immagini";
-import Finestra from "./Finestra";
+import CampoAllegato from "./CampoAllegato";
+import Conferma from "./Conferma";
 import LenteImmagine from "./LenteImmagine";
 
 const INVALIDA = ["movimenti", "movimento"];
 
-// La scheda «Allegato» del dettaglio: apri, sostituisci, rimuovi (con conferma) o aggiungi.
-export default function SchedaAllegato({ movimento }: { movimento: Movimento }) {
+// Il caricamento dell'allegato di un movimento gia' salvato: parte subito, poi elenco e dettaglio si rileggono.
+function useCaricaAllegato(movimento: Movimento, dopo?: () => void) {
+  const client = useQueryClient();
+  const avvisa = useAvviso();
+  return useMutation({
+    mutationFn: (file: File) => apiAllegati.carica(movimento.id, file),
+    onSuccess: () => {
+      dopo?.();
+      for (const k of INVALIDA) void client.invalidateQueries({ queryKey: [k] });
+      avvisa("Allegato salvato.");
+    },
+    onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
+  });
+}
+
+// Sul telefono, finche' il movimento non ha un allegato: lo stesso campo compatto di «Nuovo movimento» («Foto · Scatta»), ma il
+// file scelto si carica subito. Con l'allegato c'e' la scheda qui sotto. `onCaricato`: il caricamento e' riuscito (fra poco il campo
+// lascia il posto alla scheda).
+export function AllegatoCompatto({ movimento, disabilitato, onCaricato }: { movimento: Movimento; disabilitato?: boolean; onCaricato?: () => void }) {
+  const carica = useCaricaAllegato(movimento, onCaricato);
+  return (
+    <CampoAllegato
+      file={null}
+      onCambia={(file) => {
+        if (file) carica.mutate(file);
+      }}
+      {...(disabilitato ? { disabilitato } : {})}
+      inCaricamento={carica.isPending}
+    />
+  );
+}
+
+// La scheda «Allegato» del dettaglio: apri, sostituisci, rimuovi (con conferma) o aggiungi. Un file che non va bene (troppo grande,
+// tipo sbagliato) si dice in linea sotto i pulsanti, come nel campo compatto (CampoAllegato); gli errori del servizio sono avvisi.
+// `inVista`: la scheda e' appena comparsa dopo un caricamento dal campo compatto, quindi si porta in vista (sta in fondo al modulo).
+export default function SchedaAllegato({ movimento, inVista }: { movimento: Movimento; inVista?: boolean }) {
+  const rifScheda = useRef<HTMLElement>(null);
+  const [problema, setProblema] = useState<string | null>(null);
+  useEffect(() => {
+    if (inVista && rifScheda.current) scorriInVista(rifScheda.current);
+    // solo alla comparsa della scheda
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const client = useQueryClient();
   const avvisa = useAvviso();
   const rifInput = useRef<HTMLInputElement>(null);
@@ -28,14 +72,7 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
     for (const k of INVALIDA) void client.invalidateQueries({ queryKey: [k] });
   }
 
-  const carica = useMutation({
-    mutationFn: (file: File) => apiAllegati.carica(movimento.id, file),
-    onSuccess: () => {
-      aggiorna();
-      avvisa("Allegato salvato.");
-    },
-    onError: (e) => avvisa(messaggioErrore(e), { tipo: "errore" }),
-  });
+  const carica = useCaricaAllegato(movimento, () => setImmagineKo(false));
   const rimuovi = useMutation({
     mutationFn: () => apiAllegati.rimuovi(movimento.id),
     onSuccess: () => {
@@ -52,11 +89,12 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
   async function scelto(file: File | undefined) {
     if (rifInput.current) rifInput.current.value = "";
     if (!file) return;
+    setProblema(null);
     setPreparo(true);
     try {
       const pronto = await preparaAllegato(file);
-      const problema = await controllaAllegato(pronto);
-      if (problema) avvisa(problema, { tipo: "errore" });
+      const trovato = await controllaAllegato(pronto);
+      if (trovato) setProblema(trovato);
       else carica.mutate(pronto);
     } finally {
       setPreparo(false);
@@ -64,11 +102,13 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
   }
 
   const occupato = preparo || carica.isPending || rimuovi.isPending;
+  // Solo nella demo: gli allegati non si salvano, e si dice prima di scegliere il file (come nel campo compatto).
+  const notaDemo = notaAllegato(import.meta.env.VITE_DEMO === "1");
   // L'indirizzo cambia con il nome: dopo una sostituzione il browser non mostra la vecchia anteprima.
   const indirizzo = `${urlAllegato(movimento.id)}?v=${encodeURIComponent(nome ?? "")}`;
 
   return (
-    <section className="scheda px-[22px] py-5" aria-label="Allegato" aria-busy={occupato}>
+    <section ref={rifScheda} className="scheda px-[22px] py-5" aria-label="Allegato" aria-busy={occupato}>
       <h2 className="pb-2.5 text-[18px] font-bold leading-[22px]">Allegato</h2>
       <input ref={rifInput} type="file" accept="image/*,application/pdf" hidden tabIndex={-1} aria-label="Scegli il file da allegare" onChange={(e) => void scelto(e.target.files?.[0])} />
       {nome ? (
@@ -102,22 +142,22 @@ export default function SchedaAllegato({ movimento }: { movimento: Movimento }) 
           </button>
         </div>
       )}
+      {notaDemo && <p className="m-0 mt-2 text-[13px] leading-snug text-spento">{notaDemo}</p>}
+      <div aria-live="polite">
+        {problema && (
+          <p role="alert" className="m-0 mt-2 text-[13px] font-bold text-rosso">
+            {problema}
+          </p>
+        )}
+      </div>
       {lente && nome && <LenteImmagine titolo={nome} src={indirizzo} onChiudi={() => setLente(false)} />}
       {chiedeRimuovi && (
-        <Finestra
+        <Conferma
           titolo="Rimuovere l'allegato?"
           sottotitolo="Il file viene cancellato dal computer. Non si può annullare."
-          onChiudi={() => setChiedeRimuovi(false)}
-          piede={
-            <>
-              <button type="button" className="btn" onClick={() => setChiedeRimuovi(false)}>
-                No, lascia
-              </button>
-              <button type="button" className="btn pericolo pieno" disabled={rimuovi.isPending} onClick={() => rimuovi.mutate()}>
-                {rimuovi.isPending ? "Rimuovo…" : "Sì, rimuovi"}
-              </button>
-            </>
-          }
+          onAnnulla={() => setChiedeRimuovi(false)}
+          occupato={rimuovi.isPending}
+          azione={{ chiave: "rimuovi", etichetta: rimuovi.isPending ? "Rimuovo…" : "Rimuovi", stile: "distruttiva", onClick: () => rimuovi.mutate() }}
         />
       )}
     </section>

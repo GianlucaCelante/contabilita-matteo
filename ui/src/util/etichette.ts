@@ -26,9 +26,11 @@ export const NOME_DOCUMENTO: Record<Documento, string> = {
   RETRIBUZIONE_EXTRA: "Extra",
   NESSUNO: "",
 };
+// L'origine nell'elenco e nel dettaglio. «XML» e' il valore tecnico: a schermo e' «Importata» (dalla fattura elettronica; corta,
+// perche' sta nell'ultima colonna dell'elenco). Nel file esportato e' «Fattura elettronica» (ORIGINE_FILE in api/esporta.ts).
 export const NOME_ORIGINE: Record<Origine, string> = {
   MANO: "A mano",
-  XML: "XML",
+  XML: "Importata",
   RICORRENZA: "Ricorrente",
 };
 

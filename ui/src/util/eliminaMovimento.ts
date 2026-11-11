@@ -10,7 +10,7 @@ export interface SceltaElimina {
 }
 
 export function sceltePerEliminare(ripetizioneAttiva: boolean): SceltaElimina[] {
-  if (!ripetizioneAttiva) return [{ ambito: "SOLO_QUESTO", etichetta: "Sì, elimina", pericoloso: true }];
+  if (!ripetizioneAttiva) return [{ ambito: "SOLO_QUESTO", etichetta: "Elimina", pericoloso: true }];
   return [
     { ambito: "SOLO_QUESTO", etichetta: "Elimina solo questo", pericoloso: false },
     { ambito: "QUESTO_E_PROSSIMI", etichetta: "Elimina e ferma la ripetizione", pericoloso: true },

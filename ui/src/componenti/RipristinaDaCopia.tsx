@@ -103,7 +103,7 @@ export default function RipristinaDaCopia({ onChiudi }: { onChiudi: () => void }
             </button>
             {ultima ? (
               <button type="button" className="btn pericolo pieno" disabled={ripristina.isPending} onClick={() => ripristina.mutate(copia.nome)}>
-                {ripristina.isPending ? "Un momento…" : "Sì, sostituisci i dati"}
+                {ripristina.isPending ? "Un momento…" : "Sostituisci i dati"}
               </button>
             ) : (
               <button type="button" className="btn pericolo" onClick={() => setPasso("ultima")}>

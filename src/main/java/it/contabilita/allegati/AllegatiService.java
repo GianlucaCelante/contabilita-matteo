@@ -1,5 +1,6 @@
 package it.contabilita.allegati;
 
+import it.contabilita.PerLog;
 import it.contabilita.api.Dto.MovimentoDto;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Movimento;
@@ -135,7 +136,7 @@ public class AllegatiService {
             }
             return nome;
         } catch (IOException e) {
-            log.error("Impossibile scrivere l'allegato: {}", e.toString(), e);
+            log.error("Impossibile scrivere l'allegato: {}", PerLog.pulisci(e), PerLog.conStack(e));
             if (temporaneo != null) {
                 try {
                     Files.deleteIfExists(temporaneo);

@@ -17,6 +17,7 @@ import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,7 +31,8 @@ import java.util.Set;
 public class StatisticheVociService {
 
     public record VoceStatistica(Long id, String nome, long totaleCent, int movimenti, long regolareCent, long extraCent,
-                                 Long pagataCent, List<Long> perMese) {
+                                 Long pagataCent, Long fattureCent, List<Long> perMese, List<Integer> movimentiPerMese,
+                                 List<Long> pagataPerMese, List<Long> fatturePerMese) {
     }
 
     public record StatisticheVoci(LocalDate da, LocalDate a, Voce raggruppa, String tipo, List<String> mesi,
@@ -53,11 +55,20 @@ public class StatisticheVociService {
         long regolare;
         long extra;
         long pagata;
+        long fatture;
         final long[] perMese;
+        final int[] movimentiPerMese;
+        final long[] pagataPerMese;
+        final long[] fatturePerMese;
+        /** Le divisioni gia' contate, per mese: le parti di un movimento diviso fra sedi valgono un movimento solo. */
+        final Set<String> divisioniContate = new HashSet<>();
 
         Riga(String nome, int mesi) {
             this.nome = nome;
             this.perMese = new long[mesi];
+            this.movimentiPerMese = new int[mesi];
+            this.pagataPerMese = new long[mesi];
+            this.fatturePerMese = new long[mesi];
         }
     }
 
@@ -119,6 +130,7 @@ public class StatisticheVociService {
 
         Map<Long, Riga> perVoce = new HashMap<>();
         long totale = 0;
+        int contati = 0;
         for (Movimento m : righe) {
             Long id;
             String nome;
@@ -139,8 +151,15 @@ public class StatisticheVociService {
             Riga r = perVoce.computeIfAbsent(id, k -> new Riga(nome, mesi.size()));
             long effetto = m.getEffettoSuiCostiCent();
             r.totale += effetto;
-            r.conta++;
-            r.perMese[(int) java.time.temporal.ChronoUnit.MONTHS.between(mesi.get(0), YearMonth.from(m.getData()))] += effetto;
+            int mese = (int) java.time.temporal.ChronoUnit.MONTHS.between(mesi.get(0), YearMonth.from(m.getData()));
+            r.perMese[mese] += effetto;
+            // I conteggi: le parti di una divisione (stesso id comune) nella stessa voce e nello stesso mese contano una
+            // volta, anche se il filtro delle sedi ne prende solo alcune. Gli importi restano la somma delle parti.
+            if (m.getDivisione() == null || r.divisioniContate.add(mese + "\n" + m.getDivisione())) {
+                r.conta++;
+                r.movimentiPerMese[mese]++;
+                contati++;
+            }
             if (voce == Voce.DIPENDENTE) {
                 if (m.getDocumento() == Documento.RETRIBUZIONE_REGOLARE) {
                     r.regolare += m.getImportoCent();
@@ -148,8 +167,14 @@ public class StatisticheVociService {
                     r.extra += m.getImportoCent();
                 }
             }
+            // Il «da pagare» riguarda solo le fatture (meno le note di credito): gli scontrini sono gia' pagati alla cassa.
+            if (m.getDocumento() == Documento.FATTURA || m.getDocumento() == Documento.NOTA_DI_CREDITO) {
+                r.fatture += effetto;
+                r.fatturePerMese[mese] += effetto;
+            }
             if (m.getDocumento() == Documento.FATTURA && m.isPagata()) {
                 r.pagata += m.getImportoCent();
+                r.pagataPerMese[mese] += m.getImportoCent();
             }
             totale += effetto;
         }
@@ -166,12 +191,21 @@ public class StatisticheVociService {
             voci.add(voce(voce, null, voce.etichettaSenza, senza));
         }
         return new StatisticheVoci(da, a, voce, tipoEffettivo, mesi.stream().map(YearMonth::toString).toList(),
-                totale, righe.size(), voci);
+                totale, contati, voci);
     }
 
     private static VoceStatistica voce(Voce raggruppa, Long id, String nome, Riga r) {
+        boolean fornitore = raggruppa == Voce.FORNITORE;
         return new VoceStatistica(id, nome, r.totale, r.conta, r.regolare, r.extra,
-                raggruppa == Voce.FORNITORE ? r.pagata : null,
-                java.util.Arrays.stream(r.perMese).boxed().toList());
+                fornitore ? r.pagata : null,
+                fornitore ? r.fatture : null,
+                lista(r.perMese),
+                java.util.Arrays.stream(r.movimentiPerMese).boxed().toList(),
+                fornitore ? lista(r.pagataPerMese) : null,
+                fornitore ? lista(r.fatturePerMese) : null);
+    }
+
+    private static List<Long> lista(long[] valori) {
+        return java.util.Arrays.stream(valori).boxed().toList();
     }
 }

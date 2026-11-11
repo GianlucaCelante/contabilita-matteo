@@ -52,6 +52,39 @@ public final class FattureProva {
                 + corpo + "</" + radice + ">";
     }
 
+    // ---- fattura semplificata (FatturaElettronicaSemplificata, FSM10: TD07, TD08, TD09) ----
+
+    /** Nel tracciato semplificato il cedente non ha DatiAnagrafici/Anagrafica: partita IVA e nome sono figli diretti. */
+    public static String cedenteSemplificato(String denominazione, String piva) {
+        return "<CedentePrestatore><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>" + piva + "</IdCodice></IdFiscaleIVA>"
+                + "<Denominazione>" + denominazione + "</Denominazione>"
+                + "<Sede><Indirizzo>Via Inventata 1</Indirizzo><CAP>00100</CAP><Comune>Roma</Comune><Provincia>RM</Provincia>"
+                + "<Nazione>IT</Nazione></Sede><RegimeFiscale>RF01</RegimeFiscale></CedentePrestatore>";
+    }
+
+    /** Un blocco DatiBeniServizi: {@code importo} e' IVA compresa; di {@code imposta} e {@code aliquota} ne basta una. */
+    public static String rigaSemplificata(String descrizione, String importo, String imposta, String aliquota) {
+        return "<DatiBeniServizi><Descrizione>" + descrizione + "</Descrizione>"
+                + (importo == null ? "" : "<Importo>" + importo + "</Importo>") + "<DatiIVA>"
+                + (imposta == null ? "" : "<Imposta>" + imposta + "</Imposta>")
+                + (aliquota == null ? "" : "<Aliquota>" + aliquota + "</Aliquota>") + "</DatiIVA></DatiBeniServizi>";
+    }
+
+    /** Documento semplificato completo: solo la radice e' qualificata (come nei file veri), con o senza prefisso. */
+    public static String semplificata(String prefisso, String cedente, String tipo, String numero, String data, String... righe) {
+        String radice = prefisso.isEmpty() ? "FatturaElettronicaSemplificata" : prefisso + ":FatturaElettronicaSemplificata";
+        String ns = (prefisso.isEmpty() ? "xmlns" : "xmlns:" + prefisso) + "=\"http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.0\"";
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<" + radice + " versione=\"FSM10\" " + ns + ">"
+                + "<FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese><IdCodice>01234567890</IdCodice>"
+                + "</IdTrasmittente><ProgressivoInvio>00001</ProgressivoInvio><FormatoTrasmissione>FSM10</FormatoTrasmissione>"
+                + "<CodiceDestinatario>0000000</CodiceDestinatario></DatiTrasmissione>" + cedente
+                + "<CessionarioCommittente><IdentificativiFiscali><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>11111111111</IdCodice>"
+                + "</IdFiscaleIVA></IdentificativiFiscali></CessionarioCommittente></FatturaElettronicaHeader>"
+                + "<FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>" + tipo + "</TipoDocumento>"
+                + "<Divisa>EUR</Divisa><Data>" + data + "</Data><Numero>" + numero + "</Numero></DatiGeneraliDocumento></DatiGenerali>"
+                + String.join("", righe) + "</FatturaElettronicaBody></" + radice + ">";
+    }
+
     public static byte[] byt(String xml) {
         return xml.getBytes(StandardCharsets.UTF_8);
     }

@@ -49,7 +49,7 @@ public final class Dto {
                                Rif categoria, Rif fornitore, Rif dipendente, Rif sede,
                                String descrizione, String numeroDocumento, String note,
                                Origine origine, boolean pagata, RicorrenzaRif ricorrenza, String allegatoNome,
-                               LocalDateTime creatoIl, LocalDateTime modificatoIl) {
+                               LocalDateTime creatoIl, LocalDateTime modificatoIl, String divisione) {
     }
 
     /** Corpo di {@code PUT /api/movimenti/{id}/pagata}. */
@@ -87,15 +87,18 @@ public final class Dto {
     public record RisultatoSede(Rif sede, long ricaviCent, long costiCent, long risultatoCent) {
     }
 
-    /** {@code movimenti}: quanti movimenti ha la sede (anche in anni passati). */
-    public record SedeDto(Long id, String nome, boolean archiviata, int ordine, long movimenti) {
+    /**
+     * {@code movimenti}: quanti movimenti ha la sede (anche in anni passati). {@code personale}: sede delle spese dei
+     * titolari (niente pizze e ordini, fuori dai totali se il filtro sedi manca).
+     */
+    public record SedeDto(Long id, String nome, boolean archiviata, boolean personale, int ordine, long movimenti) {
     }
 
     /** Tutti i campi sono facoltativi: nella creazione serve il nome, nella modifica si manda quello che cambia. */
-    public record SedeInput(String nome, Boolean archiviata) {
+    public record SedeInput(String nome, Boolean archiviata, Boolean personale) {
     }
 
-    // ---- statistiche settimanali (docs/api.md, "Statistiche") ----
+    // ---- statistiche: pizze e ordini (docs/api.md, "Statistiche") ----
 
     /** Una voce del corpo di {@code PUT /api/statistiche/settimana}: numeri interi; entrambi assenti = cancella il dato. */
     public record VoceSettimanaInput(Long sedeId, java.math.BigDecimal pizze, java.math.BigDecimal ordini) {
@@ -104,27 +107,76 @@ public final class Dto {
     public record SettimanaInput(String settimana, List<VoceSettimanaInput> voci) {
     }
 
-    /** {@code pizze}, {@code ordini}, {@code scontrinoMedioCent} e {@code pizzePerOrdine} sono null se il dato non c'e' (o ordini = 0). */
+    /** Una voce del corpo di {@code PUT /api/statistiche/giorni}: {@code data} yyyy-MM-dd; numeri entrambi assenti = cancella il giorno. */
+    public record VoceGiornoInput(Long sedeId, String data, java.math.BigDecimal pizze, java.math.BigDecimal ordini) {
+    }
+
+    public record GiorniInput(List<VoceGiornoInput> voci) {
+    }
+
+    /**
+     * Corpo di {@code PUT /api/statistiche/settimana-completa}: la settimana (un giorno qualsiasi), i giorni di alcune sedi e i
+     * totali settimanali di altre; voci come quelle di /giorni e /settimana.
+     */
+    public record SettimanaCompletaInput(String settimana, List<VoceGiornoInput> giorni, List<VoceSettimanaInput> totali) {
+    }
+
+    /** Un giorno di una sede: {@code pizze}/{@code ordini} null se il giorno non e' inserito; medie null se mancano o ordini = 0. */
+    public record StatisticaGiorno(LocalDate data, Integer pizze, Integer ordini, long ricaviTotaliCent, long ricaviExtraCent,
+                                   Long scontrinoMedioCent, Double pizzePerOrdine) {
+    }
+
+    /**
+     * Una sede in una settimana. {@code pizze}, {@code ordini}, {@code scontrinoMedioCent} e {@code pizzePerOrdine} sono null se
+     * il dato non c'e' (le medie anche con ordini = 0). {@code ricaviCent} = {@code ricaviTotaliCent} (tutti i ricavi della
+     * settimana, come prima); lo scontrino si calcola su {@code ricaviConDatiCent}. {@code fonte}: il modo in uso per la sede in
+     * quella settimana, GIORNI o SETTIMANA (totale settimanale), null se non ci sono dati.
+     */
     public record StatisticaSede(Rif sede, Integer pizze, Integer ordini, long ricaviCent, Long scontrinoMedioCent,
-                                 Double pizzePerOrdine, boolean completa) {
+                                 Double pizzePerOrdine, boolean completa, long ricaviTotaliCent, long ricaviExtraCent,
+                                 long ricaviConDatiCent, String fonte, int giorniInseriti, List<StatisticaGiorno> giorni) {
     }
 
     public record SettimanaDto(LocalDate settimana, LocalDate fine, List<StatisticaSede> sedi) {
     }
 
+    /** {@code ricaviCent} = {@code ricaviConDatiCent} (quelli dello scontrino, come prima); {@code ricaviTotaliCent}: tutti. */
     public record TotaleStatistiche(long pizze, long ordini, long ricaviCent, Long scontrinoMedioCent,
-                                    Double pizzePerOrdine, int settimaneConDati, int settimaneTotali) {
+                                    Double pizzePerOrdine, int settimaneConDati, int settimaneTotali,
+                                    long ricaviConDatiCent, long ricaviTotaliCent, long ricaviExtraCent) {
     }
 
     public record StatisticaPerSede(Rif sede, long pizze, long ordini, long ricaviCent, Long scontrinoMedioCent,
-                                    Double pizzePerOrdine, int settimaneConDati) {
+                                    Double pizzePerOrdine, int settimaneConDati,
+                                    long ricaviConDatiCent, long ricaviTotaliCent, long ricaviExtraCent) {
     }
 
     public record StatisticaSettimana(LocalDate settimana, long pizze, long ordini, long ricaviCent,
-                                      Long scontrinoMedioCent, List<Rif> sediMancanti) {
+                                      Long scontrinoMedioCent, List<Rif> sediMancanti,
+                                      long ricaviConDatiCent, long ricaviTotaliCent, long ricaviExtraCent) {
     }
 
     public record Statistiche(LocalDate da, LocalDate a, TotaleStatistiche totale, List<StatisticaPerSede> perSede,
                               List<StatisticaSettimana> settimane) {
+    }
+
+    /**
+     * Un intervallo della serie del grafico (o il totale del periodo): {@code conDati} = c'e' almeno un dato inserito;
+     * {@code daTotaleSettimanale} = fra i dati c'e' almeno un totale settimanale (che conta tutto sul suo lunedi').
+     */
+    public record IntervalloSerie(LocalDate inizio, LocalDate fine, long pizze, long ordini, long ricaviTotaliCent,
+                                  long ricaviExtraCent, long ricaviConDatiCent, Long scontrinoMedioCent,
+                                  Double pizzePerOrdine, boolean conDati, boolean daTotaleSettimanale) {
+    }
+
+    /** Una sede nella serie: gli stessi numeri del totale, sulle date esatte [da, a], solo di quella sede. */
+    public record SedeSerie(Long sedeId, String nome, boolean archiviata, LocalDate inizio, LocalDate fine, long pizze,
+                            long ordini, long ricaviTotaliCent, long ricaviExtraCent, long ricaviConDatiCent,
+                            Long scontrinoMedioCent, Double pizzePerOrdine, boolean conDati, boolean daTotaleSettimanale) {
+    }
+
+    /** {@code perSede}: le sedi del filtro, nell'ordine di GET /api/sedi; la loro somma e' {@code totale}. */
+    public record SerieStatistiche(LocalDate da, LocalDate a, String passo, IntervalloSerie totale,
+                                   List<IntervalloSerie> intervalli, List<SedeSerie> perSede) {
     }
 }

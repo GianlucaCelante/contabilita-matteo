@@ -11,6 +11,8 @@ import SezioneSedi from "../componenti/SezioneSedi";
 import { BOTTONE_RIGA_LARGO, DETTAGLIO_RIGA, TESTO_SCHEDA, TITOLO_RIGA, TITOLO_SCHEDA } from "../componenti/stileImpostazioni";
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
+import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { COPIE_NELLA_DEMO, doveSonoIDati } from "../util/datiECopie";
 import { dataOraRelativa } from "../util/formato";
 
 // I pulsanti compatti delle righe di «Dati e copie» (44 px, angoli 10 px, testo 14 px).
@@ -18,9 +20,9 @@ const CLASSE_BOTTONE = BOTTONE_RIGA_LARGO;
 
 const NOME_RETE: Record<IndirizzoRete["tipo"], string> = { WIFI: "Wi-Fi", CAVO: "Cavo", ALTRO: "Altra rete" };
 
-function Sezione({ titolo, children }: { titolo: string; children: ReactNode }) {
+function Sezione({ titolo, children, className = "" }: { titolo: string; children: ReactNode; className?: string }) {
   return (
-    <section className="scheda min-w-0 flex-1 px-6 py-[22px]" aria-label={titolo}>
+    <section className={"scheda min-w-0 flex-1 px-6 py-[22px] " + className} aria-label={titolo}>
       <h2 className={TITOLO_SCHEDA}>{titolo}</h2>
       {children}
     </section>
@@ -28,7 +30,7 @@ function Sezione({ titolo, children }: { titolo: string; children: ReactNode }) 
 }
 
 // «Dal telefono»: il QR per aprire l'app dal telefono sulla stessa rete Wi-Fi,
-// con la scelta dell'indirizzo quando il computer ne ha piu' di uno.
+// con la scelta dell'indirizzo quando il computer ne ha piu' di uno. Solo sul computer: dal telefono l'app e' gia' aperta.
 function DalTelefono() {
   const q = useQuery({ queryKey: chiavi.rete, queryFn: api.rete });
   const [scelto, setScelto] = useState<string | null>(null);
@@ -42,7 +44,7 @@ function DalTelefono() {
   }, [attuale?.ip]);
 
   return (
-    <Sezione titolo="Dal telefono">
+    <Sezione titolo="Dal telefono" className="max-md:hidden">
       {q.isPending && <Caricamento />}
       {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
       {q.data && !attuale && (
@@ -179,6 +181,8 @@ function CambiaCartella({ programma, onChiudi }: { programma: Programma; onChiud
   );
 }
 
+const DEMO = import.meta.env.VITE_DEMO === "1";
+
 // «Dati e copie»: la copia di sicurezza (automatica alle 03:00) e quella fatta ora.
 function DatiECopie() {
   const avvisa = useAvviso();
@@ -200,7 +204,15 @@ function DatiECopie() {
     <Sezione titolo="Dati e copie">
       {q.isPending && <Caricamento />}
       {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
-      {p && (
+      {p && DEMO && (
+        // Nella demo le copie non esistono: niente pulsanti che non fanno niente, solo quello che e' vero.
+        <div>
+          <Dato nome="Dove sono i dati" valore={doveSonoIDati(true)} />
+          <Dato nome="Copie di sicurezza" valore={COPIE_NELLA_DEMO} />
+          <Dato nome="Versione del programma" valore="Demo" />
+        </div>
+      )}
+      {p && !DEMO && (
         <div>
           <Dato
             nome="Ultima copia di sicurezza"
@@ -211,7 +223,7 @@ function DatiECopie() {
               </button>
             }
           />
-          <Dato nome="Dove sono i dati" valore="Solo su questo computer, mai online" />
+          <Dato nome="Dove sono i dati" valore={doveSonoIDati(false)} />
           <Dato
             nome="Ripristina da una copia"
             valore="Sostituisce i dati attuali"
@@ -372,15 +384,17 @@ function SezionePassword() {
 }
 
 export default function Impostazioni() {
+  const grande = useSchermoGrande();
   return (
     <>
-      <Testata titolo="Impostazioni" />
+      <Testata titoloSoloComputer titolo="Impostazioni" />
       <div className="flex flex-col gap-4 px-4 pb-24 md:px-8 md:pb-7">
         <SezioneSedi />
         <SezioneElenchi />
         <SezionePassword />
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
-          <DalTelefono />
+          {/* Sotto md non si monta: dal telefono l'app e' gia' aperta, e cosi' non parte la chiamata per gli indirizzi di rete. */}
+          {grande && <DalTelefono />}
           <DatiECopie />
         </div>
       </div>

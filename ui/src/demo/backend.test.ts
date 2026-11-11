@@ -133,6 +133,13 @@ describe("demo: movimenti, riepilogo ed esportazione per sede", () => {
     expect((get("/movimenti").corpo as { elementi: Movimento[] }).elementi.length).toBe(prima);
   });
 
+  // s35: gli scarti dell'anteprima li legge il cliente: il testo del servizio (ImportazioneService.problema), senza sigle.
+  it("l'anteprima dell'importazione non mostra gergo negli scarti", () => {
+    const a = rispondi("POST", "/importa/anteprima", new URLSearchParams(), ["fatture.zip"]).corpo as { errori: { nomeFile: string; messaggio: string }[] };
+    expect(a.errori).toEqual([{ nomeFile: "fatture.zip", messaggio: "Autofattura di integrazione: non importata, la fattura originale del fornitore è già una fattura a parte." }]);
+    for (const e of a.errori) expect(e.messaggio).not.toMatch(/TD\d\d|FatturaPA|XML|DOCTYPE/);
+  });
+
   it("l'importazione vuole la sede e l'esportazione la rispetta", () => {
     rispondi("POST", "/importa/anteprima", new URLSearchParams(), ["fatture.zip"]);
     const senza = rispondi("POST", "/importa/conferma", new URLSearchParams(), { importazioneId: "x", righe: [{ indice: 0, categoria: null }] });
@@ -157,9 +164,10 @@ describe("demo: opzioni dell'esportazione Excel", () => {
     expect(xlsx("")).not.toContain("<t>Totale</t>");
   });
 
-  it("con una sede sola la colonna è una più «Totale»", () => {
+  it("con una sede sola resta la colonna «Importo», come nel servizio (le colonne per sede servono da due sedi in su)", () => {
     const uno = xlsx("colonnePerSede=true&sedi=3");
-    expect(uno).toContain("<t>Totale</t>");
+    expect(uno).toContain("<t>Importo</t>");
+    expect(uno).not.toContain("<t>Totale</t>");
     expect(uno).not.toContain("<t>Lungomare</t>");
   });
 
@@ -167,5 +175,18 @@ describe("demo: opzioni dell'esportazione Excel", () => {
     expect(xlsx("")).toContain("Statistiche");
     expect(xlsx("statistiche=true")).toContain("Statistiche");
     expect(xlsx("statistiche=false")).not.toContain("Statistiche");
+  });
+});
+
+describe("demo: ricerca nei movimenti", () => {
+  it("trova una retribuzione dal nome del dipendente, senza badare alle maiuscole", () => {
+    const paga = { data: "2026-01-10", sedeId: 1, tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_REGOLARE", importoCent: 150000, categoria: "Retribuzione", dipendente: "Zelindo Quarantotti" };
+    const creato = rispondi("POST", "/movimenti", new URLSearchParams(), paga);
+    expect(creato.stato).toBe(201);
+    const trovati = get("/movimenti", "q=QUARANTOTTI").corpo as ElencoMovimenti;
+    expect(trovati.elementi.map((m) => m.id)).toEqual([(creato.corpo as Movimento).id]);
+    expect(trovati.elementi[0]?.dipendente?.nome).toBe("Zelindo Quarantotti");
+    expect(trovati.totali.costiCent).toBe(150000);
+    expect((get("/movimenti", "q=nessunoconquestonome").corpo as ElencoMovimenti).elementi).toEqual([]);
   });
 });

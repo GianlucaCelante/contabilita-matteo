@@ -21,6 +21,21 @@ describe("demo: filtri per voce dei movimenti", () => {
     expect(r.elementi.length).toBe(tutti.filter((m) => m.fornitore?.id === f.id).length);
   });
 
+  it("tipo=COSTI: costi variabili e fissi senza ricavi, anche nei totali; un tipo non valido è 400", () => {
+    const tutti = (get("/movimenti", P).corpo as ElencoMovimenti).elementi;
+    const r = get("/movimenti", `${P}&tipo=COSTI`).corpo as ElencoMovimenti;
+    const costi = tutti.filter((m) => m.tipo !== "RICAVO");
+    expect(tutti.some((m) => m.tipo === "RICAVO")).toBe(true);
+    expect(r.elementi.map((m) => m.id)).toEqual(costi.map((m) => m.id));
+    expect(r.totali.ricaviCent).toBe(0);
+    expect(r.totali.saldoCent).toBe(-r.totali.costiCent);
+    expect(get("/movimenti", `${P}&tipo=BOH`)).toMatchObject({ stato: 400, corpo: { errore: "tipo: valore non valido: BOH" } });
+    expect(get("/movimenti", `${P}&tipo=costi`).stato).toBe(400);
+    // come il servizio: spazi intorno ignorati, solo spazi = tutti
+    expect((get("/movimenti", `${P}&tipo=COSTI%20`).corpo as ElencoMovimenti).elementi.map((m) => m.id)).toEqual(costi.map((m) => m.id));
+    expect((get("/movimenti", `${P}&tipo=%20`).corpo as ElencoMovimenti).elementi).toHaveLength(tutti.length);
+  });
+
   it("fornitore inesistente: elenco vuoto; non numerico: 400", () => {
     expect((get("/movimenti", `${P}&fornitore=99999`).corpo as ElencoMovimenti).elementi).toEqual([]);
     expect(get("/movimenti", `${P}&fornitore=abc`).stato).toBe(400);

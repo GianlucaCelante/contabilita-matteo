@@ -1,0 +1,13 @@
+databaseChangeLog:
+  # Versione 12: la sede «personale» (docs/api.md, «Sedi»): le spese dei titolari, senza pizze e ordini e fuori dai totali
+  # del locale quando il filtro sedi manca. Solo aggiunte: una colonna con valore predefinito 0, quindi tutte le sedi gia'
+  # presenti restano normali.
+  # Il contesto «personale» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 120-sede-personale
+      author: contabilita
+      context: personale
+      changes:
+        - sql:
+            comment: "Il valore predefinito (0 = sede normale) vale per le sedi esistenti e per quelle nuove."
+            sql: ALTER TABLE sede ADD COLUMN personale BOOLEAN NOT NULL DEFAULT 0

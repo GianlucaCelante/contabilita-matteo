@@ -8,6 +8,8 @@
 // L'elemento va al centro della parte libera. Senza animazione se l'utente ha
 // chiesto meno moto.
 
+import { controlloDellErrore } from "../util/fuoco";
+
 // Il primo antenato che scorre in verticale.
 export function contenitoreScorrevole(nodo: HTMLElement): HTMLElement | null {
   for (let p = nodo.parentElement; p; p = p.parentElement) {
@@ -66,9 +68,11 @@ export function scorriInVista(nodo: HTMLElement, soloSeServe = true) {
 }
 
 // Dopo un errore di validazione: porta il primo campo sbagliato (con il suo
-// messaggio) al centro dell'area libera, sopra le barre fisse. Va chiamata
+// messaggio) al centro dell'area libera, sopra le barre fisse, e gli da' il
+// fuoco (prima restava su «Salva», o finiva sul contenuto principale: chi usa
+// la tastiera o lo schermo parlante doveva cercarsi il campo). Va chiamata
 // dopo che React ha disegnato i messaggi.
-const SELETTORE_ERRORE = '[aria-invalid="true"], [role="radiogroup"][aria-describedby$="-e"]';
+const SELETTORE_ERRORE = '[aria-invalid="true"], [role="radiogroup"][aria-describedby$="-e"], [role="group"][aria-describedby$="-e"]';
 
 export function mostraPrimoErrore(radice: ParentNode = document) {
   window.setTimeout(() => {
@@ -77,5 +81,7 @@ export function mostraPrimoErrore(radice: ParentNode = document) {
     // Il blocco intero (etichetta, campo, messaggio): e' il genitore del campo o del gruppo di scelte.
     const blocco = (primo.closest(".campo")?.parentElement ?? primo.parentElement ?? primo) as HTMLElement;
     scorriInVista(blocco, false);
+    // Senza scorrere di nuovo: la posizione l'ha gia' decisa scorriInVista (sopra le barre fisse).
+    controlloDellErrore(primo).focus({ preventScroll: true });
   }, 60);
 }

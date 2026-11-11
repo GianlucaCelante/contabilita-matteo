@@ -109,6 +109,31 @@ describe("demo: statistiche per fornitore con pagataCent", () => {
     const v = voci("FORNITORE").voci.find((x) => x.nome === "Nuovo Fornitore")!;
     expect(v.totaleCent).toBe(13000);
     expect(v.pagataCent).toBe(10000);
+    expect(v.fattureCent).toBe(13000);
+  });
+  it("fattureCent conta fatture meno note di credito, non gli scontrini; per mese come `mesi`", () => {
+    post("/movimenti", { ...base, fornitore: "Nuovo Fornitore", importoCent: 10000, pagata: true });
+    post("/movimenti", { ...base, fornitore: "Nuovo Fornitore", importoCent: 1000, documento: "NOTA_DI_CREDITO" });
+    post("/movimenti", { ...base, fornitore: "Nuovo Fornitore", importoCent: 500, documento: "SCONTRINO" });
+    const r = voci("FORNITORE");
+    const v = r.voci.find((x) => x.nome === "Nuovo Fornitore")!;
+    expect(v.totaleCent).toBe(9500);
+    expect(v.fattureCent).toBe(9000);
+    expect(v.pagataCent).toBe(10000);
+    const ultimo = r.mesi.length - 1; // i movimenti sono di oggi: l'ultimo mese del periodo
+    expect(v.fatturePerMese).toEqual(r.mesi.map((_, i) => (i === ultimo ? 9000 : 0)));
+    expect(v.pagataPerMese).toEqual(r.mesi.map((_, i) => (i === ultimo ? 10000 : 0)));
+  });
+  it("per ogni fornitore fatturePerMese e pagataPerMese sono lunghi come `mesi` e sommano ai totali", () => {
+    const r = voci("FORNITORE");
+    const somma = (x: number[] | null) => (x ?? []).reduce((s, n) => s + n, 0);
+    expect(r.voci.length).toBeGreaterThan(0);
+    for (const v of r.voci) {
+      expect(v.fatturePerMese).toHaveLength(r.mesi.length);
+      expect(v.pagataPerMese).toHaveLength(r.mesi.length);
+      expect(somma(v.fatturePerMese)).toBe(v.fattureCent);
+      expect(somma(v.pagataPerMese)).toBe(v.pagataCent);
+    }
   });
   it("per ogni fornitore pagataCent e' la somma delle sue fatture pagate nel periodo", () => {
     const attese = new Map<number | null, number>();
@@ -116,22 +141,30 @@ describe("demo: statistiche per fornitore con pagataCent", () => {
     for (const v of voci("FORNITORE").voci) expect(v.pagataCent).toBe(attese.get(v.id) ?? 0);
   });
   it("e' null con gli altri raggruppamenti", () => {
-    expect(voci("CATEGORIA").voci.every((v) => v.pagataCent === null)).toBe(true);
-    expect(voci("DIPENDENTE").voci.every((v) => v.pagataCent === null)).toBe(true);
+    for (const g of ["CATEGORIA", "DIPENDENTE"]) {
+      const righe = voci(g).voci;
+      expect(righe.length).toBeGreaterThan(0);
+      expect(righe.every((v) => v.pagataCent === null && v.fattureCent === null && v.pagataPerMese === null && v.fatturePerMese === null)).toBe(true);
+    }
   });
 });
 
 describe("demo: importazione XML", () => {
-  it("le fatture importate nascono da pagare", () => {
+  it("le fatture importate nascono pagate (sono lo storico); le note di credito importate no", () => {
     const anteprima = post("/importa/anteprima", ["a.xml", "b.xml"]).corpo as { fatture: { indice: number; duplicata?: boolean }[] };
     const righe = anteprima.fatture.filter((f) => !f.duplicata).map((f) => ({ indice: f.indice, categoria: null }));
     expect(righe.length).toBeGreaterThan(0);
-    const prima = new Set(fatture().map((m) => m.id));
+    const prima = new Set(elenco("").map((m) => m.id));
     const esito = post("/importa/conferma", { righe, sedeId: 1 }).corpo as { importati: number };
     expect(esito.importati).toBeGreaterThan(0);
-    const nuove = fatture().filter((m) => !prima.has(m.id));
+    const importati = elenco("").filter((m) => !prima.has(m.id));
+    expect(importati.every((m) => m.origine === "XML")).toBe(true);
+    const nuove = importati.filter((m) => m.documento === "FATTURA");
     expect(nuove.length).toBeGreaterThan(0);
-    expect(nuove.every((m) => m.origine === "XML" && m.pagata === false)).toBe(true);
+    expect(nuove.every((m) => m.pagata === true)).toBe(true);
+    const note = importati.filter((m) => m.documento === "NOTA_DI_CREDITO");
+    expect(note.length).toBeGreaterThan(0);
+    expect(note.every((m) => m.pagata === false)).toBe(true);
   });
 });
 
@@ -159,5 +192,26 @@ describe("demo: dati salvati con la forma vecchia", () => {
     const una = migraStato(JSON.parse(JSON.stringify(stato())));
     const due = migraStato(JSON.parse(JSON.stringify(una)));
     expect(due).toEqual(una);
+  });
+});
+
+describe("demo: «Creato» è il giorno in cui si registra, non la data del documento", () => {
+  it("una fattura importata con una data passata risulta creata oggi", () => {
+    const anteprima = post("/importa/anteprima", ["fatture.xml"]).corpo as { fatture: { indice: number; data: string; numero: string }[] };
+    const prima = anteprima.fatture[0]!;
+    expect(prima.data < oggi).toBe(true);
+    post("/importa/conferma", { righe: [{ indice: prima.indice, categoria: null }], sedeId: 1 });
+    const importata = elenco("").find((x) => x.numeroDocumento === prima.numero)!;
+    expect(importata.origine).toBe("XML");
+    expect(importata.creatoIl.slice(0, 10)).toBe(oggi);
+  });
+  it("anche un movimento inserito a mano con una data passata", () => {
+    const nuovo = post("/movimenti", { ...base, data: aggiungiGiorni(oggi, -20) }).corpo as Movimento;
+    expect(nuovo.creatoIl.slice(0, 10)).toBe(oggi);
+    expect(nuovo.creatoIl).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/);
+  });
+  it("Dati e copie: il servizio finto non parla di «telefono»", () => {
+    const p = get("/programma").corpo as { cartellaBackup: string };
+    expect(p.cartellaBackup).toBe("Su questo dispositivo");
   });
 });

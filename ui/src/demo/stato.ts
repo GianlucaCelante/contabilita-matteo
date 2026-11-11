@@ -7,6 +7,8 @@ export interface SedeDemo {
   id: number;
   nome: string;
   archiviata: boolean;
+  // Sede delle spese dei titolari: niente pizze e ordini, fuori dai totali se il filtro `sedi` manca.
+  personale: boolean;
   ordine: number;
 }
 
@@ -17,13 +19,24 @@ export interface RicorrenzaDemo {
   unita: UnitaRipetizione;
   intervallo: number;
   prossimaData: string;
+  // Le ripetizioni nate dallo stesso «dividi» (una per sede) hanno lo stesso valore; null se la ripetizione non e' divisa.
+  divisione: string | null;
   // I dati con cui nascono le prossime occorrenze.
   modello: Pick<MovimentoInput, "tipo" | "documento" | "importoCent" | "categoria" | "fornitore" | "dipendente" | "descrizione" | "note" | "sedeId">;
 }
 
-// Pizze e ordini di una sede in una settimana (docs/api.md, «Statistiche»): `settimana` e' il lunedi'. Al piu' un dato per sede e settimana.
+// Il totale di pizze e ordini di una sede in una settimana (docs/api.md, «Statistiche»): `settimana` e' il lunedi'. Al piu' un dato
+// per sede e settimana. Per una (sede, settimana) vale un solo modo: salvare i giorni cancella il totale e viceversa.
 export interface StatisticaDemo {
   settimana: string;
+  sedeId: number;
+  pizze: number;
+  ordini: number;
+}
+
+// Pizze e ordini di una sede in un giorno (yyyy-MM-dd). Al piu' un dato per sede e giorno.
+export interface StatisticaGiornoDemo {
+  giorno: string;
   sedeId: number;
   pizze: number;
   ordini: number;
@@ -64,12 +77,17 @@ export interface StatoDemo {
   dipendenti: DipendenteDemo[];
   sedi: SedeDemo[];
   statistiche: StatisticaDemo[];
+  statisticheGiorni: StatisticaGiornoDemo[];
   fatture: FattureDemo;
+  // Il giorno a cui sono ancorate le date delle fatture d'esempio dell'importazione (backend.ts, anteprimaDemo). Manca finche' non si
+  // legge la prima volta.
+  dataEsempi?: string;
 }
 
-const CHIAVE = "contabilita-demo-v8";
-// La memoria della versione prima (senza «pagata» e senza scadenze): se c'e' ancora, si legge e si porta alla forma nuova.
-const CHIAVE_PRECEDENTE = "contabilita-demo-v7";
+const CHIAVE = "contabilita-demo-v9";
+// Le memorie delle versioni prima, dalla piu' recente: la v8 (senza i giorni di pizze e ordini) e la v7 (anche senza «pagata» e senza
+// scadenze). Se ce n'e' ancora una, si legge e si porta alla forma nuova (migraStato).
+const CHIAVI_PRECEDENTI = ["contabilita-demo-v8", "contabilita-demo-v7"];
 
 // Generatore pseudo-casuale con seme fisso: la demo e' sempre uguale.
 function casuale(seme: number): () => number {
@@ -106,7 +124,7 @@ const CATEGORIE_FISSE = ["Affitto", "Luce", "Gas", "Internet", "Assicurazioni", 
 const RICAVI_CATEGORIE = ["Sala", "Asporto", "Delivery", "Eventi"];
 const VARIABILI_CATEGORIE = ["Ingredienti", "Bevande", "Carta e contenitori", "Imballaggi", "Pulizia"];
 
-function mov(stato: StatoDemo, d: string, i: MovimentoInput, origine: Movimento["origine"], ricorrenza: Movimento["ricorrenza"] = null): Movimento {
+function mov(stato: StatoDemo, d: string, i: MovimentoInput, origine: Movimento["origine"], ricorrenza: Movimento["ricorrenza"] = null, divisione: string | null = null): Movimento {
   const m: Movimento = {
     id: stato.prossimoId++,
     data: d,
@@ -126,6 +144,7 @@ function mov(stato: StatoDemo, d: string, i: MovimentoInput, origine: Movimento[
     allegatoNome: null,
     creatoIl: `${d}T09:00:00`,
     modificatoIl: null,
+    divisione,
   };
   stato.movimenti.push(m);
   return m;
@@ -170,11 +189,17 @@ export function riferimentoRicorrenza(r: RicorrenzaDemo): NonNullable<Movimento[
   return { id: r.id, giorno: r.giorno, attiva: r.attiva, unita: r.unita, intervallo: r.intervallo, prossimaData: r.prossimaData };
 }
 
+// L'id comune delle parti generate per una scadenza di una ripetizione divisa fra sedi: quello della divisione piu' la data, quindi
+// uno per scadenza e lo stesso per tutte le sedi (ogni sede ha la sua ripetizione). Null se la ripetizione non e' divisa. Come il servizio.
+export function divisioneDellaScadenza(r: Pick<RicorrenzaDemo, "divisione">, data: string): string | null {
+  return r.divisione ? `${r.divisione}:${data}` : null;
+}
+
 // Registra le scadenze arrivate (solo fino a oggi), come il controllo giornaliero del servizio.
 export function generaScadenze(stato: StatoDemo, oggi: string): void {
   for (const r of stato.ricorrenze) {
     while (r.attiva && r.prossimaData <= oggi) {
-      mov(stato, r.prossimaData, r.modello as MovimentoInput, "RICORRENZA", riferimentoRicorrenza(r));
+      mov(stato, r.prossimaData, r.modello as MovimentoInput, "RICORRENZA", riferimentoRicorrenza(r), divisioneDellaScadenza(r, r.prossimaData));
       r.prossimaData = successiva(r.prossimaData, r.unita, r.intervallo, r.giorno);
     }
   }
@@ -191,7 +216,7 @@ export function aggiornaRiferimenti(stato: StatoDemo): void {
   }
 }
 
-export function creaRicorrenza(stato: StatoDemo, primaData: string, input: MovimentoInput, giorno: number, unita: UnitaRipetizione, intervallo: number): RicorrenzaDemo {
+export function creaRicorrenza(stato: StatoDemo, primaData: string, input: MovimentoInput, giorno: number, unita: UnitaRipetizione, intervallo: number, divisione: string | null = null): RicorrenzaDemo {
   const r: RicorrenzaDemo = {
     id: Math.max(0, ...stato.ricorrenze.map((x) => x.id)) + 1,
     attiva: true,
@@ -199,6 +224,7 @@ export function creaRicorrenza(stato: StatoDemo, primaData: string, input: Movim
     unita,
     intervallo,
     prossimaData: successiva(primaData, unita, intervallo, giorno),
+    divisione,
     modello: {
       tipo: input.tipo,
       documento: input.documento,
@@ -226,8 +252,9 @@ function generaDaZero(oggi: string): StatoDemo {
     categorie: [],
     fornitori: [],
     dipendenti: [],
-    sedi: SEDI_DEMO.map((s) => ({ id: s.id, nome: s.nome, archiviata: false, ordine: s.id })),
+    sedi: SEDI_DEMO.map((s) => ({ id: s.id, nome: s.nome, archiviata: false, personale: false, ordine: s.id })),
     statistiche: [],
+    statisticheGiorni: [],
     fatture: { caselle: [], mesi: [] },
   };
   for (const f of FORNITORI) {
@@ -366,7 +393,7 @@ function generaPagate(stato: StatoDemo, oggi: string): void {
 function generaFatture(stato: StatoDemo, oggi: string): void {
   const f = stato.fatture;
   const adesso = oggi.slice(0, 7);
-  // Le scadenze: Eventi il 28; Catering Rossi fra due giorni (cosi' la Home mostra sempre una riga in evidenza, qualunque sia oggi); Euro Service il 5.
+  // Le scadenze: Eventi il 28; Catering Rossi fra due giorni (cosi' il Riepilogo mostra sempre una riga in evidenza, qualunque sia oggi); Euro Service il 5.
   const giornoOggi = Number(oggi.slice(8, 10));
   const ultimoGiorno = new Date(Number(adesso.slice(0, 4)), Number(adesso.slice(5, 7)), 0).getDate();
   const fra2Giorni = Math.min(giornoOggi + 2, ultimoGiorno);
@@ -404,27 +431,36 @@ function generaFatture(stato: StatoDemo, oggi: string): void {
   metti(3, 1, "EMESSA", 125000, "N. 50");
 }
 
-// Pizze e ordini di prova: le ultime sette settimane intere per tutte le sedi (una settimana con una sede mancante, per vedere «2 su 3»)
-// e la settimana in corso con una sede ancora da inserire. Ordini = ricavi / scontrino tipico della sede (con un po' di variazione),
-// pizze = ordini x pizze per ordine: cosi' lo scontrino medio che esce e' quello tipico e il Riepilogo torna.
+// Pizze e ordini di prova. Le ultime tre settimane intere e quella in corso (fino a oggi) sono inserite giorno per giorno: ogni giorno con
+// degli incassi ha il suo dato, il giorno di chiusura della sede resta vuoto (e non rende la settimana «mancante»). Le quattro settimane
+// prima hanno il totale settimanale, come quando si inseriva una volta a settimana (cinque settimane fa il Lungomare manca, per
+// vedere «2 su 3»). Nella settimana in corso il Mercato non e' ancora stato inserito. Ordini = ricavi / scontrino tipico della sede (con un
+// po' di variazione), pizze = ordini x pizze per ordine: cosi' lo scontrino medio che esce e' quello tipico e il Riepilogo torna.
 function generaStatistiche(stato: StatoDemo, oggi: string): void {
   const rnd = casuale(20261029);
   const corrente = lunediDi(oggi);
-  const ricavi = (sedeId: number, lunedi: string) => {
-    const fine = aggiungiGiorni(lunedi, 6);
-    return stato.movimenti.filter((m) => m.tipo === "RICAVO" && m.sede.id === sedeId && m.data >= lunedi && m.data <= fine).reduce((t, m) => t + m.importoCent, 0);
+  const ricavi = (sedeId: number, da: string, a: string) =>
+    stato.movimenti.filter((m) => m.tipo === "RICAVO" && m.sede.id === sedeId && m.data >= da && m.data <= a).reduce((t, m) => t + m.importoCent, 0);
+  const numeri = (s: (typeof SEDI_DEMO)[number], incassi: number, variazione: number) => {
+    const scontrino = s.scontrinoCent * (1 + (rnd() - 0.5) * variazione);
+    const ordini = Math.max(1, Math.round(incassi / scontrino));
+    return { ordini, pizze: Math.round(ordini * s.pizzePerOrdine * (1 + (rnd() - 0.5) * 0.06)) };
   };
   for (let n = 7; n >= 0; n--) {
     const lunedi = aggiungiGiorni(corrente, -7 * n);
     for (const s of SEDI_DEMO) {
-      // la settimana in corso: il Mercato non e' ancora stato inserito; cinque settimane fa il Lungomare non lo era
       if ((n === 0 && s.id === 3) || (n === 5 && s.id === 2)) continue;
-      const incassi = ricavi(s.id, lunedi);
-      if (incassi <= 0) continue;
-      const scontrino = s.scontrinoCent * (1 + (rnd() - 0.5) * 0.08);
-      const ordini = Math.max(1, Math.round(incassi / scontrino));
-      const pizze = Math.round(ordini * s.pizzePerOrdine * (1 + (rnd() - 0.5) * 0.06));
-      stato.statistiche.push({ settimana: lunedi, sedeId: s.id, pizze, ordini });
+      if (n >= 4) {
+        const incassi = ricavi(s.id, lunedi, aggiungiGiorni(lunedi, 6));
+        if (incassi > 0) stato.statistiche.push({ settimana: lunedi, sedeId: s.id, ...numeri(s, incassi, 0.08) });
+        continue;
+      }
+      for (let i = 0; i < 7; i++) {
+        const giorno = aggiungiGiorni(lunedi, i);
+        if (giorno > oggi) break;
+        const incassi = ricavi(s.id, giorno, giorno);
+        if (incassi > 0) stato.statisticheGiorni.push({ giorno, sedeId: s.id, ...numeri(s, incassi, 0.1) });
+      }
     }
   }
 }
@@ -436,15 +472,27 @@ let corrente: StatoDemo | null = null;
 // Nella demo pubblicata (VITE_DEMO=1) e' sempre cosi': il generatore dei dati inventati resta solo per i test e non entra nella build.
 let vuota = import.meta.env.VITE_DEMO === "1";
 const chiave = () => (vuota ? `${CHIAVE}-vuoto` : CHIAVE);
-const chiavePrecedente = () => (vuota ? `${CHIAVE_PRECEDENTE}-vuoto` : CHIAVE_PRECEDENTE);
+const chiaviPrecedenti = () => CHIAVI_PRECEDENTI.map((c) => (vuota ? `${c}-vuoto` : c));
 
 // Porta alla forma di adesso uno stato salvato dalle versioni prima: le fatture gia' presenti risultano pagate (come la migrazione del
 // servizio, per non riempire di arretrati chi usa gia' l'app); le caselle ricevono `dalMese` (il primo mese con uno stato salvato, altrimenti
-// questo) e nessuna scadenza. Si puo' ripetere: non cambia uno stato gia' aggiornato.
+// questo) e nessuna scadenza; i giorni di pizze e ordini partono vuoti e i totali settimanali restano come sono (valgono finche'
+// in quella settimana non si inserisce un giorno); le sedi senza il flag `personale` sono normali; i movimenti e le ripetizioni senza
+// `divisione` (salvati prima dell'id comune dei movimenti divisi) la ricevono null, come la colonna nuova del servizio: per loro le
+// Ricevute usano ancora l'euristica. Si puo' ripetere: non cambia uno stato gia' aggiornato.
 export function migraStato(letto: unknown): StatoDemo {
   const st = letto as StatoDemo;
+  if (!Array.isArray(st.statistiche)) st.statistiche = [];
+  if (!Array.isArray(st.statisticheGiorni)) st.statisticheGiorni = [];
+  for (const s of st.sedi) {
+    if (typeof s.personale !== "boolean") s.personale = false;
+  }
   for (const m of st.movimenti) {
     if (typeof m.pagata !== "boolean") m.pagata = m.documento === "FATTURA";
+    if (typeof m.divisione !== "string") m.divisione = null;
+  }
+  for (const r of st.ricorrenze) {
+    if (typeof r.divisione !== "string") r.divisione = null;
   }
   const adesso = oggiIso().slice(0, 7);
   for (const c of st.fatture.caselle) {
@@ -472,8 +520,9 @@ function generaVuoto(oggi: string): StatoDemo {
     categorie: [],
     fornitori: [],
     dipendenti: [],
-    sedi: [{ id: 1, nome: "Sede principale", archiviata: false, ordine: 1 }],
+    sedi: [{ id: 1, nome: "Sede principale", archiviata: false, personale: false, ordine: 1 }],
     statistiche: [],
+    statisticheGiorni: [],
     fatture: { caselle: [], mesi: [] },
   };
 }
@@ -482,7 +531,8 @@ export function stato(): StatoDemo {
   if (corrente) return corrente;
   const oggi = oggiIso();
   try {
-    const salvato = localStorage.getItem(chiave()) ?? localStorage.getItem(chiavePrecedente());
+    let salvato = localStorage.getItem(chiave());
+    for (const c of chiaviPrecedenti()) salvato ??= localStorage.getItem(c);
     if (salvato) {
       const letto = migraStato(JSON.parse(salvato));
       if (vuota || letto.giorno === oggi) {
@@ -511,7 +561,7 @@ export function ricomincia(): void {
   corrente = null;
   try {
     localStorage.removeItem(chiave());
-    localStorage.removeItem(chiavePrecedente());
+    for (const c of chiaviPrecedenti()) localStorage.removeItem(c);
   } catch {
     // niente
   }

@@ -1,7 +1,8 @@
 import { IconaOrologio, IconaSpunta } from "./Icone";
 
 // «Da pagare» / «Pagata» di una fattura ricevuta: icona + parola + colore (mai solo il colore).
-// `piccolo`: la versione per le righe dell'elenco Movimenti (solo lettura); senza, e' il badge-comando delle Ricevute.
+// `piccolo`: la versione per le righe dell'elenco Movimenti; senza, quella delle Ricevute. In tutti e due i casi sta dentro un pulsante:
+// un tocco cambia lo stato (hooks/useSegnaPagata).
 export default function BadgePagata({ pagata, piccolo = false, className = "" }: { pagata: boolean; piccolo?: boolean; className?: string }) {
   const Icona = pagata ? IconaSpunta : IconaOrologio;
   const colori = pagata ? "border-verdebordo bg-verdechiaro text-verdescuro" : "border-ambrabordo bg-ambrachiaro text-ambra";

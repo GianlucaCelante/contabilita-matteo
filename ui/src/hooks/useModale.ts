@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { chiHaAperto, origineInEredita } from "../util/fuoco";
 
 // Il comportamento di una finestra modale per chi usa la tastiera o uno
 // schermo parlante (prove con utenti, 2 ottobre 2026, Anna: "Eliminare...?"
@@ -31,10 +32,39 @@ const FOCALIZZABILI = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
-// I bottoni che fanno la cosa irreversibile (".btn.elimina.forte", "Si',
-// elimina") non prendono mai il fuoco da soli all'apertura: nelle conferme il
-// fuoco iniziale va sul bottone che non fa danni ("No, lascia", "Annulla").
-const DISTRUTTIVI = ".forte, [data-distruttivo]";
+// I bottoni che fanno la cosa irreversibile (".btn.pericolo.pieno", "Elimina")
+// non prendono mai il fuoco da soli all'apertura: nelle conferme il fuoco
+// iniziale va sul bottone che non fa danni ("Annulla").
+const DISTRUTTIVI = ".forte, [data-distruttivo], .btn.pericolo.pieno";
+
+// L'ultimo controllo premuto, e quando. Serve a sapere chi ha aperto la finestra anche dove premere un pulsante non gli da' il fuoco
+// (Safari su iPhone e Mac; un clic fatto da un programma): senza, alla chiusura il fuoco finiva sul contenuto invece che sul pulsante.
+let ultimoPremuto: { nodo: HTMLElement; quando: number } | null = null;
+const POCO_FA = 1500;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "click",
+    (evento) => {
+      const nodo = evento.target instanceof Element ? evento.target.closest<HTMLElement>(FOCALIZZABILI) : null;
+      ultimoPremuto = nodo ? { nodo, quando: Date.now() } : null;
+    },
+    true,
+  );
+}
+
+// Chi aveva aperto la finestra che si sta chiudendo in questo stesso aggiornamento della pagina (vale fino al microtask della chiusura).
+// Una finestra che ne sostituisce un'altra (le fasi di AzioniVoce: scelta, rinomina, elimina, unisci) la eredita: cosi' alla chiusura
+// finale il fuoco torna alla matita o al pulsante che aveva aperto la prima, non al contenuto.
+let appenaChiusa: HTMLElement | null = null;
+
+// Chi ha aperto la finestra: chi ha il fuoco, oppure (se il fuoco non e' su niente) il controllo premuto un attimo prima, oppure chi
+// aveva aperto la finestra di cui questa prende il posto (util/fuoco.ts, chiHaAperto).
+function chiApre(): HTMLElement | null {
+  const attivo = document.activeElement;
+  const conFuoco = attivo instanceof HTMLElement && attivo !== document.body ? attivo : null;
+  const premuto = ultimoPremuto && Date.now() - ultimoPremuto.quando < POCO_FA && ultimoPremuto.nodo.isConnected ? ultimoPremuto.nodo : null;
+  return chiHaAperto(conFuoco, premuto, appenaChiusa?.isConnected ? appenaChiusa : null);
+}
 
 // Le finestre aperte, dall'ultima aperta (in cima) in giu'. Solo quella in
 // cima risponde a Tab ed Esc, e solo lei resta attiva.
@@ -102,9 +132,7 @@ export function useModale({ velo, finestra, onChiudi }: OpzioniModale) {
   useLayoutEffect(() => {
     const nodo = velo.current;
     if (!nodo) return;
-    if (!apriva.current && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
-      apriva.current = document.activeElement;
-    }
+    if (!apriva.current) apriva.current = chiApre();
     viva.current = true;
     pila.push(nodo);
     aggiornaInerti();
@@ -113,12 +141,17 @@ export function useModale({ velo, finestra, onChiudi }: OpzioniModale) {
       const posto = pila.indexOf(nodo);
       if (posto >= 0) pila.splice(posto, 1);
       aggiornaInerti();
+      // Se in questo stesso aggiornamento se ne apre un'altra al suo posto, eredita chi aveva aperto questa.
+      // Con due finestre annidate chiuse insieme vince la prima origine ancora in pagina (util/fuoco.ts, origineInEredita).
+      const lasciata = origineInEredita(appenaChiusa, apriva.current, (nodo) => nodo.isConnected);
+      appenaChiusa = lasciata;
       // Il fuoco torna a chi aveva aperto, ma dopo che il DOM e' assestato
       // (l'elemento puo' sparire nello stesso rendering: eliminare
       // l'etichetta toglie il cestino che aveva aperto la conferma). Se la
       // finestra si e' solo rimontata (StrictMode) o qualcuno ha gia' messo il
       // fuoco da un'altra parte, non si tocca niente.
       queueMicrotask(() => {
+        if (appenaChiusa === lasciata) appenaChiusa = null;
         if (viva.current) return;
         const attivo = document.activeElement;
         if (attivo && attivo !== document.body) return;

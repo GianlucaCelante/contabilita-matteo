@@ -105,7 +105,9 @@ class ImportaApiTest extends ProvaBase {
         assertThat(a.get("errori")).hasSize(4);
         java.util.Map<String, String> perFile = new java.util.HashMap<>();
         a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
-        assertThat(perFile.get("af.xml")).contains("TD16").contains("già una fattura a parte");
+        assertThat(perFile.get("af.xml")).doesNotContain("TD16").contains("già una fattura a parte");
+        assertThat(perFile.get("rotto.xml")).isEqualTo("Il file non è una fattura elettronica valida.");
+        assertThat(perFile.get("xxe.xml")).isEqualTo("Il file contiene istruzioni non ammesse e non è stato letto.");
         assertThat(perFile.keySet()).containsExactlyInAnyOrder("af.xml", "rotto.xml", "xxe.xml", "immagine.png");
     }
 
@@ -213,7 +215,7 @@ class ImportaApiTest extends ProvaBase {
         });
         assertThat(a.get("errori")).singleElement().satisfies(e -> {
             assertThat(e.get("nomeFile").asText()).isEqualTo("16.xml");
-            assertThat(e.get("messaggio").asText()).isEqualTo("Integrazione TD16: non importata, la fattura originale del fornitore è già una fattura a parte.");
+            assertThat(e.get("messaggio").asText()).isEqualTo("Autofattura di integrazione: non importata, la fattura originale del fornitore è già una fattura a parte.");
         });
         JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Pubblicità", 1, "Pubblicità", 2, "Pubblicità"), 200);
         assertThat(esito.get("importati").asInt()).isEqualTo(3);
@@ -420,5 +422,250 @@ class ImportaApiTest extends ProvaBase {
         JsonNode a = anteprima(f("forno.xml", forno));
         invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null), 200);
         assertThat(leggi("/api/movimenti").get("elementi").get(0).get("sede").get("nome").asText()).isEqualTo("Sede principale");
+    }
+
+    // s35: i codici dei tipi di documento (TD26…) sono gergo; al cliente arriva il nome, il codice resta nel log.
+    @Test
+    void unTipoDiDocumentoNonGestitoSiSpiegaConIlNomeSenzaIlCodice() throws Exception {
+        String fornitore = denominazione("Forno Rossi Srl", "01234567890");
+        JsonNode a = anteprima(
+                f("cessione.xml", fattura(fornitore, body("TD26", "D-1", "2026-10-09", "10.00", "8.20", "1.80"))),
+                f("auto.xml", fattura(fornitore, body("TD20", "A-1", "2026-10-09", "10.00", "8.20", "1.80"))),
+                f("ignoto.xml", fattura(fornitore, body("TD99", "I-1", "2026-10-09", "10.00", "8.20", "1.80"))),
+                f("senza.xml", fattura(fornitore, body("", "S-1", "2026-10-09", "10.00", "8.20", "1.80"))),
+                f("lotto.xml", fattura(fornitore, body("TD26", "L-1", "2026-10-09", "10.00", "8.20", "1.80"),
+                        body("TD01", "L-2", "2026-10-09", "10.00", "8.20", "1.80"))));
+        assertThat(a.get("fatture")).hasSize(1);
+        java.util.Map<String, String> perFile = new java.util.HashMap<>();
+        a.get("errori").forEach(e -> perFile.put(e.get("nomeFile").asText(), e.get("messaggio").asText()));
+        assertThat(perFile.get("cessione.xml")).isEqualTo("Tipo di documento non gestito (cessione di beni ammortizzabili): non importato.");
+        assertThat(perFile.get("auto.xml")).isEqualTo("Tipo di documento non gestito (autofattura): non importato.");
+        assertThat(perFile.get("ignoto.xml")).isEqualTo("Tipo di documento non gestito: non importato.");
+        assertThat(perFile.get("senza.xml")).isEqualTo("Nella fattura manca il tipo di documento: non importata.");
+        assertThat(perFile.get("lotto.xml")).isEqualTo("Fattura L-1: Tipo di documento non gestito (cessione di beni ammortizzabili): non importato.");
+        assertThat(perFile.values()).noneSatisfy(m -> assertThat(m).containsPattern("TD\\d\\d"));
+    }
+
+    // s39: l'importazione appena letta non si scarta mai per far posto. Prima, oltre le 20 in memoria, la conferma toglieva quella
+    // con la scadenza piu' vicina: con l'orologio dei test (riportato al 2026-01-01 prima di ogni test) era proprio quella appena
+    // letta, o una a caso fra quelle con la stessa scadenza, e la conferma rispondeva «importazione scaduta».
+    @Test
+    void conPiuDiVentiImportazioniInMemoriaQuellaAppenaLettaSiConfermaComunque() throws Exception {
+        orologio.imposta("2026-06-01"); // importazioni lasciate da altri, con una scadenza piu' lontana
+        for (int i = 0; i < 21; i++) {
+            anteprima(f("forno.xml", forno));
+        }
+        orologio.imposta("2026-01-01");
+        JsonNode a = anteprima(f("mario.xml", mario));
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null), 200);
+    }
+
+    @Test
+    void oltreVentiImportazioniSiScartaLaPiuVecchiaAncheSeScadonoInsieme() throws Exception {
+        String prima = anteprima(f("forno.xml", forno)).get("importazioneId").asText();
+        String ultima = null;
+        for (int i = 0; i < 20; i++) { // tutte allo stesso istante: stessa scadenza
+            ultima = anteprima(f("mario.xml", mario)).get("importazioneId").asText();
+        }
+        invia(post("/api/importa/conferma"), conferma(prima, 0, null), 404);
+        invia(post("/api/importa/conferma"), conferma(ultima, 0, null), 200);
+    }
+
+    // s38: l'acconto su parcella (TD03) e' un costo vero, con la struttura di una fattura ordinaria.
+    @Test
+    void lAccontoSuParcellaTD03SiImportaComeUnaFatturaPagata() throws Exception {
+        String acconto = fattura(persona("Carla", "Neri", "09876543210"), body("TD03", "ACC-1", "2026-10-02", "610.00", "500.00", "110.00"));
+        JsonNode a = anteprima(f("acconto.xml", acconto));
+        assertThat(a.get("errori")).isEmpty();
+        assertThat(a.get("fatture")).hasSize(1);
+        assertThat(a.get("fatture").get(0).get("notaDiCredito").asBoolean()).isFalse();
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Consulenze"), 200);
+        JsonNode m = leggi("/api/movimenti").get("elementi").get(0);
+        assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+        assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+        assertThat(m.get("importoCent").asLong()).isEqualTo(61000);
+        assertThat(m.get("pagata").asBoolean()).isTrue();
+        // la seconda volta e' una doppia
+        assertThat(anteprima(f("acconto.xml", acconto)).get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+    }
+
+    // s38: la fattura semplificata (TD07) ha un tracciato suo (FatturaElettronicaSemplificata, FSM10): fornitore senza
+    // DatiAnagrafici, righe con l'importo IVA compresa, nessun totale scritto.
+    @Test
+    void laFatturaSemplificataTD07SiImportaAlTotaleIvaCompresa() throws Exception {
+        String xml = FattureProva.semplificata("p", FattureProva.cedenteSemplificato("Ferramenta Bianchi Snc", "02468013579"), "TD07", "S-12", "2026-10-06",
+                FattureProva.rigaSemplificata("Viti e tasselli", "36.60", "6.60", null),
+                FattureProva.rigaSemplificata("Nastro", "12.20", null, "22.00"));
+        JsonNode a = anteprima(f("semplificata.xml", xml));
+        assertThat(a.get("errori")).isEmpty();
+        JsonNode letta = a.get("fatture").get(0);
+        assertThat(letta.get("fornitore").get("nome").asText()).isEqualTo("Ferramenta Bianchi Snc");
+        assertThat(letta.get("fornitore").get("partitaIva").asText()).isEqualTo("02468013579");
+        assertThat(letta.get("numero").asText()).isEqualTo("S-12");
+        assertThat(letta.get("data").asText()).isEqualTo("2026-10-06");
+        assertThat(letta.get("totaleCent").asLong()).isEqualTo(4880);
+        assertThat(letta.get("ivaCent").asLong()).isEqualTo(880);
+        assertThat(letta.get("imponibileCent").asLong()).isEqualTo(4000);
+        assertThat(letta.get("notaDiCredito").asBoolean()).isFalse();
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Ferramenta"), 200);
+        JsonNode m = leggi("/api/movimenti").get("elementi").get(0);
+        assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+        assertThat(m.get("importoCent").asLong()).isEqualTo(4880);
+        assertThat(m.get("pagata").asBoolean()).isTrue();
+        assertThat(m.get("origine").asText()).isEqualTo("XML");
+        assertThat(anteprima(f("semplificata.xml", xml)).get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+    }
+
+    @Test
+    void nelTracciatoSemplificatoLaNotaDiCreditoTD08RiduceICosti() throws Exception {
+        String cedente = FattureProva.cedenteSemplificato("Ferramenta Bianchi Snc", "02468013579");
+        JsonNode a = anteprima(
+                f("ft.xml", FattureProva.semplificata("", cedente, "TD07", "S-20", "2026-10-06", FattureProva.rigaSemplificata("Viti", "36.60", "6.60", null))),
+                f("nc.xml", FattureProva.semplificata("", cedente, "TD08", "NC-3", "2026-10-07", FattureProva.rigaSemplificata("Reso", "12.20", "2.20", null))));
+        assertThat(a.get("fatture")).hasSize(2);
+        assertThat(a.get("fatture").get(0).get("notaDiCredito").asBoolean()).isFalse();
+        assertThat(a.get("fatture").get(1).get("notaDiCredito").asBoolean()).isTrue();
+        assertThat(a.get("fatture").get(1).get("totaleCent").asLong()).isEqualTo(1220);
+        assertThat(a.get("errori")).isEmpty();
+
+        // la conferma: la nota diventa un movimento NOTA_DI_CREDITO, senza stato «pagata», e riduce i costi
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Ferramenta", 1, "Ferramenta"), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(2);
+        JsonNode elenco = leggi("/api/movimenti");
+        assertThat(elenco.get("elementi")).hasSize(2);
+        JsonNode nota = null;
+        for (JsonNode e : elenco.get("elementi")) {
+            if ("NC-3".equals(e.get("numeroDocumento").asText())) {
+                nota = e;
+            }
+        }
+        assertThat(nota).isNotNull();
+        assertThat(nota.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+        assertThat(nota.get("documento").asText()).isEqualTo("NOTA_DI_CREDITO");
+        assertThat(nota.get("pagata").asBoolean()).isFalse();
+        assertThat(nota.get("importoCent").asLong()).isEqualTo(1220);
+        assertThat(nota.get("fornitore").get("nome").asText()).isEqualTo("Ferramenta Bianchi Snc");
+        assertThat(nota.get("origine").asText()).isEqualTo("XML");
+        // fattura da 36,60 e nota da 12,20: i costi sono 24,40
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(3660 - 1220);
+        assertThat(leggi("/api/movimenti?pagata=true").get("elementi")).hasSize(1);
+        // la nota riletta e' una doppia
+        JsonNode dinuovo = anteprima(f("nc.xml", FattureProva.semplificata("", cedente, "TD08", "NC-3", "2026-10-07", FattureProva.rigaSemplificata("Reso", "12.20", "2.20", null))));
+        assertThat(dinuovo.get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+    }
+
+    // s41: la nota di debito (TD05; TD09 nel tracciato semplificato) e' un costo vero: aumenta il dovuto al fornitore.
+    @Test
+    void laNotaDiDebitoTD05SiImportaComeUnaFatturaPagataCheAumentaICosti() throws Exception {
+        String debito = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD05", "ND-1", "2026-10-09", "24.40", "20.00", "4.40"));
+        JsonNode a = anteprima(f("ok.xml", forno), f("debito.xml", debito));
+        assertThat(a.get("errori")).isEmpty();
+        assertThat(a.get("fatture")).hasSize(2);
+        JsonNode letta = a.get("fatture").get(1);
+        assertThat(letta.get("numero").asText()).isEqualTo("ND-1");
+        assertThat(letta.get("totaleCent").asLong()).isEqualTo(2440);
+        assertThat(letta.get("notaDiCredito").asBoolean()).isFalse();
+        assertThat(letta.get("integrazione").asBoolean()).isFalse();
+        assertThat(letta.get("duplicata").asBoolean()).isFalse();
+
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Pane e farine", 1, "Pane e farine"), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(2);
+        JsonNode elenco = leggi("/api/movimenti");
+        JsonNode m = null;
+        for (JsonNode e : elenco.get("elementi")) {
+            if ("ND-1".equals(e.get("numeroDocumento").asText())) {
+                m = e;
+            }
+        }
+        assertThat(m).isNotNull();
+        assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+        assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+        assertThat(m.get("pagata").asBoolean()).isTrue();
+        assertThat(m.get("importoCent").asLong()).isEqualTo(2440);
+        assertThat(m.get("origine").asText()).isEqualTo("XML");
+        assertThat(m.get("fornitore").get("nome").asText()).isEqualTo("Forno Rossi Srl");
+        assertThat(m.get("allegatoNome").asText()).isEqualTo("debito.xml");
+        // fattura da 122,00 e nota di debito da 24,40: i costi salgono a 146,40
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(12200 + 2440);
+        // riletta e' una doppia
+        assertThat(anteprima(f("debito.xml", debito)).get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+        // con un importo negativo non si importa, come una fattura
+        String negativa = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD05", "ND-2", "2026-10-09", "-5.00", "-4.10", "-0.90"));
+        assertThat(anteprima(f("negativa.xml", negativa)).get("errori").get(0).get("messaggio").asText()).isEqualTo("Importo negativo: fattura non importata.");
+    }
+
+    @Test
+    void laNotaDiDebitoSemplificataTD09SiImportaComeUnaFatturaPagata() throws Exception {
+        String cedente = FattureProva.cedenteSemplificato("Ferramenta Bianchi Snc", "02468013579");
+        String debito = FattureProva.semplificata("", cedente, "TD09", "ND-1", "2026-10-07",
+                FattureProva.rigaSemplificata("Addebito", "12.20", "2.20", null), FattureProva.rigaSemplificata("Spese", "6.10", null, "22.00"));
+        JsonNode a = anteprima(f("nd.xml", debito));
+        assertThat(a.get("errori")).isEmpty();
+        JsonNode letta = a.get("fatture").get(0);
+        assertThat(letta.get("totaleCent").asLong()).isEqualTo(1830);
+        assertThat(letta.get("ivaCent").asLong()).isEqualTo(330);
+        assertThat(letta.get("imponibileCent").asLong()).isEqualTo(1500);
+        assertThat(letta.get("notaDiCredito").asBoolean()).isFalse();
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, "Ferramenta"), 200);
+        JsonNode elenco = leggi("/api/movimenti");
+        JsonNode m = elenco.get("elementi").get(0);
+        assertThat(m.get("tipo").asText()).isEqualTo("COSTO_VARIABILE");
+        assertThat(m.get("documento").asText()).isEqualTo("FATTURA");
+        assertThat(m.get("pagata").asBoolean()).isTrue();
+        assertThat(m.get("importoCent").asLong()).isEqualTo(1830);
+        assertThat(elenco.get("totali").get("costiCent").asLong()).isEqualTo(1830);
+        assertThat(anteprima(f("nd.xml", debito)).get("fatture").get(0).get("duplicata").asBoolean()).isTrue();
+    }
+
+    // s46: nello stesso gruppo di file una nota di credito e una fattura con stesso fornitore, numero e data non sono doppie
+    // (sono movimenti di documento diverso, come gia' valeva contro quelle registrate).
+    @Test
+    void notaDiCreditoEFatturaConLoStessoNumeroNelloStessoGruppoNonSonoDoppie() throws Exception {
+        String ft = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "55", "2026-10-09", "122.00", "100.00", "22.00"));
+        String nc = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD04", "55", "2026-10-09", "24.40", "20.00", "4.40"));
+        JsonNode a = anteprima(f("ft.xml", ft), f("nc.xml", nc), f("nc-bis.xml", nc));
+        assertThat(a.get("fatture")).hasSize(3);
+        assertThat(a.get("fatture").get(0).get("duplicata").asBoolean()).isFalse();
+        assertThat(a.get("fatture").get(1).get("duplicata").asBoolean()).as("la nota di credito non è il doppione della fattura").isFalse();
+        assertThat(a.get("fatture").get(1).get("motivo").isNull()).isTrue();
+        // la stessa nota due volte resta doppia
+        assertThat(a.get("fatture").get(2).get("duplicata").asBoolean()).isTrue();
+        assertThat(a.get("fatture").get(2).get("motivo").asText()).isEqualTo("Duplicata nello stesso gruppo di file");
+
+        JsonNode esito = invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null, 1, null, 2, null), 200);
+        assertThat(esito.get("importati").asInt()).isEqualTo(2);
+        assertThat(esito.get("ignorate")).hasSize(1);
+        assertThat(leggi("/api/movimenti").get("elementi")).extracting(m -> m.get("documento").asText())
+                .containsExactlyInAnyOrder("FATTURA", "NOTA_DI_CREDITO");
+
+        // al secondo giro tutte e due risultano gia' registrate, ognuna per il suo documento
+        JsonNode dinuovo = anteprima(f("nc.xml", nc), f("ft.xml", ft));
+        assertThat(dinuovo.get("fatture")).hasSize(2).allSatisfy(x -> assertThat(x.get("motivo").asText()).startsWith("Già registrata il"));
+    }
+
+    // s46, limite documentato: una nota di debito e' un movimento FATTURA (il tipo del file non si conserva), quindi con lo
+    // stesso numero e la stessa data di una fattura dello stesso fornitore resta doppia, nel gruppo come contro il registrato.
+    @Test
+    void unaNotaDiDebitoConNumeroEDataDiUnaFatturaRestaDoppia() throws Exception {
+        String ft = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "55", "2026-10-09", "122.00", "100.00", "22.00"));
+        String nd = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD05", "55", "2026-10-09", "24.40", "20.00", "4.40"));
+        JsonNode a = anteprima(f("ft.xml", ft), f("nd.xml", nd));
+        assertThat(a.get("fatture").get(0).get("duplicata").asBoolean()).isFalse();
+        assertThat(a.get("fatture").get(1).get("duplicata").asBoolean()).isTrue();
+        invia(post("/api/importa/conferma"), conferma(a.get("importazioneId").asText(), 0, null), 200);
+        assertThat(anteprima(f("nd.xml", nd)).get("fatture").get(0).get("motivo").asText()).startsWith("Già registrata il");
+    }
+
+    // s47: l'anteprima dice che tipo di documento e', cosi' l'interfaccia distingue una nota di debito da una fattura.
+    @Test
+    void lAnteprimaDiceIlTipoDiDocumentoELaNotaDiDebito() throws Exception {
+        String nd = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD05", "ND-7", "2026-10-09", "24.40", "20.00", "4.40"));
+        String nc = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD04", "NC-7", "2026-10-09", "24.40", "20.00", "4.40"));
+        String nds = FattureProva.semplificata("", FattureProva.cedenteSemplificato("Ferramenta Bianchi Snc", "02468013579"), "TD09", "ND-8", "2026-10-07",
+                FattureProva.rigaSemplificata("Addebito", "12.20", "2.20", null));
+        JsonNode fatture = anteprima(f("ft.xml", forno), f("nd.xml", nd), f("nc.xml", nc), f("nds.xml", nds)).get("fatture");
+        assertThat(fatture).extracting(x -> x.get("tipoDocumento").asText()).containsExactly("TD01", "TD05", "TD04", "TD09");
+        assertThat(fatture).extracting(x -> x.get("notaDiDebito").asBoolean()).containsExactly(false, true, false, true);
+        assertThat(fatture).extracting(x -> x.get("notaDiCredito").asBoolean()).containsExactly(false, false, true, false);
     }
 }

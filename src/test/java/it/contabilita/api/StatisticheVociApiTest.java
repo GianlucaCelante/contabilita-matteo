@@ -58,6 +58,12 @@ class StatisticheVociApiTest extends ProvaBase {
         assertThat(b.get("regolareCent").asLong()).isZero();
         assertThat(b.get("extraCent").asLong()).isZero();
         assertThat(b.get("pagataCent").asLong()).isZero();
+        assertThat(b.get("fattureCent").asLong()).isEqualTo(9000); // 10000 di fattura - 1000 di nota; lo scontrino non conta
+        assertThat(b.get("fatturePerMese")).extracting(JsonNode::asLong).containsExactly(10000L, -1000L);
+        assertThat(b.get("pagataPerMese")).extracting(JsonNode::asLong).containsExactly(0L, 0L);
+        assertThat(r.get("voci").get(1).get("fattureCent").asLong()).isEqualTo(2000);
+        assertThat(r.get("voci").get(1).get("fatturePerMese")).extracting(JsonNode::asLong).containsExactly(0L, 2000L);
+        assertThat(r.get("voci").get(2).get("fattureCent").asLong()).isZero(); // solo uno scontrino
         assertThat(r.get("voci").get(1).get("nome").asText()).isEqualTo("Altro");
         assertThat(r.get("voci").get(1).get("totaleCent").asLong()).isEqualTo(2000);
         JsonNode senza = r.get("voci").get(2);
@@ -77,15 +83,46 @@ class StatisticheVociApiTest extends ProvaBase {
         errore(put("/api/movimenti/" + scontrino + "/pagata"), "{\"pagata\":true}", 400);
         JsonNode r = voci("raggruppa=FORNITORE");
         assertThat(voce(r, "Bel Fungo").get("pagataCent").asLong()).isEqualTo(10000);
-        assertThat(voce(r, "Bel Fungo").get("totaleCent").asLong()).isEqualTo(9500); // resta da pagare totale - pagata (negativo = credito)
+        assertThat(voce(r, "Bel Fungo").get("totaleCent").asLong()).isEqualTo(9500);
+        // resta da pagare fatture - pagata (negativo = credito): qui 9000 - 10000
+        assertThat(voce(r, "Bel Fungo").get("fattureCent").asLong()).isEqualTo(9000);
+        assertThat(voce(r, "Bel Fungo").get("pagataPerMese")).extracting(JsonNode::asLong).containsExactly(10000L, 0L);
+        assertThat(voce(r, "Bel Fungo").get("fatturePerMese")).extracting(JsonNode::asLong).containsExactly(10000L, -1000L);
         assertThat(voce(r, "Altro").get("pagataCent").asLong()).isZero();
+        assertThat(voce(r, "Altro").get("pagataPerMese")).extracting(JsonNode::asLong).containsExactly(0L, 0L);
         assertThat(voce(r, "Senza fornitore").get("pagataCent").asLong()).isZero();
+    }
+
+    @Test
+    void fattureEPagatoPerMeseSonoLunghiComeMesiESommanoAiTotali() throws Exception {
+        long fattura = jdbc.queryForObject("SELECT id FROM movimento WHERE importo_cent = 2000", Long.class);
+        invia(put("/api/movimenti/" + fattura + "/pagata"), "{\"pagata\":true}", 200);
+        JsonNode r = leggi("/api/statistiche/voci?da=2026-09-15&a=2026-12-02&raggruppa=FORNITORE");
+        assertThat(voce(r, "Bel Fungo").get("fatturePerMese")).extracting(JsonNode::asLong).containsExactly(0L, 10000L, -1000L, 0L);
+        assertThat(voce(r, "Altro").get("pagataPerMese")).extracting(JsonNode::asLong).containsExactly(0L, 0L, 2000L, 0L);
+        r.get("voci").forEach(v -> {
+            for (String[] c : new String[][]{{"fatturePerMese", "fattureCent"}, {"pagataPerMese", "pagataCent"}}) {
+                assertThat(v.get(c[0])).hasSize(4);
+                long somma = 0;
+                for (JsonNode x : v.get(c[0])) {
+                    somma += x.asLong();
+                }
+                assertThat(somma).isEqualTo(v.get(c[1]).asLong());
+            }
+        });
     }
 
     @Test
     void pagataCentEsisteSoloPerIFornitori() throws Exception {
         for (String g : new String[]{"CATEGORIA", "DIPENDENTE"}) {
-            voci("raggruppa=" + g).get("voci").forEach(v -> assertThat(v.get("pagataCent").isNull()).isTrue());
+            JsonNode voci = voci("raggruppa=" + g).get("voci");
+            assertThat(voci).isNotEmpty();
+            voci.forEach(v -> {
+                assertThat(v.get("pagataCent").isNull()).isTrue();
+                assertThat(v.get("fattureCent").isNull()).isTrue();
+                assertThat(v.get("pagataPerMese").isNull()).isTrue();
+                assertThat(v.get("fatturePerMese").isNull()).isTrue();
+            });
         }
     }
 
@@ -102,6 +139,26 @@ class StatisticheVociApiTest extends ProvaBase {
             }
             assertThat(somma).isEqualTo(v.get("totaleCent").asLong());
         });
+    }
+
+    @Test
+    void movimentiPerMeseContaIMovimentiDiOgniMeseInTuttiIRaggruppamenti() throws Exception {
+        JsonNode f = leggi("/api/statistiche/voci?da=2026-09-15&a=2026-12-02&raggruppa=FORNITORE");
+        // Bel Fungo: fattura e scontrino a ottobre, nota di credito a novembre (la nota conta come movimento)
+        assertThat(voce(f, "Bel Fungo").get("movimentiPerMese")).extracting(JsonNode::asInt).containsExactly(0, 2, 1, 0);
+        for (String raggruppa : new String[] {"FORNITORE", "DIPENDENTE", "CATEGORIA"}) {
+            JsonNode r = voci("raggruppa=" + raggruppa);
+            assertThat(r.get("voci")).isNotEmpty();
+            r.get("voci").forEach(v -> {
+                assertThat(v.get("movimentiPerMese")).as(raggruppa).hasSize(r.get("mesi").size());
+                int somma = 0;
+                for (JsonNode x : v.get("movimentiPerMese")) {
+                    somma += x.asInt();
+                }
+                assertThat(somma).as(raggruppa).isEqualTo(v.get("movimenti").asInt());
+            });
+        }
+        assertThat(voce(voci("raggruppa=DIPENDENTE"), "Mario").get("movimentiPerMese")).extracting(JsonNode::asInt).containsExactly(1, 1);
     }
 
     @Test

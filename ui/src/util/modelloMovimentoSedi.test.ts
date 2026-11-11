@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alternaSede, campiVuoti, preparaInput, sediDelleDivisione, type CampiForm } from "./modelloMovimento";
+import { alternaSede, campiVuoti, preparaInput, sediDelleDivisione, sediDelMovimento, type CampiForm } from "./modelloMovimento";
 
 const valido = (extra: Partial<CampiForm> = {}): CampiForm => ({ ...campiVuoti(), importo: "86,00", fornitore: "Molino Bianchi", categoria: "Farine", ...extra });
 
@@ -71,5 +71,44 @@ describe("la scelta di una o più sedi", () => {
   it("le sedi della divisione: quelle scelte oppure tutte le attive", () => {
     expect(sediDelleDivisione({ sediDivise: [1, 3] }, attive)).toEqual([1, 3]);
     expect(sediDelleDivisione({ sediDivise: [] }, attive)).toEqual([1, 2, 3]);
+  });
+});
+
+describe("la scelta delle sedi con una sede personale", () => {
+  // Locale: 1 e 2; la 5 e' personale. `sediDivise` vuoto = tutto il locale, come «dividi» senza `sedi` nel servizio.
+  const locale = [1, 2];
+  const attive = [1, 2, 5];
+  const vuoto = { sedeId: null, dividi: false, sediDivise: [] as number[] };
+
+  it("la personale si sceglie da sola come ogni sede", () => {
+    expect(alternaSede(vuoto, 5, locale, attive)).toEqual({ sedeId: 5, dividi: false, sediDivise: [] });
+  });
+
+  it("una sede vera più la personale restano esplicite, anche se sono tante quante il locale", () => {
+    expect(alternaSede({ ...vuoto, sedeId: 1 }, 5, locale, attive)).toEqual({ sedeId: null, dividi: true, sediDivise: [1, 5] });
+  });
+
+  it("tutto il locale si riduce a vuoto; aggiungendo la personale l'elenco torna esplicito", () => {
+    const tutte = alternaSede({ ...vuoto, sedeId: 1 }, 2, locale, attive);
+    expect(tutte).toEqual({ sedeId: null, dividi: true, sediDivise: [] });
+    expect(alternaSede(tutte, 5, locale, attive)).toEqual({ sedeId: null, dividi: true, sediDivise: [1, 2, 5] });
+    expect(alternaSede({ sedeId: null, dividi: true, sediDivise: [1, 2, 5] }, 5, locale, attive)).toEqual({ sedeId: null, dividi: true, sediDivise: [] });
+  });
+
+  it("le sedi della divisione: «Tutte, dividi» (vuoto) è il locale, senza la personale", () => {
+    expect(sediDelleDivisione({ sediDivise: [] }, locale, attive)).toEqual([1, 2]);
+    expect(sediDelleDivisione({ sediDivise: [1, 5] }, locale, attive)).toEqual([1, 5]);
+  });
+});
+
+describe("le sedi per i conti di «Dove finisce»", () => {
+  const locale = [1, 2];
+  const attive = [1, 2, 5];
+  it("la sede scelta, anche personale; le sedi della divisione; niente se non c'è scelta o c'è una sede sola", () => {
+    expect(sediDelMovimento({ sedeId: 5, dividi: false, sediDivise: [] }, locale, attive, true)).toBe("5");
+    expect(sediDelMovimento({ sedeId: null, dividi: true, sediDivise: [] }, locale, attive, true)).toBe("1,2");
+    expect(sediDelMovimento({ sedeId: null, dividi: true, sediDivise: [1, 5] }, locale, attive, true)).toBe("1,5");
+    expect(sediDelMovimento({ sedeId: null, dividi: false, sediDivise: [] }, locale, attive, true)).toBeUndefined();
+    expect(sediDelMovimento({ sedeId: 1, dividi: false, sediDivise: [] }, [1], [1], false)).toBeUndefined();
   });
 });

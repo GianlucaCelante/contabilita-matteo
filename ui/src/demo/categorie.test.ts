@@ -262,18 +262,16 @@ describe("demo: riepilogo, una riga per categoria", () => {
     expect(righe()).toEqual([["Catering e feste", 17000]]);
   });
 
-  it("l'Excel finto ha nel foglio Riepilogo le stesse righe: una per categoria, il totale e il «di cui»", () => {
+  it("l'Excel finto ha nel foglio Riepilogo le righe del servizio: una per categoria, il totale e le somme per documento", () => {
     nuovoMovimento({ tipo: "RICAVO", documento: "RICAVO_FATTURATO", importoCent: 10000, categoria: "Sala" });
     nuovoMovimento({ tipo: "COSTO_FISSO", documento: "RETRIBUZIONE_REGOLARE", importoCent: 5000, categoria: "Retribuzione", dipendente: "Luca Ferri" });
     const q = new URLSearchParams(`${PERIODO}&formato=xlsx&statistiche=false`);
     const file = rispondi("GET", "/esporta", q, undefined);
     expect(file.stato).toBe(200);
     const testo = new TextDecoder().decode((file.testo as { contenuto: Uint8Array }).contenuto);
-    expect(testo).toContain("Ricavi: Sala");
-    expect(testo).toContain("Totale ricavi");
-    expect(testo).toContain("di cui fatturati");
-    expect(testo).toContain("Costi fissi: Retribuzione");
-    expect(testo).toContain("di cui retribuzione regolare");
-    expect(testo).not.toContain("di cui scontrini"); // a zero senza colonne per sede: non compare
+    // i nomi sono quelli di EsportazioneService: la categoria da sola, senza «Ricavi: », e niente «di cui» (dettaglio in esporta.test.ts)
+    for (const nome of ["Sala", "Totale ricavi", "Ricavi fatturati", "Retribuzione", "Retribuzione regolare", "Scontrini"]) expect(testo).toContain(`<t>${nome}</t>`);
+    expect(testo).not.toContain("Ricavi: Sala");
+    expect(testo).not.toContain("di cui");
   });
 });

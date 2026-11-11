@@ -7,9 +7,11 @@ import type { AnteprimaImportazione, FatturaLetta } from "../api/importa";
 import { MASSIMO_INTERVALLO, type UnitaRipetizione } from "../util/ripetizione";
 import { elencoMesi, contaMesi, dataScadenza, giorniMancanti, GIORNI_PREAVVISO, meseValido, MASSIMO_NOME_CASELLA, MASSIMO_NOTA_FATTURA, STATI } from "../util/fatture";
 import { dividiImporto } from "../util/sedi";
-import { costruisciXlsx } from "./xlsx";
+import { INTESTAZIONI_FILE, negativoNelFile, righeFoglioRiepilogo, righeTotaliRiepilogo, RIGHE_PRIMA_DELLE_VOCI, testiRigaFile } from "../api/esporta";
+import { con, costruisciXlsx, type Cella, type Foglio } from "./xlsx";
+import { dataIsoValida, righeEsportazione, salvaGiorni, salvaSettimana, salvaSettimanaCompleta, serieStatistiche, settimanaStatistiche, statistichePeriodo } from "./statistiche";
 import { conUsi, contaUsi, eRetribuzione, eliminaVoce, raggruppamentoValido, rinominaVoce, statisticheVoci, tipoPredefinito, TIPI_VOCI } from "./voci";
-import { aggiungiGiorni, daIso, iso, lunediDi, oggiIso, successiva } from "./date";
+import { aggiungiGiorni, daIso, lunediDi, oggiIso, successiva } from "./date";
 import {
   aggiornaRiferimenti,
   aggiungiMovimento,
@@ -91,11 +93,11 @@ function elencoSedi(st: StatoDemo): Sede[] {
   for (const m of st.movimenti) conta.set(m.sede.id, (conta.get(m.sede.id) ?? 0) + 1);
   return [...st.sedi]
     .sort((x, y) => Number(x.archiviata) - Number(y.archiviata) || perOrdine(x, y))
-    .map((s) => ({ id: s.id, nome: s.nome, archiviata: s.archiviata, ordine: s.ordine, movimenti: conta.get(s.id) ?? 0 }));
+    .map((s) => ({ id: s.id, nome: s.nome, archiviata: s.archiviata, personale: s.personale, ordine: s.ordine, movimenti: conta.get(s.id) ?? 0 }));
 }
 
-// Il filtro `sedi=1,2`: assente o vuoto = tutte (anche le archiviate); un valore che non e' un numero e' un errore.
-function filtroSedi(q: URLSearchParams): { ids: Set<number> | null; errore?: string } {
+// Il parametro `sedi=1,2` cosi' com'e': assente o vuoto = null; un valore che non e' un numero e' un errore.
+function idsSedi(q: URLSearchParams): { ids: Set<number> | null; errore?: string } {
   const grezzo = (q.get("sedi") ?? "").trim();
   if (!grezzo) return { ids: null };
   const ids = new Set<number>();
@@ -105,6 +107,14 @@ function filtroSedi(q: URLSearchParams): { ids: Set<number> | null; errore?: str
     ids.add(Number(t));
   }
   return { ids };
+}
+
+// Il filtro `sedi=1,2` di elenchi, riepilogo, statistiche ed esportazione: gli id dati (sedi personali comprese); assente o vuoto = tutte le
+// sedi non personali, archiviate comprese (null = nessun filtro, quando di personali non ce ne sono).
+function filtroSedi(st: StatoDemo, q: URLSearchParams): { ids: Set<number> | null; errore?: string } {
+  const f = idsSedi(q);
+  if (f.errore || f.ids || !st.sedi.some((s) => s.personale)) return f;
+  return { ids: new Set(st.sedi.filter((s) => !s.personale).map((s) => s.id)) };
 }
 
 // «Quale sede»: se manca e c'e' una sola sede attiva si usa quella; se ce n'e' piu' d'una si deve scegliere; archiviata o inesistente = errore.
@@ -142,12 +152,16 @@ function applica(m: Movimento, i: MovimentoInput, sede?: SedeDemo): void {
 }
 
 const SENZA_VOCE = ["FORNITORE", "DIPENDENTE", "CATEGORIA"] as const;
+const TIPI_ELENCO = ["RICAVO", "COSTO_VARIABILE", "COSTO_FISSO", "COSTI"] as const;
 
 // Controlla i filtri per voce (`fornitore`, `senza`, `categorie`): stessi 400 del contratto di docs/api.md.
 function erroreFiltriVoce(q: URLSearchParams): string | null {
   const categorie = q.get("categorie");
   const fornitore = q.get("fornitore");
   if (fornitore && !/^\d+$/.test(fornitore.trim())) return `fornitore: valore non valido: ${fornitore}`;
+  // tipo: un Tipo oppure COSTI (variabili + fissi); vuoto = tutti.
+  const tipo = q.get("tipo")?.trim();
+  if (tipo && !TIPI_ELENCO.some((t) => t === tipo)) return `tipo: valore non valido: ${q.get("tipo") ?? ""}`;
   const senza = q.get("senza");
   if (senza && !SENZA_VOCE.some((v) => v === senza)) return `senza: valore non valido: ${senza}`;
   if (senza === "CATEGORIA" && categorie) return "categorie e senza=CATEGORIA non possono stare insieme.";
@@ -161,7 +175,8 @@ function erroreFiltriVoce(q: URLSearchParams): string | null {
 function elenco(q: URLSearchParams, ids: Set<number> | null) {
   const da = q.get("da");
   const a = q.get("a");
-  const tipo = q.get("tipo");
+  // Come il servizio: spazi intorno ignorati, vuoto = tutti.
+  const tipo = q.get("tipo")?.trim();
   const cerca = (q.get("q") ?? "").trim().toLowerCase();
   const dip = q.get("dipendente");
   const cat = leggiIdCategorie(q.get("categorie"));
@@ -174,7 +189,7 @@ function elenco(q: URLSearchParams, ids: Set<number> | null) {
       (m) =>
         (!da || m.data >= da) &&
         (!a || m.data <= a) &&
-        (!tipo || m.tipo === tipo) &&
+        (!tipo || m.tipo === tipo || (tipo === "COSTI" && m.tipo !== "RICAVO")) &&
         (!ids || ids.has(m.sede.id)) &&
         (!dip || String(m.dipendente?.id) === dip) &&
         (cat.length === 0 || (!!m.categoria && cat.includes(m.categoria.id))) &&
@@ -184,7 +199,7 @@ function elenco(q: URLSearchParams, ids: Set<number> | null) {
         (senza !== "FORNITORE" || !m.fornitore) &&
         (senza !== "DIPENDENTE" || !m.dipendente) &&
         (senza !== "CATEGORIA" || !m.categoria) &&
-        (!cerca || [m.fornitore?.nome, m.descrizione, m.note].some((c) => c?.toLowerCase().includes(cerca))),
+        (!cerca || [m.fornitore?.nome, m.dipendente?.nome, m.descrizione, m.note].some((c) => c?.toLowerCase().includes(cerca))),
     )
     .sort((x, y) => (x.data === y.data ? y.id - x.id : x.data < y.data ? 1 : -1));
   let ricavi = 0;
@@ -253,14 +268,24 @@ function riepilogo(da: string, a: string, ids: Set<number> | null = null): Riepi
   };
 }
 
-function creaMovimento(i: MovimentoInput, sede: SedeDemo): Movimento {
+// «Creato» e' il momento in cui il movimento si registra (come nel servizio), non la data del documento: una fattura di dieci giorni
+// fa importata oggi e' stata creata oggi. I dati di prova (stato.ts) restano creati il giorno della loro data.
+function adesso(): string {
+  const d = new Date();
+  const due = (n: number) => String(n).padStart(2, "0");
+  return `${oggiIso()}T${due(d.getHours())}:${due(d.getMinutes())}:${due(d.getSeconds())}`;
+}
+
+// `divisione`: l'id comune delle parti di un «dividi» (null per un movimento normale); lo prende anche la ripetizione della parte.
+function creaMovimento(i: MovimentoInput, sede: SedeDemo, divisione: string | null = null): Movimento {
   const st = stato();
-  const m = aggiungiMovimento(st, i.data, { ...i, sedeId: sede.id, categoria: undefined, fornitore: undefined, dipendente: undefined }, "MANO");
+  const m = aggiungiMovimento(st, i.data, { ...i, sedeId: sede.id, categoria: undefined, fornitore: undefined, dipendente: undefined }, "MANO", null, divisione);
+  m.creatoIl = adesso();
   applica(m, i, sede);
   if (i.ricorrenza) {
     const unita: UnitaRipetizione = i.ricorrenza.unita ?? "MESI";
     const giorno = i.ricorrenza.giorno ?? daIso(i.data).getDate();
-    const r = creaRicorrenza(st, i.data, { ...i, sedeId: sede.id, categoria: pulito(i.categoria), fornitore: pulito(i.fornitore), dipendente: pulito(i.dipendente) }, giorno, unita, i.ricorrenza.intervallo ?? 1);
+    const r = creaRicorrenza(st, i.data, { ...i, sedeId: sede.id, categoria: pulito(i.categoria), fornitore: pulito(i.fornitore), dipendente: pulito(i.dipendente) }, giorno, unita, i.ricorrenza.intervallo ?? 1, divisione);
     m.ricorrenza = riferimentoRicorrenza(r);
     generaScadenze(st, oggiIso());
   }
@@ -289,161 +314,9 @@ function modifica(m: Movimento, i: MovimentoInput, ambito: string, sede?: SedeDe
   aggiornaRiferimenti(st);
 }
 
-// ---- statistiche: pizze e ordini a settimana (docs/api.md, «Statistiche») ----
+// ---- statistiche: pizze e ordini (docs/api.md, «Statistiche»; le regole sono in demo/statistiche.ts) ----
 
-const MASSIMO_CONTEGGIO = 1_000_000;
-const dataIsoValida = (t: string) => /^\d{4}-\d{2}-\d{2}$/.test(t) && iso(daIso(t)) === t;
-
-// Ricavi / ordini al centesimo e pizze / ordini a due decimali, mezzo in su; null se gli ordini sono 0.
-const scontrinoMedio = (ricaviCent: number, ordini: number): number | null => (ordini > 0 ? Math.floor((2 * ricaviCent + ordini) / (2 * ordini)) : null);
-const pizzePerOrdine = (pizze: number, ordini: number): number | null => (ordini > 0 ? Math.floor((200 * pizze + ordini) / (2 * ordini)) / 100 : null);
-
-// I ricavi (tipo RICAVO, qualunque documento) di ogni sede in ogni settimana, per data del movimento: chiave «sede|lunedi'».
-function ricaviPerSettimana(st: StatoDemo, da: string, a: string, ids: Set<number> | null): Map<string, number> {
-  const ricavi = new Map<string, number>();
-  for (const m of st.movimenti) {
-    if (m.tipo !== "RICAVO" || m.data < da || m.data > a || (ids && !ids.has(m.sede.id))) continue;
-    const k = `${m.sede.id}|${lunediDi(m.data)}`;
-    ricavi.set(k, (ricavi.get(k) ?? 0) + m.importoCent);
-  }
-  return ricavi;
-}
-
-// Le sedi come le elenca GET /sedi: prima le non archiviate (per ordine), poi le archiviate.
-const sediInOrdine = (st: StatoDemo) => [...st.sedi].sort((x, y) => Number(x.archiviata) - Number(y.archiviata) || perOrdine(x, y));
-
-function settimanaStatistiche(st: StatoDemo, lunedi: string) {
-  const ricavi = ricaviPerSettimana(st, lunedi, aggiungiGiorni(lunedi, 6), null);
-  const righe = [];
-  for (const s of sediInOrdine(st)) {
-    const d = st.statistiche.find((x) => x.sedeId === s.id && x.settimana === lunedi);
-    const ric = ricavi.get(`${s.id}|${lunedi}`);
-    if (s.archiviata && !d && ric === undefined) continue;
-    const ricaviCent = ric ?? 0;
-    righe.push({
-      sede: { id: s.id, nome: s.nome },
-      pizze: d?.pizze ?? null,
-      ordini: d?.ordini ?? null,
-      ricaviCent,
-      scontrinoMedioCent: d ? scontrinoMedio(ricaviCent, d.ordini) : null,
-      pizzePerOrdine: d ? pizzePerOrdine(d.pizze, d.ordini) : null,
-      completa: !!d,
-    });
-  }
-  return { settimana: lunedi, fine: aggiungiGiorni(lunedi, 6), sedi: righe };
-}
-
-// PUT /statistiche/settimana: tutto o niente, con gli stessi errori del servizio.
-function salvaSettimanaStatistiche(st: StatoDemo, corpo: unknown): Risposta {
-  const c = (corpo ?? {}) as { settimana?: unknown; voci?: unknown };
-  if (typeof c.settimana !== "string" || !c.settimana.trim()) return errore(400, "Indica la settimana (un giorno qualsiasi, yyyy-MM-dd).");
-  if (!dataIsoValida(c.settimana.trim())) return errore(400, `La settimana non è una data valida (yyyy-MM-dd): ${c.settimana}`);
-  const lunedi = lunediDi(c.settimana.trim());
-  if (!Array.isArray(c.voci) || c.voci.length === 0) return errore(400, "Indica almeno una voce.");
-  const voci: { sede: SedeDemo; pizze: number | null; ordini: number | null }[] = [];
-  const viste = new Set<number>();
-  for (const v of c.voci as ({ sedeId?: unknown; pizze?: unknown; ordini?: unknown } | null)[]) {
-    if (!v || typeof v.sedeId !== "number") return errore(400, "Ogni voce deve avere la sede.");
-    if (viste.has(v.sedeId)) return errore(400, `La sede ${v.sedeId} compare più volte.`);
-    viste.add(v.sedeId);
-    const sede = st.sedi.find((x) => x.id === v.sedeId);
-    if (!sede) return errore(400, "Sede non trovata.");
-    if (sede.archiviata) return errore(400, `La sede «${sede.nome}» è archiviata.`);
-    const intero = (valore: unknown, campo: string): { v: number | null; errore?: string } => {
-      if (valore === null || valore === undefined) return { v: null };
-      if (typeof valore !== "number" || !Number.isInteger(valore)) return { v: null, errore: `Sede «${sede.nome}»: ${campo} deve essere un numero intero.` };
-      if (valore < 0) return { v: null, errore: `Sede «${sede.nome}»: ${campo} non può essere negativo.` };
-      if (valore > MASSIMO_CONTEGGIO) return { v: null, errore: `Sede «${sede.nome}»: ${campo} è troppo grande (massimo ${MASSIMO_CONTEGGIO}).` };
-      return { v: valore };
-    };
-    const p = intero(v.pizze, "pizze");
-    if (p.errore) return errore(400, p.errore);
-    const o = intero(v.ordini, "ordini");
-    if (o.errore) return errore(400, o.errore);
-    if ((p.v === null) !== (o.v === null)) return errore(400, `Sede «${sede.nome}»: indica sia le pizze sia gli ordini (o nessuno dei due per cancellare il dato).`);
-    if (o.v === 0 && p.v !== null && p.v > 0) return errore(400, `Sede «${sede.nome}»: con 0 ordini le pizze devono essere 0.`);
-    voci.push({ sede, pizze: p.v, ordini: o.v });
-  }
-  for (const v of voci) {
-    const resto = st.statistiche.filter((x) => !(x.sedeId === v.sede.id && x.settimana === lunedi));
-    st.statistiche = v.pizze === null || v.ordini === null ? resto : [...resto, { settimana: lunedi, sedeId: v.sede.id, pizze: v.pizze, ordini: v.ordini }];
-  }
-  salva();
-  return ok(settimanaStatistiche(st, lunedi));
-}
-
-// GET /statistiche: le settimane il cui lunedi' cade in [da, a]. Nelle somme contano solo le coppie sede-settimana con dati e ordini > 0.
-function statistichePeriodo(st: StatoDemo, da: string, a: string, ids: Set<number> | null) {
-  const lunedi: string[] = [];
-  for (let l = lunediDi(da) < da ? aggiungiGiorni(lunediDi(da), 7) : da; l <= a; l = aggiungiGiorni(l, 7)) lunedi.push(l);
-  const scelte = sediInOrdine(st).filter((s) => !ids || ids.has(s.id));
-  const ricavi = lunedi.length > 0 ? ricaviPerSettimana(st, lunedi[0]!, aggiungiGiorni(lunedi[lunedi.length - 1]!, 6), ids) : new Map<string, number>();
-  const perSede = new Map<number, { pizze: number; ordini: number; ricavi: number; settimane: number }>();
-  const conAttivita = new Set<number>();
-  const settimane = [];
-  const tot = { pizze: 0, ordini: 0, ricavi: 0, settimaneConDati: 0 };
-  for (const l of lunedi) {
-    const sett = { pizze: 0, ordini: 0, ricavi: 0 };
-    let conDati = false;
-    const mancanti = [];
-    for (const s of scelte) {
-      const d = st.statistiche.find((x) => x.sedeId === s.id && x.settimana === l);
-      if (ricavi.has(`${s.id}|${l}`)) conAttivita.add(s.id);
-      if (!d) {
-        if (!s.archiviata) mancanti.push({ id: s.id, nome: s.nome });
-        continue;
-      }
-      conDati = true;
-      conAttivita.add(s.id);
-      const v = perSede.get(s.id) ?? { pizze: 0, ordini: 0, ricavi: 0, settimane: 0 };
-      v.settimane++;
-      if (d.ordini > 0) {
-        const ric = ricavi.get(`${s.id}|${l}`) ?? 0;
-        v.pizze += d.pizze;
-        v.ordini += d.ordini;
-        v.ricavi += ric;
-        sett.pizze += d.pizze;
-        sett.ordini += d.ordini;
-        sett.ricavi += ric;
-      }
-      perSede.set(s.id, v);
-    }
-    if (conDati) tot.settimaneConDati++;
-    tot.pizze += sett.pizze;
-    tot.ordini += sett.ordini;
-    tot.ricavi += sett.ricavi;
-    settimane.push({ settimana: l, pizze: sett.pizze, ordini: sett.ordini, ricaviCent: sett.ricavi, scontrinoMedioCent: scontrinoMedio(sett.ricavi, sett.ordini), sediMancanti: mancanti });
-  }
-  const righe = scelte
-    .filter((s) => !s.archiviata || conAttivita.has(s.id))
-    .map((s) => {
-      const v = perSede.get(s.id) ?? { pizze: 0, ordini: 0, ricavi: 0, settimane: 0 };
-      return {
-        sede: { id: s.id, nome: s.nome },
-        pizze: v.pizze,
-        ordini: v.ordini,
-        ricaviCent: v.ricavi,
-        scontrinoMedioCent: scontrinoMedio(v.ricavi, v.ordini),
-        pizzePerOrdine: pizzePerOrdine(v.pizze, v.ordini),
-        settimaneConDati: v.settimane,
-      };
-    });
-  return {
-    da,
-    a,
-    totale: {
-      pizze: tot.pizze,
-      ordini: tot.ordini,
-      ricaviCent: tot.ricavi,
-      scontrinoMedioCent: scontrinoMedio(tot.ricavi, tot.ordini),
-      pizzePerOrdine: pizzePerOrdine(tot.pizze, tot.ordini),
-      settimaneConDati: tot.settimaneConDati,
-      settimaneTotali: lunedi.length,
-    },
-    perSede: righe,
-    settimane,
-  };
-}
+const daEsito = <T>(e: { corpo?: T; errore?: string }): Risposta => (e.errore !== undefined ? errore(400, e.errore) : ok(e.corpo));
 
 // ---- anagrafiche ----
 
@@ -464,14 +337,41 @@ function fornitori(q: string) {
 
 let ultimaAnteprima: AnteprimaImportazione | null = null;
 
+// Una fattura letta e' gia' registrata se c'e' un movimento con lo stesso documento (FATTURA, oppure NOTA_DI_CREDITO per una nota di
+// credito), lo stesso fornitore, lo stesso numero e la stessa data: la regola di ImportazioneService.trovaDuplicato. Una nota di
+// credito e una fattura con lo stesso numero non sono doppie; una nota di debito e' una FATTURA come le altre (docs/api.md).
+function giaRegistrata(st: ReturnType<typeof stato>, f: Pick<FatturaLetta, "fornitore" | "numero" | "data" | "notaDiCredito">): boolean {
+  const documento = f.notaDiCredito ? "NOTA_DI_CREDITO" : "FATTURA";
+  const nome = f.fornitore.nome.toLowerCase();
+  return st.movimenti.some((m) => m.documento === documento && m.numeroDocumento === f.numero && m.data === f.data && m.fornitore?.nome.toLowerCase() === nome);
+}
+
+// Le date delle fatture d'esempio sono «N giorni prima» di un giorno di ancoraggio, salvato nello stato (`dataEsempi`), non di oggi:
+// la data fa parte della chiave dei doppioni, e seguendo oggi le fatture gia' importate tornerebbero «da importare» il giorno dopo
+// (nella demo pubblicata i dati restano nel browser) e si registrerebbero due volte. L'ancoraggio resta fermo finche' almeno una
+// fattura d'esempio e' registrata con quelle date; quando non ce n'e' nessuna (prima lettura, o tutte eliminate) torna a oggi, cosi'
+// le date restano recenti. Si salva subito: la conferma puo' arrivare dopo mezzanotte.
 function anteprimaDemo(nomi: string[]): AnteprimaImportazione {
   const st = stato();
   const oggi = oggiIso();
+  let fatture = fattureDemo(nomi, st.dataEsempi ?? oggi);
+  if (st.dataEsempi !== oggi && !fatture.some((f) => f.duplicata)) fatture = fattureDemo(nomi, oggi);
+  const ancoraggio = fatture.some((f) => f.duplicata) ? (st.dataEsempi ?? oggi) : oggi;
+  if (st.dataEsempi !== ancoraggio) {
+    st.dataEsempi = ancoraggio;
+    salva();
+  }
+  const errori = [{ nomeFile: nomi[0] ?? "fattura.xml", messaggio: "Autofattura di integrazione: non importata, la fattura originale del fornitore è già una fattura a parte." }];
+  ultimaAnteprima = { importazioneId: `demo-${Date.now()}`, fatture, errori };
+  return ultimaAnteprima;
+}
+
+function fattureDemo(nomi: string[], ancoraggio: string): FatturaLetta[] {
+  const st = stato();
   const base = (i: number, nome: string, iva: string, numero: string, giorniFa: number, imponibile: number, extra: Partial<FatturaLetta> = {}): FatturaLetta => {
-    const data = aggiungiGiorni(oggi, -giorniFa);
+    const data = aggiungiGiorni(ancoraggio, -giorniFa);
     const iv = Math.round(imponibile * 0.22);
-    const duplicata = st.movimenti.some((m) => m.numeroDocumento === numero && m.fornitore?.nome === nome);
-    return {
+    const letta = {
       indice: i,
       nomeFile: nomi[i % Math.max(nomi.length, 1)] ?? `fattura-${i}.xml`,
       fornitore: { nome, partitaIva: iva },
@@ -481,14 +381,18 @@ function anteprimaDemo(nomi: string[]): AnteprimaImportazione {
       ivaCent: iv,
       totaleCent: imponibile + iv,
       categoriaSuggerita: st.movimenti.find((m) => m.fornitore?.nome === nome && m.categoria)?.categoria?.nome ?? null,
-      duplicata,
-      motivo: duplicata ? "Già registrata" : null,
+      duplicata: false,
+      motivo: null,
       notaDiCredito: false,
       integrazione: false,
+      tipoDocumento: "TD01",
+      notaDiDebito: false,
       ...extra,
     };
+    const duplicata = giaRegistrata(st, letta);
+    return { ...letta, duplicata, motivo: duplicata ? "Già registrata" : null };
   };
-  const fatture = [
+  return [
     base(0, "Molino Bianchi Farine", "01234500011", "DEMO-1", 3, 41200),
     base(1, "Caseificio Valle Chiara", "01234500022", "DEMO-2", 4, 28750),
     base(2, "Ortofrutta Il Campo", "01234500033", "DEMO-3", 5, 15620),
@@ -496,12 +400,11 @@ function anteprimaDemo(nomi: string[]): AnteprimaImportazione {
     base(4, "Cartiera Nuova Aurora", "01234500101", "DEMO-5", 8, 12400),
     base(5, "Cartiera Nuova Aurora", "01234500101", "DEMO-6", 11, 7300),
     base(6, "Bevande Colli Srl", "01234500055", "DEMO-7", 9, 64300),
-    base(7, "Molino Bianchi Farine", "01234500011", "DEMO-8 NC", 10, 9900, { notaDiCredito: true }),
-    base(8, "Distributore Estero GmbH", "DE123456789", "DEMO-9", 12, 21000, { integrazione: true }),
+    base(7, "Molino Bianchi Farine", "01234500011", "DEMO-8 NC", 10, 9900, { notaDiCredito: true, tipoDocumento: "TD04" }),
+    base(8, "Distributore Estero GmbH", "DE123456789", "DEMO-9", 12, 21000, { integrazione: true, tipoDocumento: "TD17" }),
+    // una nota di debito: il fornitore chiede un importo in piu' rispetto a una fattura gia' emessa; si importa come una fattura
+    base(9, "Caseificio Valle Chiara", "01234500022", "DEMO-10 ND", 2, 3200, { notaDiDebito: true, tipoDocumento: "TD05" }),
   ];
-  const errori = [{ nomeFile: nomi[0] ?? "fattura.xml", messaggio: "Tipo di documento TD16 non ammesso: fattura non importata." }];
-  ultimaAnteprima = { importazioneId: `demo-${Date.now()}`, fatture, errori };
-  return ultimaAnteprima;
 }
 
 function confermaImportazione(righe: { indice: number; categoria: string | null }[], sede: SedeDemo) {
@@ -514,93 +417,163 @@ function confermaImportazione(righe: { indice: number; categoria: string | null 
       ignorate.push({ indice: riga.indice, motivo: "Fattura non trovata: rileggi i file." });
       continue;
     }
-    if (f.duplicata || st.movimenti.some((m) => m.numeroDocumento === f.numero && m.fornitore?.nome === f.fornitore.nome)) {
+    if (f.duplicata || giaRegistrata(st, f)) {
       ignorate.push({ indice: riga.indice, motivo: "Già registrata" });
       continue;
     }
     const categoria = riga.categoria?.trim() || undefined;
     trovaFornitore(st, f.fornitore.nome, f.fornitore.partitaIva);
     const m = aggiungiMovimento(st, f.data, { data: f.data, tipo: "COSTO_VARIABILE", documento: f.notaDiCredito ? "NOTA_DI_CREDITO" : "FATTURA", importoCent: f.totaleCent, sedeId: sede.id }, "XML");
-    applica(m, { data: f.data, tipo: "COSTO_VARIABILE", documento: m.documento, importoCent: f.totaleCent, fornitore: f.fornitore.nome, categoria, numeroDocumento: f.numero }, sede);
+    m.creatoIl = adesso();
+    // Dall'XML arriva lo storico: le fatture nascono gia' pagate (applica lo toglie alle note di credito).
+    applica(m, { data: f.data, tipo: "COSTO_VARIABILE", documento: m.documento, importoCent: f.totaleCent, fornitore: f.fornitore.nome, categoria, numeroDocumento: f.numero, pagata: true }, sede);
     importati++;
   }
   return { importati, ignorate };
 }
 
-// ---- esportazione: solo CSV, costruito qui ----
+// ---- esportazione: il CSV costruito qui, l'Excel con xlsx.ts ----
+// Larghezze delle colonne dei fogli dell'Excel, quelle di EsportazioneService (LARGHEZZE, scriviStatistiche, scriviGiorni, scriviRiepilogo).
+const LARGHEZZE_MOVIMENTI = [12, 16, 22, 20, 28, 20, 36, 16, 36, 14, 20, 24];
+const LARGHEZZE_STATISTICHE = [12, 24, 10, 10, 14, 16, 14, 24, 18];
+const LARGHEZZE_GIORNI = [12, 24, 10, 10, 14, 14, 16];
+const LARGHEZZA_VOCE = 34;
+const LARGHEZZA_IMPORTO = 16;
+// Colonne, ordine ed etichette sono quelli del servizio (EsportazioneService), presi da api/esporta.ts come l'anteprima di «Esporta»:
+// Tipo, Documento e Origine escono in italiano («Nota di credito», «A mano»), mai come valori degli enum.
 
-const TIPO_FILE: Record<Tipo, string> = { RICAVO: "Ricavo", COSTO_VARIABILE: "Costo variabile", COSTO_FISSO: "Costo fisso" };
 const virgola = (cent: number) => `${Math.floor(cent / 100)},${String(cent % 100).padStart(2, "0")}`;
-const cella = (s: string) => (/[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+// Tra virgolette se contiene «;», virgolette o un a capo (anche il solo \r), come EsportazioneService.campoCsv.
+const cella = (s: string) => (/[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
 
-function esportaFile(q: URLSearchParams, ids: Set<number> | null): Risposta {
-  const da = q.get("da") ?? "";
-  const a = q.get("a") ?? "";
-  const tipi = (q.get("includi") ?? "").split(",").filter(Boolean);
+const TIPI_FILE = ["RICAVO", "COSTO_VARIABILE", "COSTO_FISSO"] as const;
+
+// I parametri di `GET /api/esporta` che il servizio legge prima di entrare nel controller (EsportaController): le date `da` e `a` e i
+// sì/no `statistiche` e `colonnePerSede`. Un valore che non si legge dà subito 400 «<nome>: valore non valido: <valore>», nell'ordine dei
+// parametri del controller, prima di ogni altro controllo (sedi, formato, date mancanti, includi). Un valore vuoto vale come assente.
+type ParametriEsporta = { da: string | null; a: string | null; statistiche: boolean; colonnePerSede: boolean };
+
+// Una data come la legge Spring (ISO: AAAA-MM-GG, un giorno che esiste; ammesso un fuso in coda, che non conta).
+function dataParametro(valore: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})(Z|[+-]\d{2}:\d{2}(:\d{2})?)?$/.exec(valore);
+  return m && dataIsoValida(m[1]!) ? m[1]! : null;
+}
+
+// Un sì/no come lo legge Spring: true/on/yes/1 e false/off/no/0, senza badare a maiuscole e spazi attorno.
+function siNoParametro(valore: string): boolean | null {
+  const t = valore.trim().toLowerCase();
+  if (["true", "on", "yes", "1"].includes(t)) return true;
+  if (["false", "off", "no", "0"].includes(t)) return false;
+  return null;
+}
+
+function parametriEsporta(q: URLSearchParams): ParametriEsporta | { errore: string } {
+  const letti: ParametriEsporta = { da: null, a: null, statistiche: true, colonnePerSede: false };
+  for (const nome of ["da", "a"] as const) {
+    const valore = q.get(nome) ?? "";
+    if (valore.trim() === "") continue; // vuota o di soli spazi: assente, come in Spring
+    const data = dataParametro(valore);
+    if (data === null) return { errore: `${nome}: valore non valido: ${valore}` };
+    letti[nome] = data;
+  }
+  for (const nome of ["statistiche", "colonnePerSede"] as const) {
+    const valore = q.get(nome) ?? "";
+    if (valore === "") continue;
+    const siNo = siNoParametro(valore);
+    if (siNo === null) return { errore: `${nome}: valore non valido: ${valore}` };
+    letti[nome] = siNo;
+  }
+  return letti;
+}
+
+// I controlli sono quelli di EsportazioneService.prepara, nello stesso ordine e con gli stessi testi: formato, le due date, il loro
+// ordine, «includi».
+function esportaFile(q: URLSearchParams, ids: Set<number> | null, parametri: ParametriEsporta): Risposta {
+  const formato = q.get("formato");
+  if (formato !== "xlsx" && formato !== "csv") return errore(400, "formato: deve essere xlsx o csv");
+  const { da, a } = parametri;
+  if (da === null || a === null) return errore(400, "Servono entrambe le date: da e a.");
+  if (da > a) return errore(400, "La data iniziale non può essere dopo quella finale.");
+  // «includi» come EsportazioneService.tipiDa: assente o vuoto = tutti i tipi (CSV ed Excel); un valore che non è un tipo → 400.
+  const includi = q.get("includi") ?? "";
+  const tipi: string[] = [...TIPI_FILE];
+  if (includi.trim()) {
+    // come String.split di Java: i vuoti in coda («RICAVO,») non contano, quelli in mezzo sì; di sole virgole («,») non resta niente:
+    // nessun tipo, quindi la sola intestazione, senza 400
+    const senzaCoda = includi.replace(/,+$/, "");
+    const voci = senzaCoda === "" ? [] : senzaCoda.split(",").map((v) => v.trim());
+    const sbagliata = voci.find((v) => !(TIPI_FILE as readonly string[]).includes(v));
+    if (sbagliata !== undefined) return errore(400, `includi: valore non valido: ${sbagliata}`);
+    tipi.splice(0, tipi.length, ...voci);
+  }
   const righe = stato()
     .movimenti.filter((m) => m.data >= da && m.data <= a && tipi.includes(m.tipo) && (!ids || ids.has(m.sede.id)))
     .sort((x, y) => (x.data === y.data ? x.id - y.id : x.data < y.data ? -1 : 1));
-  const segno = (m: Movimento) => (m.tipo === "RICAVO" || m.documento === "NOTA_DI_CREDITO" ? 1 : -1);
-  if (q.get("formato") === "xlsx") {
+  const segno = (m: Movimento) => (negativoNelFile(m) ? -1 : 1);
+  if (formato === "xlsx") {
     const r = riepilogo(da, a, ids);
-    const e = (c: number) => c / 100;
-    const foglioMovimenti = [
-      ["Data", "Tipo", "Documento", "Fornitore", "Categoria", "Descrizione", "Numero", "Dipendente", "Origine", "Importo", "Sede"],
-      ...righe.map((m) => [m.data, TIPO_FILE[m.tipo], m.documento, m.fornitore?.nome ?? "", m.categoria?.nome ?? "", m.descrizione ?? "", m.numeroDocumento ?? "", m.dipendente?.nome ?? "", m.origine, segno(m) * e(m.importoCent), m.sede.nome]),
+    // Formati di cella come nel servizio: le date sono celle data, gli importi numeri in euro con formato valuta, le intestazioni in
+    // grassetto su grigio e bloccate (stili in xlsx.ts).
+    const testa = con("testa");
+    const data = con("data");
+    const e = (c: number): Cella => ({ v: c / 100, s: "valuta" });
+    const foglioMovimenti: Cella[][] = [
+      INTESTAZIONI_FILE.map(testa),
+      ...righe.map((m) => {
+        const { prima, dopo } = testiRigaFile(m);
+        const [giorno, ...testi] = prima;
+        return [data(giorno!), ...testi, e(segno(m) * m.importoCent), ...dopo];
+      }),
     ];
-    // Riepilogo: stesse righe di GET /riepilogo, per sezione una riga per categoria (+ «Senza categoria»), il totale e le somme «di cui» (gia' nel
-    // totale). Con «colonnePerSede» una colonna per ogni sede scelta e «Totale» in fondo (solo Excel, il CSV non ha il riepilogo): le righe sono
-    // quelle del Riepilogo complessivo, una categoria presente solo in alcune sedi ha 0 nelle altre.
-    const chiave = (sezione: string, id: number | null, nome: string) => `${sezione}|${id ?? "senza"}|${nome}`;
-    const voci = (x: Riepilogo, base?: Riepilogo): [string, number][] => {
-      const sezione = (titolo: string, k: string, parte: Riepilogo["ricavi"] | Riepilogo["costiVariabili"] | Riepilogo["costiFissi"], segno: number, dettaglio: [string, number][]): [string, number][] => {
-        const righe: [string, number][] = [];
-        // Con `base` le righe sono quelle del complessivo (zero dove questo Riepilogo non ha la categoria).
-        const elenco = (base ? (base[k as "ricavi"] as typeof parte).voci : parte.voci);
-        for (const v of elenco) {
-          const propria = parte.voci.find((p) => chiave(k, p.id, p.categoria) === chiave(k, v.id, v.categoria));
-          righe.push([`${titolo}: ${v.categoria}`, segno * e(propria?.importoCent ?? 0)]);
-        }
-        righe.push([`Totale ${titolo.toLowerCase()}`, segno * e(parte.totaleCent)]);
-        for (const [nome, cent] of dettaglio) if (cent > 0 || base) righe.push([`  di cui ${nome}`, segno * e(cent)]);
-        return righe;
-      };
-      return [
-        ...sezione("Ricavi", "ricavi", x.ricavi, 1, [["fatturati", x.ricavi.fatturatiCent], ["extra", x.ricavi.extraCent]]),
-        ...sezione("Costi variabili", "costiVariabili", x.costiVariabili, -1, [["fatture", x.costiVariabili.fattureCent], ["scontrini", x.costiVariabili.scontriniCent]]),
-        ...sezione("Costi fissi", "costiFissi", x.costiFissi, -1, [["retribuzione regolare", x.costiFissi.retribuzioneRegolareCent], ["retribuzione extra", x.costiFissi.retribuzioneExtraCent]]),
-        ["Costi", -e(x.costiCent)],
-        ["Risultato", e(x.risultatoCent)],
-      ];
-    };
-    const foglioRiepilogo: (string | number)[][] = [["Periodo", `${da} – ${a}`]];
-    const sediRiepilogo = r.perSede ?? [];
-    if (q.get("colonnePerSede") === "true" && sediRiepilogo.length > 0) {
-      const perSede = sediRiepilogo.map((s) => voci(riepilogo(da, a, new Set([s.sede.id])), r));
-      foglioRiepilogo.push(["", ...sediRiepilogo.map((s) => s.sede.nome), "Totale"]);
-      voci(r, r).forEach(([nome, totale], i) => foglioRiepilogo.push([nome, ...perSede.map((v) => v[i]![1]), totale]));
-    } else {
-      foglioRiepilogo.push(...voci(r));
-    }
-    // Ultimo foglio, solo se nel periodo c'e' almeno un dato di pizze e ordini (come il servizio): una riga per dato inserito nelle settimane
-    // il cui lunedi' cade in [da, a], con tutti i ricavi della sede in quella settimana.
-    const ricaviSettimane = ricaviPerSettimana(stato(), lunediDi(da) < da ? aggiungiGiorni(lunediDi(da), 7) : da, a, ids);
-    const righeStat = stato()
-      .statistiche.filter((d) => d.settimana >= da && d.settimana <= a && (!ids || ids.has(d.sedeId)))
-      .sort((x, y) => (x.settimana < y.settimana ? -1 : x.settimana > y.settimana ? 1 : x.sedeId - y.sedeId))
-      .map((d) => {
-        const ricavi = ricaviSettimane.get(`${d.sedeId}|${d.settimana}`) ?? 0;
-        const medio = scontrinoMedio(ricavi, d.ordini);
-        return [d.settimana, stato().sedi.find((x) => x.id === d.sedeId)?.nome ?? "", d.pizze, d.ordini, e(ricavi), medio === null ? "" : e(medio)];
+    // Riepilogo: il foglio del servizio (righeFoglioRiepilogo in api/esporta.ts, come EsportazioneService.scriviRiepilogo). Con «colonnePerSede»
+    // e piu' di una sede nel Riepilogo, una colonna per sede e «Totale» in fondo; con una sede sola resta la colonna «Importo».
+    const sediRiepilogo = parametri.colonnePerSede && (r.perSede?.length ?? 0) > 1 ? r.perSede! : [];
+    // Titolo in grassetto corpo 12, intestazione grigia, importi in valuta, e in grassetto le righe dei totali (nome e importi).
+    const totali = new Set(righeTotaliRiepilogo(r));
+    const foglioRiepilogo: Cella[][] = righeFoglioRiepilogo(r, sediRiepilogo.map((s) => ({ nome: s.sede.nome, riepilogo: riepilogo(da, a, new Set([s.sede.id])) }))).map((riga, i) => {
+      if (i === 0) return riga.map(con("titolo"));
+      if (i < RIGHE_PRIMA_DELLE_VOCI) return riga.map(testa);
+      const [nome, ...importi] = riga;
+      return totali.has(i) ? [con("totale")(nome!), ...importi.map(con("valutaTotale"))] : [nome!, ...importi.map(con("valuta"))];
+    });
+    // Gli ultimi fogli, solo se nel periodo c'e' almeno un dato di pizze e ordini (come il servizio): «Statistiche», una riga per sede e
+    // settimana con dati (le settimane il cui lunedi' cade in [da, a]), e «Pizze per giorno», solo se ci sono giorni inseriti.
+    const stat = righeEsportazione(stato(), da, a, ids);
+    const fogli: Foglio[] = [
+      { nome: "Movimenti", righe: foglioMovimenti, larghezze: LARGHEZZE_MOVIMENTI, intestazioneBloccata: true },
+      { nome: "Riepilogo", righe: foglioRiepilogo, larghezze: [LARGHEZZA_VOCE, ...sediRiepilogo.map(() => LARGHEZZA_IMPORTO), LARGHEZZA_IMPORTO] },
+    ];
+    // lo scontrino medio che manca (0 ordini, o nessun incasso) non ha la cella, come nel servizio
+    const medio = (c: number | null): Cella => (c === null ? null : e(c));
+    if (parametri.statistiche && stat.settimane.length > 0) {
+      fogli.push({
+        nome: "Statistiche",
+        righe: [
+          ["Settimana", "Sede", "Pizze", "Ordini", "Ricavi", "Scontrino medio", "Ricavi extra", "Ricavi dei giorni con dati", "Giorni inseriti"].map(testa),
+          ...stat.settimane.map(([l, sede, pizze, ordini, ricavi, scontrino, extra, conDati, giorni]): Cella[] => [data(l), sede, pizze, ordini, e(ricavi), medio(scontrino), e(extra), e(conDati), giorni ?? "Totale settimanale"]),
+        ],
+        larghezze: LARGHEZZE_STATISTICHE,
+        intestazioneBloccata: true,
       });
-    const fogli = [{ nome: "Movimenti", righe: foglioMovimenti }, { nome: "Riepilogo", righe: foglioRiepilogo }];
-    if (q.get("statistiche") !== "false" && righeStat.length > 0) fogli.push({ nome: "Statistiche", righe: [["Settimana", "Sede", "Pizze", "Ordini", "Ricavi", "Scontrino medio"], ...righeStat] });
+      if (stat.giorni.length > 0) {
+        fogli.push({
+          nome: "Pizze per giorno",
+          righe: [
+            ["Data", "Sede", "Pizze", "Ordini", "Ricavi", "Ricavi extra", "Scontrino medio"].map(testa),
+            ...stat.giorni.map(([g, sede, pizze, ordini, ricavi, extra, scontrino]): Cella[] => [data(g), sede, pizze, ordini, e(ricavi), e(extra), medio(scontrino)]),
+          ],
+          larghezze: LARGHEZZE_GIORNI,
+          intestazioneBloccata: true,
+        });
+      }
+    }
     return { stato: 200, testo: { contenuto: costruisciXlsx(fogli), tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeFile: `contabilita-${da}_${a}.xlsx` } };
   }
-  const testa = ["Data", "Tipo", "Documento", "Fornitore", "Categoria", "Descrizione", "Numero", "Dipendente", "Origine", "Importo", "Sede"].join(";");
-  const corpo = righe.map((m) =>
-    [m.data, TIPO_FILE[m.tipo], m.documento, m.fornitore?.nome ?? "", m.categoria?.nome ?? "", m.descrizione ?? "", m.numeroDocumento ?? "", m.dipendente?.nome ?? "", m.origine, (m.tipo === "RICAVO" || m.documento === "NOTA_DI_CREDITO" ? "" : "-") + virgola(m.importoCent), m.sede.nome].map(cella).join(";"),
-  );
+  const testa = INTESTAZIONI_FILE.join(";");
+  const corpo = righe.map((m) => {
+    const { prima, dopo } = testiRigaFile(m);
+    return [...prima, (negativoNelFile(m) ? "-" : "") + virgola(m.importoCent), ...dopo].map(cella).join(";");
+  });
   return { stato: 200, testo: { contenuto: "﻿" + [testa, ...corpo].join("\r\n"), tipo: "text/csv;charset=utf-8", nomeFile: `contabilita-${da}_${a}.csv` } };
 }
 
@@ -756,12 +729,13 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
   if (percorso === "/sedi") {
     if (metodo === "GET") return ok(elencoSedi(st));
     if (metodo === "POST") {
-      const nome = pulito((corpo as { nome?: string } | undefined)?.nome);
+      const c = (corpo ?? {}) as { nome?: string; personale?: boolean };
+      const nome = pulito(c.nome);
       if (!nome) return errore(400, "Il nome della sede è obbligatorio.");
       if (nome.length > 120) return errore(400, "Il nome della sede può avere al massimo 120 caratteri.");
       const esistente = st.sedi.find((s) => s.nome.toLowerCase() === nome.toLowerCase());
       if (esistente) return ok(elencoSedi(st).find((s) => s.id === esistente.id), 200);
-      const nuova: SedeDemo = { id: Math.max(0, ...st.sedi.map((s) => s.id)) + 1, nome, archiviata: false, ordine: Math.max(0, ...st.sedi.map((s) => s.ordine)) + 1 };
+      const nuova: SedeDemo = { id: Math.max(0, ...st.sedi.map((s) => s.id)) + 1, nome, archiviata: false, personale: c.personale === true, ordine: Math.max(0, ...st.sedi.map((s) => s.ordine)) + 1 };
       st.sedi.push(nuova);
       salva();
       return ok(elencoSedi(st).find((s) => s.id === nuova.id), 201);
@@ -772,19 +746,26 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     if (!sede) return errore(404, "Sede non trovata.");
     if (metodo === "DELETE") return errore(405, "Una sede non si cancella: si archivia.");
     if (metodo === "PUT") {
-      const c = (corpo ?? {}) as { nome?: string; archiviata?: boolean };
+      const c = (corpo ?? {}) as { nome?: string; archiviata?: boolean; personale?: boolean };
+      // prima tutti i controlli (nell'ordine del servizio: nome, poi archiviazione e flag), poi le modifiche: tutto o niente
+      const nome = c.nome === undefined ? undefined : pulito(c.nome);
       if (c.nome !== undefined) {
-        const nome = pulito(c.nome);
         if (!nome) return errore(400, "Il nome della sede è obbligatorio.");
         if (nome.length > 120) return errore(400, "Il nome della sede può avere al massimo 120 caratteri.");
         if (st.sedi.some((s) => s.id !== sede.id && s.nome.toLowerCase() === nome.toLowerCase())) return errore(409, "Esiste già una sede con questo nome.");
+      }
+      const archiviare = c.archiviata === true && !sede.archiviata;
+      if (archiviare && sediAttive(st).length === 1) return errore(409, "Non si può archiviare l'ultima sede attiva.");
+      // il locale deve avere almeno una sede attiva e non personale
+      const delLocale = sediAttive(st).filter((s) => !s.personale).length;
+      if ((archiviare || (c.personale === true && !sede.personale)) && !sede.archiviata && !sede.personale && delLocale <= 1)
+        return errore(409, archiviare ? "Non si può archiviare l'ultima sede attiva del locale (le altre sono personali)." : "L'ultima sede attiva del locale non può diventare personale.");
+      if (nome) {
         sede.nome = nome;
         for (const mov of st.movimenti) if (mov.sede.id === sede.id) mov.sede = { id: sede.id, nome };
       }
-      if (c.archiviata !== undefined) {
-        if (c.archiviata && !sede.archiviata && sediAttive(st).length === 1) return errore(409, "Non si può archiviare l'ultima sede attiva.");
-        sede.archiviata = c.archiviata;
-      }
+      if (c.archiviata !== undefined) sede.archiviata = c.archiviata;
+      if (typeof c.personale === "boolean") sede.personale = c.personale;
       salva();
       return ok(elencoSedi(st).find((s) => s.id === sede.id));
     }
@@ -796,7 +777,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
   if (percorso === "/riepilogo" && metodo === "GET") {
     const da = q.get("da");
     const a = q.get("a");
-    const f = filtroSedi(q);
+    const f = filtroSedi(st, q);
     if (f.errore) return errore(400, f.errore);
     return da && a ? ok(riepilogo(da, a, f.ids)) : errore(400, "Indica il periodo (da e a).");
   }
@@ -807,7 +788,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     const raggruppa = raggruppamentoValido(q.get("raggruppa"));
     const tipoGrezzo = q.get("tipo");
     const tipo = tipoGrezzo ? TIPI_VOCI.find((t) => t === tipoGrezzo) : undefined;
-    const f = filtroSedi(q);
+    const f = filtroSedi(st, q);
     if (f.errore) return errore(400, f.errore);
     if (!dataIsoValida(da) || !dataIsoValida(a)) return errore(400, "Indica il periodo (da e a).");
     if (da > a) return errore(400, "La data di inizio non può essere dopo quella di fine.");
@@ -815,8 +796,21 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     if (tipoGrezzo && !tipo) return errore(400, `Valore non valido per «tipo»: ${tipoGrezzo}`);
     return ok(statisticheVoci(st, { da, a, raggruppa, tipo: tipo ?? tipoPredefinito(raggruppa), ids: f.ids }));
   }
+  if (percorso === "/statistiche/giorni" && metodo === "PUT") return daEsito(salvaGiorni(st, corpo));
+  if (percorso === "/statistiche/settimana-completa" && metodo === "PUT") return daEsito(salvaSettimanaCompleta(st, corpo));
+  // GET /statistiche/serie?da=&a=&passo=GIORNO|SETTIMANA|MESE&sedi=: il grafico, al massimo 400 intervalli.
+  if (percorso === "/statistiche/serie" && metodo === "GET") {
+    const f = filtroSedi(st, q);
+    if (f.errore) return errore(400, f.errore);
+    const da = q.get("da");
+    const a = q.get("a");
+    if (!da || !a) return errore(400, "Servono entrambe le date: da e a.");
+    if (!dataIsoValida(da) || !dataIsoValida(a)) return errore(400, "Il parametro da o a non è valido.");
+    if (da > a) return errore(400, "La data iniziale non può essere dopo quella finale.");
+    return daEsito(serieStatistiche(st, da, a, q.get("passo"), f.ids));
+  }
   if (percorso === "/statistiche/settimana") {
-    if (metodo === "PUT") return salvaSettimanaStatistiche(st, corpo);
+    if (metodo === "PUT") return daEsito(salvaSettimana(st, corpo));
     if (metodo === "GET") {
       const data = q.get("data") ?? oggiIso();
       return dataIsoValida(data) ? ok(settimanaStatistiche(st, lunediDi(data))) : errore(400, "Il parametro data non è valido.");
@@ -828,11 +822,11 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     if (!da || !a) return errore(400, "Servono entrambe le date: da e a.");
     if (!dataIsoValida(da) || !dataIsoValida(a)) return errore(400, "Il parametro da o a non è valido.");
     if (da > a) return errore(400, "La data iniziale non può essere dopo quella finale.");
-    const f = filtroSedi(q);
+    const f = filtroSedi(st, q);
     return f.errore ? errore(400, f.errore) : ok(statistichePeriodo(st, da, a, f.ids));
   }
   if (percorso === "/movimenti" && metodo === "GET") {
-    const f = filtroSedi(q);
+    const f = filtroSedi(st, q);
     if (f.errore) return errore(400, f.errore);
     const filtriVoce = erroreFiltriVoce(q);
     return filtriVoce ? errore(400, filtriVoce) : ok(elenco(q, f.ids));
@@ -853,7 +847,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     if (input?.sedeId !== undefined && input.sedeId !== null) return errore(400, "Per dividere fra più sedi non indicare la sede.");
     const e = valida(st, input);
     if (e) return errore(400, e);
-    const scelte = filtroSedi(q);
+    const scelte = idsSedi(q);
     if (scelte.errore) return errore(400, scelte.errore);
     let attive = sediAttive(st);
     if (scelte.ids) {
@@ -863,9 +857,14 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
         if (verifica.errore) return errore(400, verifica.errore);
       }
       attive = attive.filter((s) => scelte.ids!.has(s.id));
+    } else {
+      attive = attive.filter((s) => !s.personale); // le spese dei titolari non si dividono
     }
     const parti = dividiImporto(input.importoCent, attive.length);
-    const creati = attive.flatMap((s, i) => (parti[i]! > 0 ? [creaMovimento({ ...input, importoCent: parti[i]! }, s)] : []));
+    // L'id comune delle parti (docs/api.md, `divisione`): solo se le parti sono almeno due. Nel servizio e' un UUID; qui basta un
+    // valore che non si ripete, e il contatore degli id dei movimenti non torna mai indietro.
+    const divisione = parti.filter((p) => p > 0).length > 1 ? `demo-${st.prossimoId}` : null;
+    const creati = attive.flatMap((s, i) => (parti[i]! > 0 ? [creaMovimento({ ...input, importoCent: parti[i]! }, s, divisione)] : []));
     salva();
     return ok(creati, 201);
   }
@@ -957,7 +956,7 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     return metodo === "PUT" ? ok(esito.valore) : { stato: 204 };
   }
   if (percorso === "/rete") return ok({ porta: 8766, indirizzi: [] });
-  if (percorso === "/programma" && metodo === "GET") return ok({ versione: "demo", cartellaBackup: "Demo: i dati restano solo su questo telefono", cartellaPredefinita: true, ultimoBackup: null });
+  if (percorso === "/programma" && metodo === "GET") return ok({ versione: "demo", cartellaBackup: "Su questo dispositivo", cartellaPredefinita: true, ultimoBackup: null });
   if (percorso === "/programma/backup") return NELLA_DEMO("la copia di sicurezza");
   if (percorso === "/programma/copie") return ok([]);
   if (percorso === "/programma/ripristina") return NELLA_DEMO("il ripristino");
@@ -976,8 +975,11 @@ export function rispondi(metodo: string, percorso: string, q: URLSearchParams, c
     return ok(esito);
   }
   if (percorso === "/esporta" && metodo === "GET") {
-    const f = filtroSedi(q);
-    return f.errore ? errore(400, f.errore) : esportaFile(q, f.ids);
+    // nell'ordine del servizio: i valori che non si leggono, le sedi, poi i controlli di esportaFile
+    const parametri = parametriEsporta(q);
+    if ("errore" in parametri) return errore(400, parametri.errore);
+    const f = filtroSedi(st, q);
+    return f.errore ? errore(400, f.errore) : esportaFile(q, f.ids, parametri);
   }
   return errore(404, "Non trovato.");
 }

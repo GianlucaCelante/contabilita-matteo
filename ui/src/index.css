@@ -115,13 +115,20 @@ html {
 /* PC con schermo piccolo o scala di Windows al 125-150%: lo spazio utile in px
    CSS e' poco (1366x768 al 125% sono circa 1093x614). Invece di rifare ogni
    misura, tutta l'interfaccia del computer si rimpicciolisce a scalini (come
-   nel progetto gemello «etichette»): 92%, 84%, 76%. Solo da 861 px in su: il
-   telefono (e il tablet in verticale) non si toccano. Sopra i 1366 px di
-   larghezza (e con almeno 760 px di altezza) l'app resta a dimensione piena:
-   il mockup approvato vale a schermo grande. Chrome ed Edge supportano «zoom». */
-@media (min-width: 861px) and (max-width: 1366px), (min-width: 861px) and (max-height: 760px) { html { zoom: 0.92; } }
-@media (min-width: 861px) and (max-width: 1180px), (min-width: 861px) and (max-height: 680px) { html { zoom: 0.84; } }
-@media (min-width: 861px) and (max-width: 1000px), (min-width: 861px) and (max-height: 600px) { html { zoom: 0.76; } }
+   nel progetto gemello «etichette»): 92%, 84%, 76%. Per ogni scalino basta
+   una delle due misure: larghezza fino a 1366 / 1180 px, oppure altezza
+   fino a 760 / 680 / 600 px. Solo da 1024 px in su, la stessa soglia del
+   layout da computer (--breakpoint-md): sotto vale il layout da telefono, che
+   non si rimpicciolisce mai (bersagli da 44 px, campi da 16 px: su un tablet
+   in verticale, in una finestra stretta o su un telefono in orizzontale
+   devono restare di quella misura). Per questo il terzo scalino non ha piu'
+   una larghezza (era «fino a 1000 px»): scatta solo con l'altezza. Sopra i
+   1366 px di larghezza, con piu' di 760 px di altezza, l'app resta a
+   dimensione piena: il mockup approvato vale a schermo grande. Chrome ed Edge
+   supportano «zoom». */
+@media (min-width: 1024px) and (max-width: 1366px), (min-width: 1024px) and (max-height: 760px) { html { zoom: 0.92; } }
+@media (min-width: 1024px) and (max-width: 1180px), (min-width: 1024px) and (max-height: 680px) { html { zoom: 0.84; } }
+@media (min-width: 1024px) and (max-height: 600px) { html { zoom: 0.76; } }
 
 /* Barre di scorrimento: su PC sottili e discrete (colore del bordo del tema,
    niente traccia); sul telefono nascoste (lo scorrimento col dito resta).
@@ -158,6 +165,9 @@ main { scroll-padding-bottom: calc(var(--h-barra-basso) + 8px); }
    tastiera: vedi --sotto-tastiera). */
 html[data-tastiera] .guscio { bottom: auto; top: var(--vv-top, 0px); height: var(--vv-h, 100%); }
 html[data-tastiera] .barraNavigazione, html[data-tastiera] .pulsanteNuovo { display: none; }
+/* Una barra fissa «Annulla | Salva» copre la barra di navigazione (telefono, moduli): le voci coperte non devono restare bersagli
+   invisibili per dito, Tab e lettore di schermo (useBarreFisse scrive l'attributo). Resta al suo posto: la pagina non si sposta. */
+html[data-navigazione-coperta] .barraNavigazione { visibility: hidden; }
 html[data-tastiera] .velo { inset: auto 0 auto 0; top: var(--vv-top, 0px); height: var(--vv-h, 100%); }
 html[data-tastiera] [data-barra-fissa] { padding-bottom: 12px; }
 body {
@@ -187,6 +197,9 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
   border-color: var(--anello);
 }
 .campo :is(input, select, textarea):focus-visible { outline: none; }
+/* Riga di una fattura: il collegamento e' solo il nome ma copre tutta la riga, quindi l'anello va sulla riga. */
+.rigaFattura .collegamentoRiga:focus-visible { outline: none; }
+.rigaFattura .collegamentoRiga:focus-visible::after { outline: 3px solid var(--anello); outline-offset: -3px; }
 
 @layer components {
   .num { font-variant-numeric: tabular-nums; }
@@ -271,6 +284,19 @@ input::placeholder, textarea::placeholder { color: var(--color-spento); opacity:
     grid-template-columns: minmax(0, 1fr) auto;
   }
   .rigaMov:hover { background: var(--color-sabbia); }
+  /* Riga di una fattura (RigaMovimento.tsx): la riga non e' tutta un collegamento, perche' ha anche il comando «Da pagare / Pagata» e due
+     comandi non si annidano. Il collegamento e' il nome e la sua area (::after) copre la riga; il pulsante sta sopra, dov'era il badge,
+     con un'area di tocco di 44 px. Fra il collegamento e la riga niente deve essere posizionato, o l'area si restringe. */
+  .rigaFattura { position: relative; }
+  .rigaFattura .collegamentoRiga { color: inherit; text-decoration: none; }
+  .rigaFattura .collegamentoRiga::after { content: ""; position: absolute; inset: 0; }
+  .pulsantePagata {
+    position: relative; z-index: 1; display: inline-flex; padding: 0; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  }
+  .pulsantePagata::before { content: ""; position: absolute; inset: -11px -4px; }
+  /* Mentre salva e' aria-disabled, non disabled: un pulsante spento perderebbe il fuoco. */
+  .pulsantePagata:hover:not([aria-disabled="true"]) { filter: brightness(0.95); }
+  .pulsantePagata[aria-disabled="true"] { opacity: 0.6; cursor: default; }
   @media (min-width: 1024px) {
     .rigaMov { min-height: 54px; padding: 0 20px; }
     .rigaMov, .intestazioneTabella {

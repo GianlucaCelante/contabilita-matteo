@@ -71,6 +71,13 @@ public class Ricorrenza {
     @Column(name = "creata_il", nullable = false)
     private LocalDateTime creataIl;
 
+    /**
+     * Le ripetizioni nate dallo stesso «dividi» (una per sede) hanno qui lo stesso valore: le occorrenze della stessa
+     * scadenza ricevono cosi' lo stesso id comune. Null per una ripetizione non divisa.
+     */
+    @Column(updatable = false)
+    private String divisione;
+
     public Long getId() { return id; }
     public int getGiorno() { return giorno; }
     public void setGiorno(int giorno) { this.giorno = giorno; }
@@ -102,6 +109,8 @@ public class Ricorrenza {
     public void setNote(String note) { this.note = note; }
     public YearMonth getUltimoMese() { return YearMonth.parse(ultimoMese); }
     public void setUltimoMese(YearMonth mese) { this.ultimoMese = mese.toString(); }
+    public String getDivisione() { return divisione; }
+    public void setDivisione(String divisione) { this.divisione = divisione; }
     public LocalDateTime getCreataIl() { return creataIl; }
     public void setCreataIl(LocalDateTime creataIl) { this.creataIl = creataIl; }
 }

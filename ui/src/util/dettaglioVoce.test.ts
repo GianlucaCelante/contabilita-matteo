@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Movimento } from "../api/tipi";
-import { elementiDellaVoce, filtroDellaVoce, indirizzoDettaglioVoce, indirizzoElencoVoci, leggiDettaglioVoce, sommaConSegno, type DettaglioVoce } from "./dettaglioVoce";
+import { elementiDellaVoce, filtroDellaVoce, indirizzoDettaglioVoce, indirizzoElencoVoci, indirizzoMovimentiDellaVoce, leggiDettaglioVoce, sommaConSegno, type DettaglioVoce } from "./dettaglioVoce";
 
 const base: DettaglioVoce = { raggruppa: "FORNITORE", id: 5, tipo: "COSTI", da: "2026-10-01", a: "2026-10-31" };
 const mov = (m: Partial<Movimento>) => ({ id: 1, tipo: "COSTO_VARIABILE", documento: "FATTURA", importoCent: 1000, ...m }) as Movimento;
@@ -52,8 +52,9 @@ describe("filtro dei movimenti che compongono una voce", () => {
   it("Senza dipendente: solo le retribuzioni senza dipendente", () => {
     expect(filtroDellaVoce({ ...base, raggruppa: "DIPENDENTE", id: null }).filtro).toEqual({ da: base.da, a: base.a, senza: "DIPENDENTE", retribuzione: true });
   });
-  it("categoria con Costi: nessun tipo, si tolgono i ricavi dall'elenco", () => {
-    expect(filtroDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7 })).toEqual({ filtro: { da: base.da, a: base.a, categorie: "7" }, soloCosti: true });
+  it("categoria con Costi: tipo COSTI (variabili + fissi, il servizio toglie i ricavi); soloCosti resta come garanzia", () => {
+    expect(filtroDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7 })).toEqual({ filtro: { da: base.da, a: base.a, tipo: "COSTI", categorie: "7" }, soloCosti: true });
+    expect(filtroDellaVoce({ ...base, raggruppa: "CATEGORIA", id: null }).filtro).toMatchObject({ senza: "CATEGORIA", tipo: "COSTI" });
   });
   it("categoria con Ricavi o Tutti", () => {
     expect(filtroDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7, tipo: "RICAVO" }).filtro.tipo).toBe("RICAVO");
@@ -67,6 +68,41 @@ describe("filtro dei movimenti che compongono una voce", () => {
   it("le sedi si passano se ci sono", () => {
     expect(filtroDellaVoce({ ...base, sedi: "2,3" }).filtro.sedi).toBe("2,3");
     expect(filtroDellaVoce(base).filtro).not.toHaveProperty("sedi");
+  });
+});
+
+describe("«Vedi in Movimenti»: l'indirizzo dell'elenco Movimenti con la voce come filtro", () => {
+  const periodo = "p=periodo&da=2026-10-01&a=2026-10-31";
+  it("fornitore: periodo, costi variabili e l'id", () => {
+    expect(indirizzoMovimentiDellaVoce(base)).toBe(`/movimenti?${periodo}&tipo=COSTO_VARIABILE&fornitore=5`);
+  });
+  it("dipendente: l'id e solo le retribuzioni, senza tipo", () => {
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "DIPENDENTE", id: 2 })).toBe(`/movimenti?${periodo}&tipo=&dipendente=2&retribuzione=true`);
+  });
+  it("categoria: l'id e il tipo; «Costi» manda tipo=COSTI, «Tutti» il tipo vuoto (mai assente, o Movimenti userebbe quello ricordato)", () => {
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7 })).toBe(`/movimenti?${periodo}&tipo=COSTI&categorie=7`);
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7, tipo: "TUTTI" })).toBe(`/movimenti?${periodo}&tipo=&categorie=7`);
+    expect(new URLSearchParams(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7, tipo: "TUTTI" }).split("?")[1]).get("tipo")).toBe("");
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7, tipo: "RICAVO" })).toBe(`/movimenti?${periodo}&tipo=RICAVO&categorie=7`);
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: 7, tipo: "COSTO_FISSO" })).toBe(`/movimenti?${periodo}&tipo=COSTO_FISSO&categorie=7`);
+  });
+  it("Senza …: il filtro senza; per i dipendenti solo le retribuzioni", () => {
+    expect(indirizzoMovimentiDellaVoce({ ...base, id: null })).toBe(`/movimenti?${periodo}&tipo=COSTO_VARIABILE&senza=FORNITORE`);
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: null, tipo: "COSTO_VARIABILE" })).toBe(`/movimenti?${periodo}&tipo=COSTO_VARIABILE&senza=CATEGORIA`);
+    // «Senza categoria» con «Costi»: solo i costi, non anche i ricavi
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "CATEGORIA", id: null })).toBe(`/movimenti?${periodo}&tipo=COSTI&senza=CATEGORIA`);
+    expect(indirizzoMovimentiDellaVoce({ ...base, raggruppa: "DIPENDENTE", id: null })).toBe(`/movimenti?${periodo}&tipo=&senza=DIPENDENTE&retribuzione=true`);
+  });
+  it("le sedi non vanno nell'indirizzo (in Movimenti valgono quelle scelte nell'app)", () => {
+    expect(indirizzoMovimentiDellaVoce({ ...base, sedi: "1,2" })).not.toContain("sedi");
+  });
+});
+
+describe("tipo del dettaglio: costi variabili e costi fissi delle categorie", () => {
+  it("si leggono dall'indirizzo e diventano il tipo del filtro", () => {
+    const d = leggiDettaglioVoce(new URLSearchParams("v=CATEGORIA&id=3&t=COSTO_VARIABILE&da=2026-10-01&a=2026-10-31"));
+    expect(d?.tipo).toBe("COSTO_VARIABILE");
+    expect(filtroDellaVoce(d!)).toEqual({ filtro: { da: "2026-10-01", a: "2026-10-31", tipo: "COSTO_VARIABILE", categorie: "3" }, soloCosti: false });
   });
 });
 

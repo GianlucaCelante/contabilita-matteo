@@ -3,7 +3,7 @@ import { sottotitoloElimina, sceltePerEliminare } from "./eliminaMovimento";
 
 describe("eliminare un movimento", () => {
   it("un movimento normale (o con la ripetizione già ferma) ha una sola scelta", () => {
-    expect(sceltePerEliminare(false)).toEqual([{ ambito: "SOLO_QUESTO", etichetta: "Sì, elimina", pericoloso: true }]);
+    expect(sceltePerEliminare(false)).toEqual([{ ambito: "SOLO_QUESTO", etichetta: "Elimina", pericoloso: true }]);
   });
 
   it("in una ripetizione attiva le scelte sono due e dicono cosa succede ai prossimi", () => {

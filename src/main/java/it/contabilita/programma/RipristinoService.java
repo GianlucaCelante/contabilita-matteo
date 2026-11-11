@@ -2,6 +2,7 @@ package it.contabilita.programma;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import it.contabilita.PerLog;
 import it.contabilita.api.ErroreApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -95,7 +96,7 @@ public class RipristinoService {
                 copie.add(new Copia(nome, quando(m.group(1), file), Files.size(file)));
             }
         } catch (IOException e) {
-            log.warn("Impossibile elencare le copie in {}: {}", cartella, e.toString());
+            log.warn("Impossibile elencare le copie in {}: {}", PerLog.pulisci(cartella), PerLog.pulisci(e));
             return List.of();
         }
         copie.sort(Comparator.comparing(Copia::quando).thenComparing(Copia::nome).reversed());
@@ -149,12 +150,12 @@ public class RipristinoService {
         try {
             scriviMarcatore(marcatore, file, nomeSicurezza);
         } catch (IOException e) {
-            log.error("Impossibile scrivere il marcatore del ripristino: {}", e.toString(), e);
+            log.error("Impossibile scrivere il marcatore del ripristino: {}", PerLog.pulisci(e), PerLog.conStack(e));
             throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR,
                     "Impossibile preparare il ripristino (cartella dati non scrivibile). I dati attuali non sono stati toccati.");
         }
         log.info("Ripristino richiesto dalla copia {}: copia di sicurezza {}, riavvio con codice {}.",
-                nome, nomeSicurezza, Uscita.CODICE_RIAVVIO);
+                PerLog.pulisci(nome), PerLog.pulisci(nomeSicurezza), Uscita.CODICE_RIAVVIO);
         uscita.esci(Uscita.CODICE_RIAVVIO);
         return new EsitoRichiesta(true, nomeSicurezza);
     }

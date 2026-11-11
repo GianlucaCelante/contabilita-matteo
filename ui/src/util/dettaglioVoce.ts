@@ -53,12 +53,12 @@ export function indirizzoElencoVoci(d: DettaglioVoce): string {
 }
 
 // I filtri di GET /api/movimenti che danno proprio i movimenti contati dalla riga. Il tipo e' lo stesso delle statistiche
-// (fornitori: costi variabili; dipendenti: solo retribuzioni, senza tipo); «Costi» delle categorie non e' un tipo dei movimenti, quindi si
-// chiede tutto e si tolgono i ricavi dall'elenco (`soloCosti`).
+// (fornitori: costi variabili; dipendenti: solo retribuzioni, senza tipo); «Costi» delle categorie e' tipo=COSTI (variabili + fissi): il
+// servizio toglie gia' i ricavi, anche dai totali. `soloCosti` resta come garanzia per l'elenco (elementiDellaVoce).
 export function filtroDellaVoce(d: DettaglioVoce): { filtro: FiltroMovimenti; soloCosti: boolean } {
   const tipo = tipoPerServizio(d.raggruppa, d.tipo);
   const filtro: FiltroMovimenti = { da: d.da, a: d.a };
-  if (tipo && tipo !== "COSTI") filtro.tipo = tipo;
+  if (tipo) filtro.tipo = tipo;
   // Dipendenti: contano solo le retribuzioni (anche per «Senza dipendente»), senza tipo.
   if (d.raggruppa === "DIPENDENTE") filtro.retribuzione = true;
   if (d.sedi) filtro.sedi = d.sedi;
@@ -67,6 +67,23 @@ export function filtroDellaVoce(d: DettaglioVoce): { filtro: FiltroMovimenti; so
   else if (d.raggruppa === "DIPENDENTE") filtro.dipendente = d.id;
   else filtro.categorie = String(d.id);
   return { filtro, soloCosti: tipo === "COSTI" };
+}
+
+// «Vedi in Movimenti»: l'elenco Movimenti con lo stesso periodo e la voce come filtro. Movimenti legge dall'indirizzo il periodo
+// (`p=periodo&da=&a=`), il `tipo` (COSTI per «Costi» delle categorie; vuoto se la voce non ne ha uno: «Tutti», i dipendenti) e UNO fra
+// `fornitore`, `dipendente`, `categorie`, `senza`; per i dipendenti (anche «Senza dipendente») `retribuzione=true`, perche' la riga
+// conta solo le paghe.
+export function indirizzoMovimentiDellaVoce(d: DettaglioVoce): string {
+  const { filtro } = filtroDellaVoce(d);
+  const p = new URLSearchParams({ p: "periodo", da: d.da, a: d.a });
+  // Il tipo c'e' sempre, anche vuoto (`tipo=` = «Tutti»): senza, Movimenti userebbe l'ultimo tipo ricordato e scarterebbe la categoria.
+  p.set("tipo", filtro.tipo ?? "");
+  if (filtro.senza) p.set("senza", filtro.senza);
+  else if (filtro.fornitore !== undefined) p.set("fornitore", String(filtro.fornitore));
+  else if (filtro.dipendente !== undefined) p.set("dipendente", String(filtro.dipendente));
+  else if (filtro.categorie) p.set("categorie", filtro.categorie);
+  if (filtro.retribuzione) p.set("retribuzione", "true");
+  return `/movimenti?${p.toString()}`;
 }
 
 export function elementiDellaVoce(elementi: Movimento[], soloCosti: boolean): Movimento[] {

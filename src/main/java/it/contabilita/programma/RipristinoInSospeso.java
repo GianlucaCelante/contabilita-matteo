@@ -3,6 +3,7 @@ package it.contabilita.programma;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import it.contabilita.PerLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,11 +70,12 @@ public final class RipristinoInSospeso {
             ripristinaAllegati(cartellaDati, richiesta);
             Files.deleteIfExists(marcatore);
             log.info("Ripristino applicato: il database è ora la copia {} (copia di sicurezza dei dati precedenti: {}).",
-                    copia, richiesta.path("copiaDiSicurezza").asText("?"));
+                    PerLog.pulisci(copia), PerLog.pulisci(richiesta.path("copiaDiSicurezza").asText("?")));
             return Esito.APPLICATO;
         } catch (Exception e) {
             String motivo = e instanceof VerificaCopia.CopiaNonValida ? e.getMessage() : e.toString();
-            log.error("Ripristino NON applicato, il database attuale resta com'è: {}", motivo, e);
+            // il motivo riporta percorsi letti dal marcatore: nel log pulito, nel file del fallimento com'e'
+            log.error("Ripristino NON applicato, il database attuale resta com'è: {}", PerLog.pulisci(motivo), PerLog.conStack(e));
             try {
                 Files.deleteIfExists(temporaneo);
             } catch (IOException ignorato) {
@@ -117,18 +119,18 @@ public final class RipristinoInSospeso {
             try {
                 CopiaCartelle.elimina(vecchia);
             } catch (IOException e) {
-                log.warn("Impossibile eliminare {}: {}", vecchia, e.toString());
+                log.warn("Impossibile eliminare {}: {}", PerLog.pulisci(vecchia), PerLog.pulisci(e));
             }
-            log.info("Allegati ripristinati dalla copia {}.", sorgente);
+            log.info("Allegati ripristinati dalla copia {}.", PerLog.pulisci(sorgente));
         } catch (Exception e) {
-            log.error("Allegati NON ripristinati (il database sì): {}", e.toString(), e);
+            log.error("Allegati NON ripristinati (il database sì): {}", PerLog.pulisci(e), PerLog.conStack(e));
             try {
                 CopiaCartelle.elimina(temporanea);
                 if (!Files.exists(attuale) && Files.exists(vecchia)) {
                     Files.move(vecchia, attuale); // rimette quelli di prima
                 }
             } catch (IOException ignorato) {
-                log.error("Impossibile rimettere a posto gli allegati precedenti: {}", ignorato.toString());
+                log.error("Impossibile rimettere a posto gli allegati precedenti: {}", PerLog.pulisci(ignorato));
             }
             try {
                 ObjectNode n = JSON.createObjectNode();
@@ -137,7 +139,7 @@ public final class RipristinoInSospeso {
                 n.put("fallitoIl", LocalDateTime.now().withNano(0).toString());
                 JSON.writerWithDefaultPrettyPrinter().writeValue(cartellaDati.resolve(MARCATORE_ALLEGATI_FALLITI).toFile(), n);
             } catch (IOException scrittura) {
-                log.error("Impossibile scrivere {}: {}", MARCATORE_ALLEGATI_FALLITI, scrittura.toString());
+                log.error("Impossibile scrivere {}: {}", MARCATORE_ALLEGATI_FALLITI, PerLog.pulisci(scrittura));
             }
         }
     }
@@ -158,11 +160,11 @@ public final class RipristinoInSospeso {
             JSON.writerWithDefaultPrettyPrinter().writeValue(cartellaDati.resolve(MARCATORE_FALLITO).toFile(), richiesta);
             Files.deleteIfExists(marcatore);
         } catch (IOException e) {
-            log.error("Impossibile scrivere {}: {}", MARCATORE_FALLITO, e.toString());
+            log.error("Impossibile scrivere {}: {}", MARCATORE_FALLITO, PerLog.pulisci(e));
             try {
                 Files.move(marcatore, cartellaDati.resolve(MARCATORE_FALLITO), StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException ancora) {
-                log.error("Impossibile nemmeno rinominare il marcatore: {}", ancora.toString());
+                log.error("Impossibile nemmeno rinominare il marcatore: {}", PerLog.pulisci(ancora));
             }
         }
     }

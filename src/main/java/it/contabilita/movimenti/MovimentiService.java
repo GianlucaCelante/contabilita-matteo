@@ -29,9 +29,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 
 /** Il registro dei movimenti: elenco con totali, lettura, creazione, modifica e eliminazione con ambito. */
 @Service
@@ -61,9 +63,31 @@ public class MovimentiService {
 
     // ---- lettura ----
 
-    /** Movimenti del periodo, in ordine di data e id decrescenti, con i totali (di tutto l'elenco filtrato). */
+    /** Il valore «COSTI» del filtro {@code tipo} dell'elenco: costi variabili + costi fissi. */
+    public static final String COSTI = "COSTI";
+
+    /**
+     * Il filtro {@code tipo} dell'elenco: un valore di {@link Tipo} oppure {@code COSTI} (variabili + fissi). Assente o vuoto = tutti
+     * ({@code null}); un altro valore e' un 400 con lo stesso messaggio degli altri parametri non validi.
+     */
+    public static Set<Tipo> tipiDa(String tipo) {
+        if (tipo == null || tipo.isBlank()) {
+            return null;
+        }
+        String t = tipo.trim();
+        if (t.equals(COSTI)) {
+            return EnumSet.of(Tipo.COSTO_VARIABILE, Tipo.COSTO_FISSO);
+        }
+        try {
+            return EnumSet.of(Tipo.valueOf(t));
+        } catch (IllegalArgumentException e) {
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "tipo: valore non valido: " + tipo);
+        }
+    }
+
+    /** Movimenti del periodo, in ordine di data e id decrescenti, con i totali (di tutto l'elenco filtrato). {@code tipi} null = tutti. */
     @Transactional(readOnly = true)
-    public ElencoMovimenti elenca(LocalDate da, LocalDate a, Tipo tipo, String q, Long dipendenteId, Set<Long> sediIds,
+    public ElencoMovimenti elenca(LocalDate da, LocalDate a, Set<Tipo> tipi, String q, Long dipendenteId, Set<Long> sediIds,
                                    Set<Long> categorieIds, Long fornitoreId, String senza, Boolean soloRetribuzioni, Boolean pagata) {
         Voce senzaVoce = Voce.da(senza);
         if (senzaVoce == Voce.CATEGORIA && categorieIds != null) {
@@ -80,8 +104,8 @@ public class MovimentiService {
             if (a != null) {
                 p.add(cb.lessThanOrEqualTo(root.get("data"), a));
             }
-            if (tipo != null) {
-                p.add(cb.equal(root.get("tipo"), tipo));
+            if (tipi != null) {
+                p.add(root.get("tipo").in(tipi));
             }
             if (dipendenteId != null) {
                 p.add(cb.equal(root.get("dipendente").get("id"), dipendenteId));
@@ -128,6 +152,7 @@ public class MovimentiService {
 
     private static boolean corrisponde(Movimento m, String chiave) {
         return contiene(m.getFornitore() == null ? null : m.getFornitore().getNome(), chiave)
+                || contiene(m.getDipendente() == null ? null : m.getDipendente().getNome(), chiave)
                 || contiene(m.getDescrizione(), chiave)
                 || contiene(m.getNote(), chiave);
     }
@@ -151,14 +176,15 @@ public class MovimentiService {
     @Transactional
     public MovimentoDto crea(MovimentoInput input) {
         valida(input);
-        return creaIn(input, sedi.perNuovoMovimento(input.sedeId()));
+        return creaIn(input, sedi.perNuovoMovimento(input.sedeId()), null);
     }
 
-    private MovimentoDto creaIn(MovimentoInput input, Sede sede) {
+    private MovimentoDto creaIn(MovimentoInput input, Sede sede, String divisione) {
         LocalDateTime adesso = LocalDateTime.now(clock).withNano(0);
         Movimento m = new Movimento();
         applica(m, input);
         m.setSede(sede);
+        m.setDivisione(divisione); // prima della ripetizione, che lo copia
         m.setOrigine(Origine.MANO);
         m.setCreatoIl(adesso);
         m.setModificatoIl(adesso);
@@ -179,7 +205,9 @@ public class MovimentiService {
      * una transazione. Se l'importo ha meno centesimi delle sedi, le sedi in fondo restano senza parte (un movimento
      * da zero non esiste). Se il movimento e' ripetuto (costo fisso), ogni sede ha la sua ripetizione con la sua parte:
      * i mesi dopo escono gia' divisi. Con {@code sediScelte} (gli id) si divide solo fra quelle sedi, che devono essere almeno due
-     * e attive; senza (null) fra tutte le sedi attive.
+     * e attive (anche personali); senza (null) fra tutte le sedi attive non personali.
+     * Le parti hanno lo stesso identificativo ({@code divisione}), se sono almeno due: con una parte sola non c'e' niente
+     * di diviso e resta null.
      */
     @Transactional
     public List<MovimentoDto> dividi(MovimentoInput input, Set<Long> sediScelte) {
@@ -196,9 +224,13 @@ public class MovimentiService {
                 sedi.perNuovoMovimento(id); // sede inesistente o archiviata = 400
             }
             attive = attive.stream().filter(s -> sediScelte.contains(s.getId())).toList();
+        } else {
+            attive = attive.stream().filter(s -> !s.isPersonale()).toList(); // le spese dei titolari non si dividono
         }
         long base = input.importoCent() / attive.size();
         long resto = input.importoCent() % attive.size();
+        long quante = base > 0 ? attive.size() : resto; // le sedi in fondo senza centesimi non hanno la parte
+        String divisione = quante > 1 ? UUID.randomUUID().toString() : null;
         List<MovimentoDto> creati = new ArrayList<>();
         for (int i = 0; i < attive.size(); i++) {
             long parte = base + (i < resto ? 1 : 0);
@@ -208,7 +240,7 @@ public class MovimentiService {
             MovimentoInput perSede = new MovimentoInput(input.data(), input.tipo(), input.documento(), parte,
                     input.categoria(), input.fornitore(), input.dipendente(), input.descrizione(),
                     input.numeroDocumento(), input.note(), input.ricorrenza(), null, input.pagata());
-            creati.add(creaIn(perSede, attive.get(i)));
+            creati.add(creaIn(perSede, attive.get(i), divisione));
         }
         return creati;
     }
@@ -373,6 +405,7 @@ public class MovimentiService {
                 r == null ? null : new RicorrenzaRif(r.getId(), r.getGiorno(), r.isAttiva(), r.getUnita(), r.getIntervallo(), r.getProssimaData()),
                 m.getAllegatoNome(), m.getCreatoIl(),
                 // la colonna e' sempre valorizzata (uguale a creato_il alla nascita): "mai modificato" = null
-                m.getModificatoIl() == null || m.getModificatoIl().equals(m.getCreatoIl()) ? null : m.getModificatoIl());
+                m.getModificatoIl() == null || m.getModificatoIl().equals(m.getCreatoIl()) ? null : m.getModificatoIl(),
+                m.getDivisione());
     }
 }

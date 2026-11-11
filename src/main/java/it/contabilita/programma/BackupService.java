@@ -1,5 +1,6 @@
 package it.contabilita.programma;
 
+import it.contabilita.PerLog;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.api.VersioneController;
 import it.contabilita.dati.Impostazione;
@@ -174,7 +175,7 @@ public class BackupService {
         try {
             return new CartellaBackup(copia(cartellaEffettiva()).toString());
         } catch (Exception e) {
-            log.error("Copia di sicurezza fallita: {}", e.toString(), e);
+            log.error("Copia di sicurezza fallita: {}", PerLog.pulisci(e), PerLog.conStack(e));
             throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR, messaggioErrore(e));
         } finally {
             inCorso.set(false);
@@ -192,7 +193,7 @@ public class BackupService {
         try {
             return copia(cartellaEffettiva(), PREFISSO_PRIMA_DEL_RIPRISTINO, false);
         } catch (Exception e) {
-            log.error("Copia di sicurezza prima del ripristino fallita: {}", e.toString(), e);
+            log.error("Copia di sicurezza prima del ripristino fallita: {}", PerLog.pulisci(e), PerLog.conStack(e));
             throw new ErroreApi(HttpStatus.INTERNAL_SERVER_ERROR, messaggioErrore(e));
         } finally {
             inCorso.set(false);
@@ -225,7 +226,7 @@ public class BackupService {
         try {
             copia(cartella);
         } catch (Exception e) {
-            log.error("Copia di sicurezza automatica fallita: {}", e.toString(), e);
+            log.error("Copia di sicurezza automatica fallita: {}", PerLog.pulisci(e), PerLog.conStack(e));
         } finally {
             inCorso.set(false);
         }
@@ -265,7 +266,7 @@ public class BackupService {
             eliminaSilenziosamente(destinazione);
             throw e;
         }
-        log.info("Copia di sicurezza riuscita in {}", destinazione);
+        log.info("Copia di sicurezza riuscita in {}", PerLog.pulisci(destinazione)); // la cartella la sceglie il cliente
         if (registra) {
             salva(CHIAVE_ULTIMO_QUANDO, quando.toString());
             salva(CHIAVE_ULTIMO_CARTELLA, destinazione.toString());
@@ -337,14 +338,14 @@ public class BackupService {
                     .sorted(Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
                     .toList();
         } catch (IOException e) {
-            log.warn("Impossibile elencare {} per la pulizia delle vecchie copie: {}", cartella, e.toString());
+            log.warn("Impossibile elencare {} per la pulizia delle vecchie copie: {}", PerLog.pulisci(cartella), PerLog.pulisci(e));
             return;
         }
         for (Path vecchia : sottocartelle.subList(Math.min(COPIE_DA_TENERE, sottocartelle.size()), sottocartelle.size())) {
             try {
                 eliminaRicorsivamente(vecchia);
             } catch (IOException e) {
-                log.warn("Impossibile eliminare la vecchia copia {}: {}", vecchia, e.toString());
+                log.warn("Impossibile eliminare la vecchia copia {}: {}", PerLog.pulisci(vecchia), PerLog.pulisci(e));
             }
         }
     }

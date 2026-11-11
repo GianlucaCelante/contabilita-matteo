@@ -20,9 +20,11 @@ import java.time.LocalDate;
 public class EsportaController {
 
     private final EsportazioneService esportazione;
+    private final SediService sediService;
 
-    public EsportaController(EsportazioneService esportazione) {
+    public EsportaController(EsportazioneService esportazione, SediService sediService) {
         this.esportazione = esportazione;
+        this.sediService = sediService;
     }
 
     @GetMapping("/esporta")
@@ -34,7 +36,7 @@ public class EsportaController {
             @RequestParam(required = false) String sedi,
             @RequestParam(defaultValue = "true") boolean statistiche,
             @RequestParam(defaultValue = "false") boolean colonnePerSede) {
-        Esportazione file = esportazione.prepara(formato, da, a, includi, SediService.idsDa(sedi), statistiche, colonnePerSede);
+        Esportazione file = esportazione.prepara(formato, da, a, includi, sediService.filtro(sedi), statistiche, colonnePerSede);
         return ResponseEntity.ok()
                 .contentType(file.tipoContenuto())
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + file.nomeFile() + "\"")

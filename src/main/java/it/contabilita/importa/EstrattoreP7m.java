@@ -32,8 +32,8 @@ import java.util.regex.Pattern;
  */
 final class EstrattoreP7m {
 
-    private static final Pattern APERTURA = Pattern.compile("<(?:[A-Za-z0-9_.-]+:)?FatturaElettronica[\\s>]");
-    private static final Pattern CHIUSURA = Pattern.compile("</(?:[A-Za-z0-9_.-]+:)?FatturaElettronica\\s*>");
+    private static final Pattern APERTURA = Pattern.compile("<(?:[A-Za-z0-9_.-]+:)?FatturaElettronica(?:Semplificata)?[\\s>]");
+    private static final Pattern CHIUSURA = Pattern.compile("</(?:[A-Za-z0-9_.-]+:)?FatturaElettronica(?:Semplificata)?\\s*>");
     private static final int PROFONDITA_MASSIMA = 12;
 
     private EstrattoreP7m() {
@@ -49,8 +49,9 @@ final class EstrattoreP7m {
         if (perPosizione != null) {
             return perPosizione;
         }
-        throw new ErroreLettura("Nel file firmato (.p7m) non ho trovato una fattura XML. "
-                + "Chiedi al fornitore l'XML non firmato, oppure aprilo con il programma di firma e salvane l'XML.");
+        throw new ErroreLettura("Nel file firmato (.p7m) non ho trovato una fattura elettronica. "
+                + "Chiedi al fornitore il file non firmato (.xml), oppure aprilo con il programma di firma e salva la fattura (.xml).",
+                "busta .p7m senza FatturaElettronica incorporata (cifrata, firma separata o non CMS), " + busta.length + " byte");
     }
 
     // ---- Base64 ----

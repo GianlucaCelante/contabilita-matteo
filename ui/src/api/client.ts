@@ -8,6 +8,7 @@ import type {
   Dipendente,
   ElencoMovimenti,
   FiltroMovimenti,
+  GiorniInput,
   CasellaFattura,
   CasellaInput,
   Fatture,
@@ -22,8 +23,11 @@ import type {
   Rete,
   Riepilogo,
   RispostaRipristino,
+  PassoSerie,
   Sede,
+  SerieStatistiche,
   Settimana,
+  SettimanaCompletaInput,
   SettimanaInput,
   Statistiche,
   StatisticheVoci,
@@ -95,16 +99,28 @@ export const api = {
   eliminaMovimento: (id: number, ambito: Ambito) =>
     richiedi<void>(`/movimenti/${id}${stringaQuery({ ambito })}`, { method: "DELETE" }),
   // Per dividere fra tutte le sedi attive (corpo senza sedeId): risponde con un movimento per sede.
-  // `sedi`: gli id delle sedi fra cui dividere; vuoto o assente = tutte le sedi attive.
+  // `sedi`: gli id delle sedi fra cui dividere; vuoto o assente = tutte le sedi attive non personali.
   dividiMovimento: (corpo: MovimentoInput, sedi: number[] = []) =>
     richiedi<Movimento[]>(`/movimenti/dividi${sedi.length > 0 ? `?sedi=${sedi.join(",")}` : ""}`, { method: "POST", ...json(corpo) }),
   sedi: () => richiedi<Sede[]>("/sedi"),
-  creaSede: (nome: string) => richiedi<Sede>("/sedi", { method: "POST", ...json({ nome }) }),
-  modificaSede: (id: number, corpo: { nome?: string; archiviata?: boolean }) => richiedi<Sede>(`/sedi/${id}`, { method: "PUT", ...json(corpo) }),
-  // Pizze e ordini: una settimana (un giorno qualsiasi, assente = oggi) e le statistiche di un periodo.
+  // `personale` (facoltativo, predefinito false) vale solo per una sede nuova: se il nome esiste gia' la sede torna com'e'.
+  creaSede: (nome: string, personale?: boolean) =>
+    richiedi<Sede>("/sedi", { method: "POST", ...json(personale === undefined ? { nome } : { nome, personale }) }),
+  modificaSede: (id: number, corpo: { nome?: string; archiviata?: boolean; personale?: boolean }) =>
+    richiedi<Sede>(`/sedi/${id}`, { method: "PUT", ...json(corpo) }),
+  // Pizze e ordini: una settimana (un giorno qualsiasi, assente = oggi) con i suoi giorni e le statistiche di un periodo.
   settimanaStatistiche: (data?: string) => richiedi<Settimana>(`/statistiche/settimana${stringaQuery({ data })}`),
+  // Il totale della settimana per sede: con i numeri cancella i giorni di quella sede in quella settimana (chiedere conferma prima).
   salvaSettimanaStatistiche: (corpo: SettimanaInput) => richiedi<Settimana>("/statistiche/settimana", { method: "PUT", ...json(corpo) }),
+  // Pizze e ordini giorno per giorno (tutti della stessa settimana): un giorno con i numeri cancella il totale settimanale della sua sede.
+  salvaGiorniStatistiche: (corpo: GiorniInput) => richiedi<Settimana>("/statistiche/giorni", { method: "PUT", ...json(corpo) }),
+  // Una settimana intera (giorni di alcune sedi, totali di altre) in un solo salvataggio, tutto o niente; risponde con la settimana.
+  salvaSettimanaCompletaStatistiche: (corpo: SettimanaCompletaInput) =>
+    richiedi<Settimana>("/statistiche/settimana-completa", { method: "PUT", ...json(corpo) }),
   statistiche: (da: string, a: string, sedi?: string) => richiedi<Statistiche>(`/statistiche${stringaQuery({ da, a, sedi })}`),
+  // Il grafico: un intervallo per giorno, settimana o mese fra da e a (al massimo 400 intervalli, altrimenti 400).
+  serieStatistiche: (da: string, a: string, passo: PassoSerie, sedi?: string) =>
+    richiedi<SerieStatistiche>(`/statistiche/serie${stringaQuery({ da, a, passo, sedi })}`),
   fermaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/ferma`, { method: "POST" }),
   riattivaRicorrenza: (id: number) => richiedi<void>(`/ricorrenze/${id}/riattiva`, { method: "POST" }),
   categorie: (tipo?: Tipo) => richiedi<Categoria[]>(`/categorie${stringaQuery({ tipo })}`),
@@ -137,7 +153,7 @@ export const api = {
   modificaCasellaFattura: (id: number, corpo: CasellaInput) => richiedi<CasellaFattura>(`/fatture/caselle/${id}`, { method: "PUT", ...json(corpo) }),
   eliminaCasellaFattura: (id: number) => richiedi<void>(`/fatture/caselle/${id}`, { method: "DELETE" }),
   fatture: (da: string, a: string) => richiedi<Fatture>(`/fatture${stringaQuery({ da, a })}`),
-  // Il promemoria della Home: sempre il mese corrente, indipendente dal periodo che si sta guardando.
+  // Il promemoria del Riepilogo: sempre il mese corrente, indipendente dal periodo che si sta guardando.
   promemoriaFatture: () => richiedi<PromemoriaFatture>("/fatture/promemoria"),
   // Fattura ricevuta pagata / da pagare (solo FATTURA, altrimenti 400).
   segnaPagata: (id: number, pagata: boolean) => richiedi<Movimento>(`/movimenti/${id}/pagata`, { method: "PUT", ...json({ pagata }) }),
@@ -173,6 +189,7 @@ export const chiavi = {
   sedi: ["sedi"] as const,
   statistiche: (da: string, a: string, sedi?: string) => ["statistiche", "periodo", da, a, sedi ?? ""] as const,
   settimanaStatistiche: (lunedi: string) => ["statistiche", "settimana", lunedi] as const,
+  serieStatistiche: (da: string, a: string, passo: PassoSerie, sedi?: string) => ["statistiche", "serie", da, a, passo, sedi ?? ""] as const,
   statisticheVoci: (da: string, a: string, raggruppa: RaggruppaVoci, tipo?: TipoVoci, sedi?: string) =>
     ["statistiche", "voci", da, a, raggruppa, tipo ?? "", sedi ?? ""] as const,
   movimenti: (f: FiltroMovimenti) => ["movimenti", f] as const,

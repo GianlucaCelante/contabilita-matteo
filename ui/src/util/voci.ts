@@ -1,4 +1,4 @@
-import type { Anagrafica, Tipo } from "../api/tipi";
+import type { Anagrafica, Movimento, Tipo } from "../api/tipi";
 import { MASSIMO_NOME_CATEGORIA, normalizzaNome } from "./categorie";
 
 // Categorie, fornitori e dipendenti hanno lo stesso comportamento (rinomina, unisci, elimina): qui i testi che cambiano.
@@ -33,10 +33,29 @@ export function testoUsi(anagrafica: Anagrafica, usi: number): string {
   return `${f ? "usata" : "usato"} da ${usi} ${usi === 1 ? "movimento" : "movimenti"}`;
 }
 
+// Quanti movimenti in un elenco, come li contano le statistiche per voce (docs/api.md): le parti di un movimento diviso fra sedi
+// (stesso `divisione`) nello stesso mese valgono un movimento solo, anche se l'elenco ne ha una riga per sede.
+export function contaMovimenti(movimenti: readonly Pick<Movimento, "divisione" | "data">[]): number {
+  const divisioni = new Set<string>();
+  let n = 0;
+  for (const m of movimenti) {
+    if (!m.divisione) n++;
+    else divisioni.add(`${m.data.slice(0, 7)}\n${m.divisione}`);
+  }
+  return n + divisioni.size;
+}
+
 // Per le righe degli elenchi: «3 movimenti», «Nessun movimento».
 export function testoMovimenti(n: number): string {
   if (n <= 0) return "Nessun movimento";
   return `${n} ${n === 1 ? "movimento" : "movimenti"}`;
+}
+
+// «N movimenti» sopra un elenco: il numero e' quello delle statistiche per voce (contaMovimenti). Se l'elenco ha piu' righe, perche'
+// un movimento diviso fra sedi ne ha una per sede, lo si dice, cosi' il numero e le righe tornano.
+export function testoMovimentiElenco(movimenti: readonly Pick<Movimento, "divisione" | "data">[]): string {
+  const n = contaMovimenti(movimenti);
+  return testoMovimenti(n) + (n < movimenti.length ? ` (${movimenti.length} righe: quelli divisi ne hanno una per sede)` : "");
 }
 
 // La frase della conferma di eliminazione: «usata da 9 movimenti in tutto: resteranno senza categoria». Una voce mai usata si elimina e basta.

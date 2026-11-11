@@ -9,29 +9,46 @@ export interface GruppoErrori {
   file: string[];
 }
 
-// I codici dei tipi di documento (TD16…) sono gergo: al posto del messaggio tecnico del servizio una frase semplice, col codice fra parentesi.
-const TIPO_NON_AMMESSO = /^Tipo di documento (TD\d+) non ammesso\b.*$/;
-
-export function messaggioChiaro(messaggio: string): string {
-  const m = TIPO_NON_AMMESSO.exec(messaggio);
-  return m ? `Questo tipo di documento non è una fattura di acquisto e non viene importato (codice ${m[1]}).` : messaggio;
-}
-
 const PREFISSO_LOTTO = /^Fattura (.+?): /;
 
 // I file con lo stesso motivo stanno insieme, dal gruppo piu' numeroso. Nei lotti (piu' fatture in un file)
 // il messaggio comincia con «Fattura N: »: il prefisso si toglie dal motivo e il numero passa accanto al file.
+// Il testo e' quello del servizio, gia' in italiano semplice (niente codici TD…, nomi di campi o numeri di riga): non si riscrive.
 export function raggruppaErrori(errori: ErroreFileImportato[]): GruppoErrori[] {
   const gruppi = new Map<string, string[]>();
   for (const e of errori) {
     const m = PREFISSO_LOTTO.exec(e.messaggio);
-    const messaggio = messaggioChiaro(m ? e.messaggio.slice(m[0].length) : e.messaggio);
+    const messaggio = m ? e.messaggio.slice(m[0].length) : e.messaggio;
     const file = m ? `${e.nomeFile} (fattura ${m[1]})` : e.nomeFile;
     const lista = gruppi.get(messaggio);
     if (lista) lista.push(file);
     else gruppi.set(messaggio, [file]);
   }
   return [...gruppi.entries()].map(([messaggio, file]) => ({ messaggio, file })).sort((a, b) => b.file.length - a.file.length);
+}
+
+// Le etichette accanto al fornitore, per i documenti che non sono una fattura qualunque. La nota di credito e' in evidenza
+// (riduce i costi); integrazione e nota di debito sono discrete: si importano come fatture, l'etichetta dice solo che cosa sono.
+// La spiegazione e' una frase intera che la riga scrive sotto il fornitore (spiegazioniDocumento): non un `title`, che sul telefono
+// non si puo' aprire e che i lettori di schermo leggono in modo incostante.
+export interface EtichettaDocumento {
+  testo: string;
+  tono: "credito" | "discreto";
+  spiegazione?: string;
+}
+
+export function etichetteDocumento(f: FatturaLetta): EtichettaDocumento[] {
+  const etichette: EtichettaDocumento[] = [];
+  if (f.notaDiCredito) etichette.push({ testo: "Nota di credito", tono: "credito" });
+  if (f.integrazione) etichette.push({ testo: "Integrazione", tono: "discreto", spiegazione: "Autofattura per un acquisto dall'estero: conta come costo." });
+  if (f.notaDiDebito) {
+    etichette.push({ testo: "Nota di debito", tono: "discreto", spiegazione: "Il fornitore chiede un importo in più rispetto a una fattura già emessa: conta come costo." });
+  }
+  return etichette;
+}
+
+export function spiegazioniDocumento(f: FatturaLetta): string[] {
+  return etichetteDocumento(f).flatMap((e) => (e.spiegazione ? [e.spiegazione] : []));
 }
 
 export type Filtro = "tutte" | "daImportare" | "giaPresenti" | "noteDiCredito" | "integrazioni" | "escluse";
@@ -106,6 +123,11 @@ export function testoRiassunto(r: RiassuntoSelezione): string {
   return parti.length > 0 ? parti.join(" · ") : "Niente da importare";
 }
 
+// Il totale di quello che si importa, in un numero solo: le fatture meno le note di credito (la barra in fondo sul telefono).
+export function totaleNettoCent(r: RiassuntoSelezione): number {
+  return r.fattureCent - r.noteCent;
+}
+
 // ---- categoria uguale per tutte le fatture di un fornitore ----
 
 const chiaveNome = (nome: string) => nome.trim().replace(/\s+/g, " ").toLowerCase();
@@ -135,5 +157,5 @@ export function applicaCategoriaAlFornitore(fatture: FatturaLetta[], riga: Fattu
 
 // Il titolo del riquadro di caricamento: il trascinamento esiste solo con mouse e tastiera, sul telefono si sceglie dall'elenco dei file.
 export function titoloCaricamento(soloTocco: boolean): string {
-  return soloTocco ? "Scegli i file XML o ZIP" : "Trascina qui gli XML o lo ZIP delle fatture";
+  return soloTocco ? "Scegli le fatture elettroniche o lo ZIP" : "Trascina qui le fatture elettroniche o lo ZIP";
 }

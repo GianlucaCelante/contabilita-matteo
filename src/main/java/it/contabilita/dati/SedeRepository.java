@@ -16,6 +16,11 @@ public interface SedeRepository extends JpaRepository<Sede, Long> {
 
     long countByArchiviataFalse();
 
+    /** Le sedi attive e non personali: il locale deve averne almeno una. */
+    long countByArchiviataFalseAndPersonaleFalse();
+
+    boolean existsByPersonaleTrue();
+
     @Query("select coalesce(max(s.ordine), 0) from Sede s")
     int ordineMassimo();
 }

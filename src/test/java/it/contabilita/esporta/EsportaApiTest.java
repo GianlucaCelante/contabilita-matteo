@@ -161,6 +161,47 @@ class EsportaApiTest extends ProvaBase {
         errore(get("/api/esporta?formato=csv" + ok + "&includi=RICAVO,BOH"), null, 400);
     }
 
+    // s37: testi e ordine dei controlli, quelli che il servizio finto della demo deve ripetere (ui/src/demo/esporta.test.ts).
+    @Test
+    void iControlliDeiParametriHannoUnOrdineEDeiTestiPrecisi() throws Exception {
+        String date = "&da=2026-03-01&a=2026-03-31";
+        // 1. i valori che non si leggono (date, sì/no), nell'ordine da, a, statistiche, colonnePerSede: prima di tutto il resto
+        assertThat(messaggio("formato=pdf&da=marzo&a=boh&sedi=abc")).isEqualTo("da: valore non valido: marzo");
+        assertThat(messaggio("formato=pdf&da=2026-03-01&a=boh&sedi=abc")).isEqualTo("a: valore non valido: boh");
+        assertThat(messaggio("formato=pdf&da=2026-02-30&a=2026-03-31")).isEqualTo("da: valore non valido: 2026-02-30");
+        assertThat(messaggio("formato=pdf&da=01/03/2026&a=2026-03-31")).isEqualTo("da: valore non valido: 01/03/2026");
+        assertThat(messaggio("formato=pdf&sedi=abc&statistiche=forse&colonnePerSede=boh" + date)).isEqualTo("statistiche: valore non valido: forse");
+        assertThat(messaggio("formato=pdf&sedi=abc&colonnePerSede=boh" + date)).isEqualTo("colonnePerSede: valore non valido: boh");
+        // 2. le sedi
+        assertThat(messaggio("formato=pdf&sedi=abc")).isEqualTo("sedi: valore non valido: abc");
+        // 3. il formato (anche se mancano le date), e conta com'e' scritto
+        assertThat(messaggio("formato=pdf")).isEqualTo("formato: deve essere xlsx o csv");
+        assertThat(messaggio("da=2026-03-01")).isEqualTo("formato: deve essere xlsx o csv");
+        assertThat(messaggio("formato=" + date)).isEqualTo("formato: deve essere xlsx o csv");
+        assertThat(messaggio("formato=CSV" + date)).isEqualTo("formato: deve essere xlsx o csv");
+        // 4. le date: tutte e due (una data vuota vale come assente), poi l'ordine
+        assertThat(messaggio("formato=csv&a=2026-03-31&includi=BOH")).isEqualTo("Servono entrambe le date: da e a.");
+        assertThat(messaggio("formato=xlsx&da=2026-03-01")).isEqualTo("Servono entrambe le date: da e a.");
+        assertThat(messaggio("formato=csv&da=&a=2026-03-31")).isEqualTo("Servono entrambe le date: da e a.");
+        // una data di soli spazi vale come assente (parametri passati a parte: nell'indirizzo MockMvc codificherebbe il %)
+        assertThat(errore(get("/api/esporta").param("formato", "csv").param("da", " ").param("a", "2026-03-31"), null, 400)
+                .get("errore").asText()).isEqualTo("Servono entrambe le date: da e a.");
+        assertThat(errore(get("/api/esporta").param("formato", "csv").param("da", "2026-03-01").param("a", "  "), null, 400)
+                .get("errore").asText()).isEqualTo("Servono entrambe le date: da e a.");
+        assertThat(messaggio("formato=csv&da=2026-04-01&a=2026-03-01&includi=BOH")).isEqualTo("La data iniziale non può essere dopo quella finale.");
+        // 5. includi
+        assertThat(messaggio("formato=csv&includi=BOH" + date)).isEqualTo("includi: valore non valido: BOH");
+        // i sì/no come li legge Spring; vuoto = il valore predefinito; un solo giorno va bene
+        for (String valore : List.of("true", "false", "TRUE", "on", "off", "yes", "no", "1", "0", "")) {
+            assertThat(scarica("/api/esporta?formato=xlsx&statistiche=" + valore + "&colonnePerSede=" + valore + date).getStatus()).as(valore).isEqualTo(200);
+        }
+        assertThat(scarica("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-01").getStatus()).isEqualTo(200);
+    }
+
+    private String messaggio(String parametri) throws Exception {
+        return errore(get("/api/esporta?" + parametri), null, 400).get("errore").asText();
+    }
+
     // ---------------------------------------------------------------- XLSX
 
     /** Una cella letta dal foglio: tipo ("n" numero, "inlineStr"/"s"/"str" testo), valore, indice di stile. */
@@ -483,5 +524,27 @@ class EsportaApiTest extends ProvaBase {
         assertThat(csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31&colonnePerSede=true")).isEqualTo(csvBase);
         assertThat(foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31&colonnePerSede=true")), 1))
                 .isEqualTo(foglio(apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31")), 1));
+    }
+
+    /** Nel file il cliente non legge «XML»: una fattura importata ha origine «Fattura elettronica», e la colonna ci sta. */
+    @Test
+    void unaFatturaImportataHaOrigineFatturaElettronicaNelCsvENellExcel() throws Exception {
+        ObjectNode fattura = movimento("2026-03-10", "COSTO_VARIABILE", "FATTURA", 30000);
+        fattura.put("fornitore", "Forno Prova");
+        crea(fattura);
+        jdbc.update("UPDATE movimento SET origine = 'XML'"); // come dopo un'importazione
+        String[] righe = csv("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31").split("\r\n");
+        assertThat(righe[1]).isEqualTo("2026-03-10;Costo variabile;Fattura;;Forno Prova;;;;;-300,00;Fattura elettronica;Sede principale");
+        assertThat(String.join("\n", righe)).doesNotContain("XML");
+
+        Map<String, byte[]> zip = apriZip(xlsx("/api/esporta?formato=xlsx&da=2026-03-01&a=2026-03-31"));
+        assertThat(foglio(zip, 1).get("K2").valore()).isEqualTo("Fattura elettronica");
+        // la colonna «Origine» (l'undicesima) e' larga abbastanza per l'etichetta piu' lunga
+        String foglioXml = new String(zip.get("xl/worksheets/sheet1.xml"), StandardCharsets.UTF_8);
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("<col [^>]*min=\"11\"[^>]*>").matcher(foglioXml);
+        assertThat(m.find()).isTrue();
+        java.util.regex.Matcher larghezza = java.util.regex.Pattern.compile("width=\"([0-9.]+)\"").matcher(m.group());
+        assertThat(larghezza.find()).isTrue();
+        assertThat(Double.parseDouble(larghezza.group(1))).isGreaterThanOrEqualTo(20.0);
     }
 }

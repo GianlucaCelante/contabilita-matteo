@@ -1,4 +1,4 @@
-import type { Settimana, StatisticheSettimana, VoceSettimanaInput } from "../api/tipi";
+import type { FonteStatistica, Settimana, StatisticheSettimana, VoceSettimanaInput } from "../api/tipi";
 import { aggiungiGiorni, dataValida, daIso, lunediDi, oggiIso } from "./formato";
 
 // Logica pura di «Pizze e ordini» e delle statistiche: scontrino medio, settimana lunedi'-domenica, validazione dei campi,
@@ -10,9 +10,12 @@ export const SETTIMANE_DEL_GRAFICO = 8;
 // ---- medie ----
 
 // Scontrino medio = ricavi / ordini, al centesimo, mezzo centesimo in su (10000 / 3 -> 3333). null se gli ordini sono 0.
+// Anche con ordini ma nessun ricavo e' null («—», come il servizio): «€ 0,00» sarebbe quasi sempre un incasso registrato altrove.
+// Con ricavi negativi (note di credito) il mezzo centesimo si arrotonda sul valore assoluto, come il servizio: -5 / 2 = -3.
 export function scontrinoMedioCent(ricaviCent: number, ordini: number): number | null {
-  if (!Number.isInteger(ricaviCent) || !Number.isInteger(ordini) || ordini <= 0) return null;
-  return Math.floor((2 * ricaviCent + ordini) / (2 * ordini));
+  if (!Number.isInteger(ricaviCent) || !Number.isInteger(ordini) || ordini <= 0 || ricaviCent === 0) return null;
+  const metaInSu = (r: number) => Math.floor((2 * r + ordini) / (2 * ordini));
+  return ricaviCent < 0 ? -metaInSu(-ricaviCent) : metaInSu(ricaviCent);
 }
 
 // Pizze per ordine = pizze / ordini con 2 decimali, mezzo in su (17 / 7 -> 2.43). null se gli ordini sono 0.
@@ -131,10 +134,52 @@ export function validaRiga(campi: CampiRiga): EsitoRiga {
   return { stato: completa ? "completa" : "incompleta", pizze: completa ? pizze : null, ordini: completa ? ordini : null, errorePizze, erroreOrdini };
 }
 
-// Lo scontrino che si vede mentre si scrive: ricavi della settimana / ordini scritti. null finche' la riga non e' valida o gli ordini sono 0.
-export function scontrinoLive(ricaviCent: number, campi: CampiRiga): number | null {
-  const esito = validaRiga(campi);
-  return esito.stato === "completa" && esito.ordini !== null ? scontrinoMedioCent(ricaviCent, esito.ordini) : null;
+// Una riga del modulo con i suoi ricavi: un giorno (i ricavi di quel giorno) oppure il totale della settimana (i ricavi di tutta la
+// settimana, lunedi'-domenica).
+export interface RigaConRicavi {
+  ricaviCent: number;
+  campi: CampiRiga;
+}
+
+export interface RiassuntoRighe {
+  // vuota = nessuna riga scritta; completa = almeno una riga valida e nessuna sbagliata; incompleta = c'e' una riga sbagliata o a meta'.
+  stato: "vuota" | "completa" | "incompleta";
+  // Le righe valide (anche 0 e 0): i giorni inseriti, o 1 per il totale della settimana.
+  inserite: number;
+  pizze: number;
+  ordini: number;
+  // I ricavi dello scontrino: solo quelli delle righe valide con almeno un ordine (regola 2 di docs/api.md, «Statistiche»).
+  ricaviConDatiCent: number;
+  scontrinoMedioCent: number | null;
+  pizzePerOrdine: number | null;
+}
+
+// Somma le righe valide di una sede. I ricavi dei giorni senza dati (o con 0 ordini) non entrano nello scontrino: non si dividono i
+// ricavi di 7 giorni per gli ordini di 3.
+export function riassuntoRighe(righe: readonly RigaConRicavi[]): RiassuntoRighe {
+  let inserite = 0;
+  let sbagliate = 0;
+  let pizze = 0;
+  let ordini = 0;
+  let ricavi = 0;
+  for (const r of righe) {
+    const e = validaRiga(r.campi);
+    if (e.stato === "incompleta") sbagliate++;
+    if (e.stato !== "completa" || e.pizze === null || e.ordini === null) continue;
+    inserite++;
+    if (e.ordini === 0) continue;
+    pizze += e.pizze;
+    ordini += e.ordini;
+    ricavi += r.ricaviCent;
+  }
+  const stato = sbagliate > 0 ? "incompleta" : inserite > 0 ? "completa" : "vuota";
+  return { stato, inserite, pizze, ordini, ricaviConDatiCent: ricavi, scontrinoMedioCent: scontrinoMedioCent(ricavi, ordini), pizzePerOrdine: pizzePerOrdine(pizze, ordini) };
+}
+
+// Lo scontrino che si vede mentre si scrive: i ricavi delle righe valide con ordini / i loro ordini. Per il totale della settimana una
+// riga sola con i ricavi della settimana; giorno per giorno le sette righe con i ricavi di ogni giorno. null senza ordini validi.
+export function scontrinoLive(righe: readonly RigaConRicavi[]): number | null {
+  return riassuntoRighe(righe).scontrinoMedioCent;
 }
 
 // I campi con cui si apre una riga: quello che c'e' gia' nel servizio, oppure vuoto.
@@ -184,22 +229,29 @@ export interface TotaleParziale {
   pizzePerOrdine: number | null;
 }
 
-// «2 sedi su 3»: somma le righe complete. Come nel servizio, nello scontrino entrano solo le sedi con almeno un ordine.
-export function totaleParziale(righe: readonly { ricaviCent: number; campi: CampiRiga }[]): TotaleParziale {
+// «2 sedi su 3»: una voce per sede con le sue righe (i sette giorni, o il totale della settimana). Somma le righe valide; nello
+// scontrino entrano solo i ricavi delle righe con almeno un ordine (riassuntoRighe). Una sede e' «completa» con almeno una riga valida
+// e nessuna sbagliata.
+export function totaleParziale(sedi: readonly (readonly RigaConRicavi[])[]): TotaleParziale {
   let sediComplete = 0;
   let pizze = 0;
   let ordini = 0;
   let ricavi = 0;
-  for (const r of righe) {
-    const e = validaRiga(r.campi);
-    if (e.stato !== "completa" || e.pizze === null || e.ordini === null) continue;
-    sediComplete++;
-    if (e.ordini === 0) continue;
-    pizze += e.pizze;
-    ordini += e.ordini;
-    ricavi += r.ricaviCent;
+  for (const righe of sedi) {
+    const r = riassuntoRighe(righe);
+    if (r.stato === "completa") sediComplete++;
+    pizze += r.pizze;
+    ordini += r.ordini;
+    ricavi += r.ricaviConDatiCent;
   }
-  return { sediComplete, sediTotali: righe.length, pizze, ordini, ricaviCent: ricavi, scontrinoMedioCent: scontrinoMedioCent(ricavi, ordini), pizzePerOrdine: pizzePerOrdine(pizze, ordini) };
+  return { sediComplete, sediTotali: sedi.length, pizze, ordini, ricaviCent: ricavi, scontrinoMedioCent: scontrinoMedioCent(ricavi, ordini), pizzePerOrdine: pizzePerOrdine(pizze, ordini) };
+}
+
+// Il titolo del riquadro dei totali in «Pizze e ordini»: «Totale parziale, 1 sede su 2» / «… 2 sedi su 3», oppure, con tutte le sedi
+// complete, «Totale della settimana, tutte le sedi».
+export function titoloTotaleSettimana(sediComplete: number, sediTotali: number): string {
+  if (sediComplete >= sediTotali) return "Totale della settimana, tutte le sedi";
+  return `Totale parziale, ${sediComplete} ${sediComplete === 1 ? "sede" : "sedi"} su ${sediTotali}`;
 }
 
 // Le sedi che compaiono nel modulo: tutte quelle non archiviate (una archiviata non accetta piu' dati).
@@ -219,6 +271,9 @@ export interface PuntoSettimana {
   // 0..1: l'altezza della barra (0 se non c'e' un valore).
   altezza: number;
   ultima: boolean;
+  // valore = c'e' lo scontrino; senzaDati = nessun ordine inserito (barra vuota tratteggiata, nessun testo); senzaIncassi = ordini ma
+  // nessun incasso registrato (scontrino null dal servizio: «—» in ambra, con la riga di spiegazione).
+  tipo: "valore" | "senzaDati" | "senzaIncassi";
 }
 
 // Il grafico dello scontrino: le ultime `quante` settimane in ordine cronologico (le piu' vecchie se ne sono di meno non si inventano).
@@ -237,7 +292,30 @@ export function ultimeSettimane(settimane: readonly StatisticheSettimana[], quan
     mancanti: s.sediMancanti.length,
     altezza: s.scontrinoMedioCent === null ? 0 : alto === basso ? 1 : minimo + ((s.scontrinoMedioCent - basso) / (alto - basso)) * (1 - minimo),
     ultima: i === ultime.length - 1,
+    tipo: s.scontrinoMedioCent !== null ? "valore" : s.ordini > 0 ? "senzaIncassi" : "senzaDati",
   }));
+}
+
+// Sul telefono non c'e' posto per tutti i valori: si scrivono sempre la prima e l'ultima settimana e il «—» delle settimane con ordini
+// ma senza incassi (che altrimenti non si vedrebbe).
+export function valoreSempreScritto(p: PuntoSettimana, indice: number): boolean {
+  return p.ultima || indice === 0 || p.tipo === "senzaIncassi";
+}
+
+// La riga sotto il grafico, solo se c'e' almeno una settimana con ordini ma senza incassi: ««—» in S44 (26 ott – 1 nov): …».
+export function notaSenzaIncassi(punti: readonly PuntoSettimana[]): string | null {
+  const nomi = punti.filter((p) => p.tipo === "senzaIncassi").map((p) => `${p.etichetta} (${settimanaCorta(p.settimana)})`);
+  if (nomi.length === 0) return null;
+  return `«—» in ${elencoNomi(nomi)}: ci sono ordini ma nessun incasso registrato.`;
+}
+
+// L'etichetta di stato di una sede in «Pizze e ordini». Non «Completa»: un totale o dei giorni inseriti non dicono che la settimana sia
+// finita (puo' essere in corso). Totale della settimana: «Totale inserito»; giorni: «N giorni su 7»; niente (o righe sbagliate):
+// «Da inserire».
+export function etichettaStatoSede(riassunto: Pick<RiassuntoRighe, "stato" | "inserite">, modo: FonteStatistica): { testo: string; inserito: boolean } {
+  if (riassunto.stato !== "completa") return { testo: "Da inserire", inserito: false };
+  if (modo === "SETTIMANA") return { testo: "Totale inserito", inserito: true };
+  return { testo: `${riassunto.inserite} ${riassunto.inserite === 1 ? "giorno" : "giorni"} su 7`, inserito: true };
 }
 
 // L'intervallo da chiedere al servizio per avere le ultime `quante` settimane che finiscono con quella di `oggi`.
@@ -257,6 +335,15 @@ export function ultimaIncompleta(settimane: readonly StatisticheSettimana[], ent
     if (s.sediMancanti.length > 0) return s;
   }
   return null;
+}
+
+// Il banner «mancano pizze e ordini» nella schermata Statistiche: con un periodo senza dati la scheda vuota invita gia' a inserirli,
+// quindi il banner di una settimana che tocca il periodo ripeterebbe la stessa cosa; resta quello di un'altra settimana.
+// `altreSedi`: alla settimana mancano dati anche di una sede che non si sta guardando. Il periodo e' «vuoto» per le sedi scelte, il
+// banner guarda tutte: la scheda vuota non dice niente di quella sede, quindi il banner resta.
+export function bannerUtile(periodoVuoto: boolean, lunedi: string, periodo: { da: string; a: string }, altreSedi = false): boolean {
+  if (!periodoVuoto || altreSedi) return true;
+  return lunedi > periodo.a || aggiungiGiorni(lunedi, 6) < periodo.da;
 }
 
 // «Lungomare e Mercato», «Via Roma, Lungomare e Mercato».

@@ -7,6 +7,9 @@ export interface ModificaVoci {
   // Il nome e' di una voce esistente (le voci da «Crea…» non lo sono).
   puo: (nome: string) => boolean;
   apri: (nome: string) => void;
+  // Il nome del campo, scritto sul controllo (`data-campo-voce`): chi ha aperto la finestra della matita ci riporta il fuoco quando
+  // la matita non c'e' piu' (voce eliminata: il campo e' vuoto).
+  campo?: string;
 }
 
 interface ProprietaCombobox {
@@ -97,6 +100,7 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
           ref={rifCampo}
           type="text"
           role="combobox"
+          data-campo-voce={modifica?.campo}
           aria-expanded={aperto}
           aria-controls={idLista}
           aria-autocomplete="list"
@@ -147,7 +151,7 @@ export default function Combobox({ etichetta, cosa, genere, value, onChange, opz
               setAperto(true);
             }
           }}
-          className="-mr-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-spento"
+          className="-mr-2.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-spento"
         >
           <IconaGiu larghezza={18} spessoreTratto={2} />
         </button>

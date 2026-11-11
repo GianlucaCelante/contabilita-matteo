@@ -1,5 +1,6 @@
 package it.contabilita.importa;
 
+import it.contabilita.PerLog;
 import it.contabilita.allegati.AllegatiService;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Documento;
@@ -25,10 +26,12 @@ import it.contabilita.movimenti.AnagraficheService;
 import it.contabilita.movimenti.SediService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.unit.DataSize;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -36,6 +39,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -44,10 +48,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Importazione delle fatture elettroniche in due tempi (docs/api.md): {@link #anteprima} legge i file e tiene le
- * fatture in memoria sotto un {@code importazioneId} (scadenza 30 minuti, orologio iniettato); {@link #conferma}
+ * fatture in memoria sotto un {@code importazioneId} (scadenza 30 minuti, orologio iniettato; al massimo 20 e, in
+ * byte, {@code contabilita.importa.memoria-massima}: vedi {@link #faiPosto}); {@link #conferma}
  * crea un movimento per riga scelta. Nulla si salva finche' non si conferma.
  *
  * <p>La conferma e' atomica per riga: ogni riga ha la sua transazione (fornitore, categoria, movimento e file
@@ -60,21 +66,39 @@ public class ImportazioneService {
 
     static final Duration DURATA = Duration.ofMinutes(30);
     private static final int IMPORTAZIONI_MASSIME = 20;
-    // Come nel progetto del ristorante (catalog-service, FatturaPaDocumentTypes): fatture e parcelle sono costi; le note di
-    // credito li riducono; TD17/18/19 (autofatture per acquisti dall'estero) sono costi al totale lordo perche' l'originale
-    // estero non arriva da SdI; TD16 no, perche' l'originale del fornitore italiano e' gia' una fattura a parte.
+    // Quali tipi di documento si importano (come nel progetto del ristorante; l'elenco ragionato e' in docs/api.md):
+    // - costi, come fattura pagata: fatture e parcelle, acconti (TD02, TD03), semplificata (TD07), note di debito (TD05, TD09);
+    // - note di credito (TD04, TD08): riducono i costi;
+    // - TD17/18/19 (autofatture per acquisti dall'estero): costi al totale lordo, l'originale estero non arriva da SdI;
+    // - TD16 no: l'originale del fornitore italiano e' gia' una fattura a parte.
     private static final Set<String> NOTE_DI_CREDITO = Set.of("TD04", "TD08");
+    private static final Set<String> NOTE_DI_DEBITO = Set.of("TD05", "TD09");
     private static final Set<String> INTEGRAZIONI_CONTEGGIATE = Set.of("TD17", "TD18", "TD19");
     private static final String INTEGRAZIONE_ESCLUSA = "TD16";
-    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD06", "TD17", "TD18", "TD19", "TD24", "TD25", "TD04", "TD08");
+    private static final Set<String> TIPI_AMMESSI = Set.of("TD01", "TD02", "TD03", "TD05", "TD06", "TD07", "TD09", "TD17", "TD18", "TD19",
+            "TD24", "TD25", "TD04", "TD08");
     private static final DateTimeFormatter GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM");
 
     /** Una fattura letta, con quello che serve alla conferma (non esce mai dal servizio). */
     private record Letta(FatturaLetta pubblica, DatiFattura dati, byte[] originale, String nomeAllegato) {
     }
 
-    private record Importazione(Instant scade, Map<Integer, Letta> fatture) {
+    /**
+     * {@code ordine}: il numero d'arrivo, per sapere qual e' la piu' vecchia quando bisogna far posto. {@code peso}: i byte
+     * dei file originali che l'importazione tiene in memoria (calcolato una volta, all'arrivo).
+     */
+    private record Importazione(long ordine, Instant scade, Map<Integer, Letta> fatture, long peso) {
     }
+
+    /** Quello che serve per decidere chi scartare: numero d'arrivo e byte. */
+    record Voce(long ordine, long peso) {
+    }
+
+    /** Quanta parte della memoria massima della JVM possono occupare, al piu', i file delle anteprime. */
+    private static final int PERCENTO_DELLA_MEMORIA = 40;
+
+    /** Quanta parte della memoria massima della JVM possono occupare, al piu', i file di UNA anteprima: vedi {@link #limiteLettura}. */
+    private static final int PERCENTO_DI_UNA_LETTURA = 25;
 
     /** Segnala una riga gia' registrata al momento della conferma. */
     private static final class Duplicata extends RuntimeException {
@@ -88,15 +112,21 @@ public class ImportazioneService {
     private final AnagraficheService anagrafiche;
     private final AllegatiService allegati;
     private final SediService sedi;
-    private final LettoreFile lettore = new LettoreFile();
+    private final LettoreFile lettore;
     private final TransactionTemplate tx;
     private final TransactionTemplate txLettura;
     private final Clock clock;
+    /** Tetto in byte dei file originali tenuti in memoria da tutte le anteprime insieme: vedi {@link #tettoEffettivo}. */
+    private final long memoriaMassima;
+    /** Quanti byte si possono caricare, e leggere (una volta estratti gli zip), in una sola anteprima: vedi {@link #limiteLettura}. */
+    private final long letturaMassima;
     private final Map<String, Importazione> importazioni = new ConcurrentHashMap<>();
+    private final AtomicLong arrivate = new AtomicLong();
 
     public ImportazioneService(MovimentoRepository movimenti, FornitoreRepository fornitori, AnagraficheService anagrafiche,
                                AllegatiService allegati, SediService sedi, PlatformTransactionManager gestoreTransazioni,
-                               Clock clock) {
+                               Clock clock, @Value("${contabilita.importa.memoria-massima:96MB}") DataSize memoriaMassima,
+                               @Value("${contabilita.importa.lettura-massima:200MB}") DataSize letturaMassima) {
         this.movimenti = movimenti;
         this.fornitori = fornitori;
         this.anagrafiche = anagrafiche;
@@ -106,6 +136,73 @@ public class ImportazioneService {
         this.txLettura = new TransactionTemplate(gestoreTransazioni);
         this.txLettura.setReadOnly(true);
         this.clock = clock;
+        this.memoriaMassima = tettoEffettivo(memoriaMassima.toBytes(), Runtime.getRuntime().maxMemory());
+        if (this.memoriaMassima < memoriaMassima.toBytes()) {
+            log.info("Importazione: il tetto di memoria delle anteprime è {} MB invece di {} MB, perché la memoria del programma è {} MB.",
+                    this.memoriaMassima / (1024 * 1024), memoriaMassima.toMegabytes(), Runtime.getRuntime().maxMemory() / (1024 * 1024));
+        }
+        this.letturaMassima = limiteLettura(letturaMassima.toBytes(), Runtime.getRuntime().maxMemory());
+        String avviso = avvisoLimiteLettura(letturaMassima.toBytes(), Runtime.getRuntime().maxMemory());
+        if (avviso != null) {
+            log.info(avviso);
+        }
+        this.lettore = new LettoreFile(LettoreFile.MAX_FILE, LettoreFile.MAX_BYTE_FILE, this.letturaMassima);
+    }
+
+    /**
+     * Il tetto che vale davvero: il minimo fra quello configurato e il {@value #PERCENTO_DELLA_MEMORIA}% della memoria
+     * massima della JVM ({@code -Xmx}: l'installer avvia il servizio con 512 MB). Un tetto piu' alto della memoria non
+     * scatterebbe mai: si finirebbe la memoria prima di scartare qualcosa.
+     */
+    static long tettoEffettivo(long configurato, long memoriaDellaJvm) {
+        return parteDellaMemoria(configurato, memoriaDellaJvm, PERCENTO_DELLA_MEMORIA);
+    }
+
+    /**
+     * Quanti byte si accettano in UNA anteprima, sia come file caricati sia come file letti (quelli estratti dagli zip
+     * compresi): il minimo fra il limite configurato ({@code contabilita.importa.lettura-massima}, al piu' i 200 MB di
+     * {@link LettoreFile}) e il {@value #PERCENTO_DI_UNA_LETTURA}% della memoria massima della JVM. Stessa regola di
+     * {@link #tettoEffettivo}, con una parte piu' piccola: mentre si legge, in memoria ci sono insieme il caricamento, i
+     * file estratti e le anteprime di prima (che si scartano solo dopo, quando la nuova e' pronta). Con i 512 MB
+     * dell'installer sono 128 MB; con 256 MB sarebbero 64.
+     */
+    static long limiteLettura(long configurato, long memoriaDellaJvm) {
+        return parteDellaMemoria(Math.min(configurato, LettoreFile.MAX_BYTE_TOTALE), memoriaDellaJvm, PERCENTO_DI_UNA_LETTURA);
+    }
+
+    /**
+     * La riga di log dell'avvio quando il limite di lettura configurato non vale, con la causa vera: la memoria del
+     * programma, oppure il massimo fisso di {@link LettoreFile} (che non dipende dalla memoria). {@code null} se vale il
+     * limite configurato. I numeri sono solo configurazione e memoria: niente che arrivi dal cliente.
+     */
+    static String avvisoLimiteLettura(long configurato, long memoriaDellaJvm) {
+        long effettivo = limiteLettura(configurato, memoriaDellaJvm);
+        if (effettivo >= configurato) {
+            return null;
+        }
+        String causa = effettivo < LettoreFile.MAX_BYTE_TOTALE
+                ? "la memoria del programma è " + LettoreFile.formato(memoriaDellaJvm)
+                : LettoreFile.formato(LettoreFile.MAX_BYTE_TOTALE) + " è il massimo che il programma legge in una volta";
+        return "Importazione: in una sola lettura si accettano al massimo " + LettoreFile.formato(effettivo) + " invece di "
+                + LettoreFile.formato(configurato) + ", perché " + causa + ".";
+    }
+
+    private static long parteDellaMemoria(long configurato, long memoriaDellaJvm, int percento) {
+        // quoziente e resto separati: il conto e' esatto (128 MB giusti con 512) e Long.MAX_VALUE non trabocca
+        long perLaJvm = memoriaDellaJvm / 100 * percento + memoriaDellaJvm % 100 * percento / 100;
+        return Math.max(0, Math.min(configurato, perLaJvm));
+    }
+
+    /**
+     * Da chiamare PRIMA di portare in memoria i file caricati, con la somma delle loro dimensioni: oltre il limite di una
+     * lettura si rifiuta tutto, con un 400 che dice quanto si puo' caricare.
+     */
+    public void controllaCaricamento(long byteTotali) {
+        if (byteTotali > letturaMassima) {
+            log.warn("Importazione: caricamento di {} byte rifiutato, oltre il massimo di una lettura ({} byte)", byteTotali, letturaMassima);
+            throw new ErroreApi(HttpStatus.BAD_REQUEST, "I file scelti sono troppo grandi tutti insieme (massimo "
+                    + LettoreFile.formato(letturaMassima) + " per volta): scegline meno e riprova.");
+        }
     }
 
     // ---- anteprima ----
@@ -119,21 +216,27 @@ public class ImportazioneService {
         List<Letta> lette = new ArrayList<>();
         Set<String> viste = new HashSet<>();
         int[] indice = {0};
+        long giaLetti = 0; // i byte dei file letti finora in questa anteprima: il limite di LettoreFile vale per tutti insieme
 
         for (FileCaricato caricato : caricati) {
-            LettoreFile.Risultato letti = lettore.leggi(nomeBase(caricato.nome()), caricato.contenuto());
+            LettoreFile.Risultato letti = lettore.leggi(nomeBase(caricato.nome()), caricato.contenuto(), giaLetti);
             letti.errori().forEach(e -> errori.add(new ErroreImportazione(e.nomeFile(), e.messaggio())));
             for (LettoreFile.FileXml file : letti.file()) {
+                giaLetti += file.originale().length;
                 List<DatiFattura> fatture;
                 try {
                     fatture = ParserFatturaPa.leggi(file.xml());
                 } catch (ErroreLettura e) {
+                    log.warn("Importazione, {}: {}", PerLog.pulisci(file.nomeFile()), PerLog.pulisci(e.dettaglio()));
                     errori.add(new ErroreImportazione(file.nomeFile(), e.getMessage()));
                     continue;
                 }
                 for (DatiFattura dati : fatture) {
                     String problema = problema(dati, fatture.size() > 1);
                     if (problema != null) {
+                        log.info("Importazione, {}: fattura {} non importata (TipoDocumento {}, totale {} centesimi): {}",
+                                PerLog.pulisci(file.nomeFile()), PerLog.pulisci(dati.numero()), PerLog.pulisci(dati.tipoDocumento()),
+                                dati.totaleCent(), PerLog.pulisci(problema));
                         errori.add(new ErroreImportazione(file.nomeFile(), problema));
                         continue;
                     }
@@ -146,21 +249,35 @@ public class ImportazioneService {
         Map<Integer, Letta> perIndice = new ConcurrentHashMap<>();
         lette.forEach(l -> perIndice.put(l.pubblica().indice(), l));
         if (!lette.isEmpty()) {
-            importazioni.put(id, new Importazione(clock.instant().plus(DURATA), perIndice));
+            aggiungi(id, clock.instant().plus(DURATA), perIndice, peso(lette));
         }
         return new Anteprima(id, lette.stream().map(Letta::pubblica).toList(), errori);
     }
 
-    /** Motivo per cui la fattura non si importa, oppure null. */
+    // I tipi che non si importano, col nome che il cliente capisce: il codice (TD26…) e' gergo e resta nel log.
+    private static final Map<String, String> NOMI_TIPI_NON_GESTITI = Map.ofEntries(
+            Map.entry("TD20", "autofattura"),
+            Map.entry("TD21", "autofattura"),
+            Map.entry("TD22", "estrazione di beni da un deposito IVA"),
+            Map.entry("TD23", "estrazione di beni da un deposito IVA"),
+            Map.entry("TD26", "cessione di beni ammortizzabili"),
+            Map.entry("TD27", "autofattura"),
+            Map.entry("TD28", "acquisto da San Marino"),
+            Map.entry("TD29", "autofattura"));
+
+    /** Motivo per cui la fattura non si importa, oppure null. Lo legge il cliente: niente codici del tracciato. */
     private static String problema(DatiFattura d, boolean inLotto) {
         String prefisso = inLotto ? "Fattura " + d.numero() + ": " : "";
         String tipo = d.tipoDocumento();
         if (INTEGRAZIONE_ESCLUSA.equals(tipo)) {
-            return prefisso + "Integrazione TD16: non importata, la fattura originale del fornitore è già una fattura a parte.";
+            return prefisso + "Autofattura di integrazione: non importata, la fattura originale del fornitore è già una fattura a parte.";
         }
         if (!TIPI_AMMESSI.contains(tipo == null ? "" : tipo)) {
-            return prefisso + "Tipo di documento " + (tipo == null ? "mancante" : tipo)
-                    + " non ammesso: fattura non importata (si importano TD01, TD02, TD04, TD06, TD08, TD17, TD18, TD19, TD24 e TD25).";
+            if (tipo == null) {
+                return prefisso + "Nella fattura manca il tipo di documento: non importata.";
+            }
+            String nome = NOMI_TIPI_NON_GESTITI.get(tipo);
+            return prefisso + "Tipo di documento non gestito" + (nome == null ? "" : " (" + nome + ")") + ": non importato.";
         }
         if (d.totaleCent() == 0) {
             return prefisso + "Importo zero: non c'è nessun costo da registrare.";
@@ -192,14 +309,24 @@ public class ImportazioneService {
         }
         FatturaLetta pubblica = new FatturaLetta(indice, file.nomeFile(), new FornitoreLetto(dati.fornitoreNome(), dati.partitaIva()),
                 dati.numero(), dati.data(), dati.imponibileCent(), dati.ivaCent(), dati.totaleCent(),
-                esito[0], motivo != null, motivo, notaDiCredito(dati), INTEGRAZIONI_CONTEGGIATE.contains(dati.tipoDocumento()));
+                esito[0], motivo != null, motivo, notaDiCredito(dati), INTEGRAZIONI_CONTEGGIATE.contains(dati.tipoDocumento()),
+                dati.tipoDocumento(), NOTE_DI_DEBITO.contains(dati.tipoDocumento()));
         return new Letta(pubblica, dati, file.originale(), file.nomeAllegato());
     }
 
-    private static String chiaveFattura(DatiFattura d) {
+    /**
+     * La chiave dei doppioni dentro lo stesso gruppo di file: documento, fornitore, numero e data, come
+     * {@link #trovaDuplicato} contro i movimenti gia' registrati. Il documento e' quello del movimento che nascera'
+     * ({@link #documentoDi}): una nota di credito e una fattura con lo stesso numero e la stessa data non sono doppie.
+     *
+     * <p>Una nota di debito (TD05/TD09) invece e' un movimento FATTURA, e il tipo del file non si conserva nel movimento:
+     * contro il registrato non si potrebbe distinguerla da una fattura, quindi non la si distingue nemmeno qui (altrimenti
+     * l'anteprima la darebbe per buona e la conferma la scarterebbe). Limite scritto in docs/api.md.
+     */
+    static String chiaveFattura(DatiFattura d) {
         String f = d.partitaIva() != null ? "iva:" + d.partitaIva().strip().toUpperCase(Locale.ROOT)
                 : "nome:" + d.fornitoreNome().toLowerCase(Locale.ROOT);
-        return f + "|" + d.numero() + "|" + d.data();
+        return documentoDi(d) + "|" + f + "|" + d.numero() + "|" + d.data();
     }
 
     private static boolean notaDiCredito(DatiFattura d) {
@@ -296,7 +423,7 @@ public class ImportazioneService {
             return e.getMessage() + ": non aggiunta.";
         } catch (RuntimeException e) {
             allegati.eliminaFile(fileScritto[0]);
-            log.warn("Riga {} non importata: {}", letta.pubblica().indice(), e.toString());
+            log.warn("Riga {} non importata: {}", letta.pubblica().indice(), PerLog.pulisci(e));
             return e instanceof ErroreApi ? e.getMessage() : "Non è stato possibile salvare la fattura.";
         }
     }
@@ -316,6 +443,8 @@ public class ImportazioneService {
         m.setData(d.data());
         m.setTipo(Tipo.COSTO_VARIABILE);
         m.setDocumento(documentoDi(d));
+        // Dall'XML arriva lo storico: le fatture nascono gia' pagate (le note di credito non hanno stato).
+        m.setPagata(m.getDocumento() == Documento.FATTURA);
         m.setImportoCent(d.totaleCent());
         m.setFornitore(fornitore);
         m.setSede(sede);
@@ -335,10 +464,68 @@ public class ImportazioneService {
     private void pulisciScadute() {
         Instant ora = clock.instant();
         importazioni.values().removeIf(i -> !i.scade().isAfter(ora));
-        while (importazioni.size() > IMPORTAZIONI_MASSIME) {
-            importazioni.entrySet().stream().min(java.util.Map.Entry.comparingByValue(java.util.Comparator.comparing(Importazione::scade)))
-                    .ifPresent(e -> importazioni.remove(e.getKey()));
+    }
+
+    /**
+     * I byte che un'importazione tiene in memoria: i file originali, da allegare alla conferma. Un file conta una volta
+     * sola anche se contiene piu' fatture (un lotto): le sue fatture puntano agli stessi byte.
+     */
+    private static long peso(List<Letta> lette) {
+        Set<byte[]> file = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        long byteTotali = 0;
+        for (Letta letta : lette) {
+            if (letta.originale() != null && file.add(letta.originale())) {
+                byteTotali += letta.originale().length;
+            }
         }
+        return byteTotali;
+    }
+
+    /**
+     * Una sola alla volta: due anteprime insieme non si contano a meta' ne' si scartano a vicenda. Anche il numero d'arrivo
+     * si assegna qui dentro, sotto lo stesso lock: preso fuori, fra due caricamenti contemporanei quello col numero piu'
+     * basso poteva entrare per secondo e farsi scartare appena letto.
+     */
+    private synchronized void aggiungi(String id, Instant scade, Map<Integer, Letta> fatture, long peso) {
+        importazioni.put(id, new Importazione(arrivate.incrementAndGet(), scade, fatture, peso));
+        faiPosto(id);
+    }
+
+    /**
+     * Due tetti: al massimo {@value #IMPORTAZIONI_MASSIME} importazioni in memoria e al massimo {@code memoriaMassima} byte
+     * di file originali in tutto (vedi {@link #tettoEffettivo}). Oltre, si toglie la piu' vecchia per ordine
+     * d'arrivo, finche' si rientra.
+     * Si fa posto solo quando ne arriva una nuova (mai alla conferma) e l'ordine e' un contatore, non la scadenza: cosi'
+     * l'importazione appena letta non e' mai quella scartata, nemmeno se due scadono nello stesso istante o se l'orologio
+     * e' tornato indietro (cambio dell'ora del computer, orologio dei test). Vale anche per i byte: un'anteprima che da
+     * sola supera il tetto resta, da sola (il cliente l'ha appena letta e deve poterla confermare; quanto puo' pesare lo
+     * limitano gia' il caricamento e LettoreFile), e si toglie quando arriva la successiva.
+     */
+    private void faiPosto(String nuova) {
+        Map<String, Voce> voci = new java.util.HashMap<>();
+        importazioni.forEach((id, i) -> voci.put(id, new Voce(i.ordine(), i.peso())));
+        daScartare(voci, nuova, IMPORTAZIONI_MASSIME, memoriaMassima).forEach(importazioni::remove);
+    }
+
+    /**
+     * Quali importazioni togliere perche' restino al massimo {@code massime} e {@code tetto} byte: le piu' vecchie per
+     * numero d'arrivo, una alla volta, finche' si rientra. {@code nuova}, quella appena inserita, non e' mai fra queste.
+     */
+    static List<String> daScartare(Map<String, Voce> voci, String nuova, int massime, long tetto) {
+        List<String> vecchie = voci.keySet().stream().filter(id -> !id.equals(nuova))
+                .sorted(Comparator.comparingLong((String id) -> voci.get(id).ordine())).toList();
+        int quante = voci.size();
+        long byteTotali = voci.values().stream().mapToLong(Voce::peso).sum();
+        List<String> via = new ArrayList<>();
+        for (String id : vecchie) {
+            if (quante <= massime && byteTotali <= tetto) {
+                break;
+            }
+            via.add(id);
+            quante--;
+            byteTotali -= voci.get(id).peso();
+        }
+        return via;
     }
 
     private static String nomeBase(String nome) {

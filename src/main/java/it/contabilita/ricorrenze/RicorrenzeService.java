@@ -1,5 +1,6 @@
 package it.contabilita.ricorrenze;
 
+import it.contabilita.PerLog;
 import it.contabilita.api.Dto.RicorrenzaInput;
 import it.contabilita.api.ErroreApi;
 import it.contabilita.dati.Documento;
@@ -114,6 +115,7 @@ public class RicorrenzeService {
         r.setIntervallo(intervallo);
         r.setGiorno(giorno);
         r.setAttiva(true);
+        r.setDivisione(m.getDivisione()); // le ripetizioni delle parti di un «dividi» stanno insieme
         copiaModello(m, r);
         YearMonth mese = YearMonth.from(m.getData());
         r.setProssimaData(successiva(m.getData(), unita, intervallo, giorno));
@@ -213,7 +215,7 @@ public class RicorrenzeService {
                 log.info("Ricorrenze: registrate {} occorrenze.", n);
             }
         } catch (RuntimeException e) {
-            log.error("Ricorrenze: generazione fallita", e);
+            log.error("Ricorrenze: generazione fallita", PerLog.conStack(e)); // il messaggio puo' riportare dati del cliente
         }
     }
 
@@ -245,6 +247,16 @@ public class RicorrenzeService {
         return creati;
     }
 
+    /**
+     * L'id comune delle parti generate per una scadenza di una ripetizione divisa fra sedi: quello della divisione piu' la
+     * data, quindi uno per scadenza e lo stesso per tutte le sedi (ogni sede ha la sua ripetizione, generata per conto suo).
+     * Null se la ripetizione non e' divisa. Se la ripetizione di una sede cambia giorno o frequenza, le sue occorrenze
+     * cadono in altre date e non stanno piu' insieme a quelle delle altre sedi.
+     */
+    static String divisioneDi(Ricorrenza r, LocalDate data) {
+        return r.getDivisione() == null ? null : r.getDivisione() + ":" + data;
+    }
+
     private Movimento occorrenza(Ricorrenza r, LocalDate data) {
         LocalDateTime adesso = LocalDateTime.now(clock).withNano(0);
         Movimento m = new Movimento();
@@ -260,6 +272,7 @@ public class RicorrenzeService {
         m.setNote(r.getNote());
         m.setOrigine(Origine.RICORRENZA);
         m.setRicorrenza(r);
+        m.setDivisione(divisioneDi(r, data));
         m.setAnnoMese(YearMonth.from(data).toString());
         m.setCreatoIl(adesso);
         m.setModificatoIl(adesso);

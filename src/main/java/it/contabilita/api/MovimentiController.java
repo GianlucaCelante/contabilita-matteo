@@ -5,7 +5,6 @@ import it.contabilita.api.Dto.MovimentoDto;
 import it.contabilita.api.Dto.MovimentoInput;
 import it.contabilita.api.Dto.Riepilogo;
 import it.contabilita.dati.Ambito;
-import it.contabilita.dati.Tipo;
 import it.contabilita.movimenti.MovimentiService;
 import it.contabilita.movimenti.RiepilogoService;
 import it.contabilita.movimenti.AnagraficheService;
@@ -35,9 +34,12 @@ public class MovimentiController {
     private final MovimentiService movimenti;
     private final RicorrenzeService ricorrenze;
     private final RiepilogoService riepilogo;
+    private final SediService sediService;
 
-    public MovimentiController(MovimentiService movimenti, RicorrenzeService ricorrenze, RiepilogoService riepilogo) {
+    public MovimentiController(MovimentiService movimenti, RicorrenzeService ricorrenze, RiepilogoService riepilogo,
+                               SediService sediService) {
         this.movimenti = movimenti;
+        this.sediService = sediService;
         this.ricorrenze = ricorrenze;
         this.riepilogo = riepilogo;
     }
@@ -46,7 +48,7 @@ public class MovimentiController {
     public ElencoMovimenti elenca(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
-            @RequestParam(required = false) Tipo tipo,
+            @RequestParam(required = false) String tipo,
             @RequestParam(required = false) String q,
             @RequestParam(required = false) Long dipendente,
             @RequestParam(required = false) String sedi,
@@ -55,7 +57,7 @@ public class MovimentiController {
             @RequestParam(required = false) String senza,
             @RequestParam(required = false) Boolean retribuzione,
             @RequestParam(required = false) Boolean pagata) {
-        return movimenti.elenca(da, a, tipo, q, dipendente, SediService.idsDa(sedi), AnagraficheService.idsCategorieDa(categorie),
+        return movimenti.elenca(da, a, MovimentiService.tipiDa(tipo), q, dipendente, sediService.filtro(sedi), AnagraficheService.idsCategorieDa(categorie),
                 fornitore, senza, retribuzione, pagata);
     }
 
@@ -114,6 +116,6 @@ public class MovimentiController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
             @RequestParam(required = false) String sedi) {
-        return riepilogo.calcola(da, a, SediService.idsDa(sedi));
+        return riepilogo.calcola(da, a, sediService.filtro(sedi));
     }
 }

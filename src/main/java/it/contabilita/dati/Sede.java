@@ -21,6 +21,10 @@ public class Sede {
     @Column(nullable = false)
     private boolean archiviata;
 
+    /** Sede «personale» (spese dei titolari): niente pizze e ordini, fuori dai totali se il filtro sedi manca. */
+    @Column(nullable = false)
+    private boolean personale;
+
     /** Posizione negli elenchi (e ordine in cui si assegnano i centesimi di resto di una divisione). */
     @Column(nullable = false)
     private int ordine;
@@ -46,6 +50,8 @@ public class Sede {
     public void setNomeChiave(String nomeChiave) { this.nomeChiave = nomeChiave; }
     public boolean isArchiviata() { return archiviata; }
     public void setArchiviata(boolean archiviata) { this.archiviata = archiviata; }
+    public boolean isPersonale() { return personale; }
+    public void setPersonale(boolean personale) { this.personale = personale; }
     public int getOrdine() { return ordine; }
     public void setOrdine(int ordine) { this.ordine = ordine; }
     public LocalDateTime getCreatoIl() { return creatoIl; }

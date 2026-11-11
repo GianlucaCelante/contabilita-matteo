@@ -39,8 +39,10 @@ spring:
     multipart:
       # Fase 4: uno zip di fatture puo' pesare diverse decine di MB (i limiti sui file decompressi, 20 MB
       # per file e 200 MB in totale, li applica LettoreFile); gli allegati (foto, PDF) sono limitati a 8 MB
-      # da AllegatiService.
-      max-file-size: 100MB
+      # da AllegatiService. Questi sono i massimi: un'importazione accetta comunque non piu' di
+      # contabilita.importa.lettura-massima, che segue la memoria del programma (vedi sotto).
+      # I due limiti sono uguali apposta: oltre, GestoreErrori dice «massimo 120 MB per volta», vero per un file come per tanti.
+      max-file-size: 120MB
       max-request-size: 120MB
 
 contabilita:
@@ -49,6 +51,16 @@ contabilita:
   dati: ${CONTABILITA_DATA_DIR:./data}
   cors:
     origine-sviluppo: http://localhost:5173
+  importa:
+    # Le anteprime dell'importazione tengono in memoria i file originali (da allegare alla conferma) fino a 30 minuti.
+    # Tetto complessivo: quando una nuova anteprima lo fa superare si scartano le piu' vecchie (vedi ImportazioneService).
+    # Vale il minimo fra questo valore e il 40% della memoria della JVM: l'installer avvia il servizio con -Xmx512m
+    # (installer/Contabilita.xml), cioe' ~204 MB. Oltre i 204 MB alzarlo serve solo se si alza anche -Xmx.
+    memoria-massima: 96MB
+    # Quanto si accetta in UNA anteprima: la somma dei file caricati e la somma dei file letti (una volta estratti gli
+    # zip). Vale il minimo fra questo valore e il 25% della memoria della JVM: con -Xmx512m sono 128 MB, con 256 MB 64.
+    # Oltre: «I file scelti sono troppo grandi tutti insieme (massimo N MB per volta)».
+    lettura-massima: 200MB
 
 logging:
   # Console e file in UTF-8 (la console di Windows usa una codepage che rovina le accentate).
@@ -63,4 +75,10 @@ logging:
       max-history: 14
       total-size-cap: 200MB
   pattern:
-    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+    # Difesa in piu' rispetto a PerLog.pulisci (che pulisce i valori del cliente dove si scrivono): un messaggio non puo'
+    # comunque cominciare una riga nuova. Ogni a capo dentro il messaggio (CR LF, CR, LF, tabulazione verticale, salto
+    # pagina, NEL, separatori di riga e di paragrafo Unicode) diventa il testo \n (barra e n): un evento sta su una riga
+    # sola, e nel file su Windows non si mescolano LF e CRLF. Vale per console e file, e solo per il messaggio: le righe
+    # dell'eccezione sotto le tiene pulite PerLog.conStack.
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %replace(%msg){'\\r\\n|[\\r\\n\\u000B\\u000C\\u0085\\u2028\\u2029]', '\\\\n'}%n"
+    file: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %5p --- [%t] %-40.40logger{39} : %replace(%msg){'\\r\\n|[\\r\\n\\u000B\\u000C\\u0085\\u2028\\u2029]', '\\\\n'}%n"

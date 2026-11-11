@@ -5,6 +5,7 @@ import { api, chiavi } from "../api/client";
 import type { Riepilogo as DatiRiepilogo, VoceRiepilogo } from "../api/tipi";
 import { IconaDestra } from "../componenti/Icone";
 import BadgeSede from "../componenti/BadgeSede";
+import SchedaDaPagare from "../componenti/SchedaDaPagare";
 import SchedaFattureDaFare from "../componenti/SchedaFattureDaFare";
 import SchedaScontrinoMedio from "../componenti/SchedaScontrinoMedio";
 import SelettorePeriodo from "../componenti/SelettorePeriodo";
@@ -14,7 +15,8 @@ import Testata, { PulsanteNuovoMovimento } from "../componenti/Testata";
 import { usePeriodo } from "../hooks/usePeriodo";
 import { useSedi } from "../hooks/useSedi";
 import { indirizzoStatisticheDelBlocco, type BloccoRiepilogo } from "../util/statisticheVoci";
-import { euro, NOME_PERIODO, numeroCent, percentuale } from "../util/formato";
+import { euro, NOME_PERIODO, numeroCent } from "../util/formato";
+import { proporzioniRiepilogo } from "../util/riepilogo";
 
 // Una riga di una scheda. `sotto` e' il sottotesto accanto al nome (solo sul computer);
 function Riga({ nome, valore, sotto, className = "" }: { nome: string; valore: number; sotto?: string; className?: string }) {
@@ -98,6 +100,11 @@ function Blocco({ titolo, totaleNome, totale, peso = 1, verso, children }: { tit
   );
 }
 
+// Le voci della legenda (e il testo della barra): percentuali sui ricavi, o gli importi quando i costi superano i ricavi o non ci
+// sono ricavi (util/riepilogo.ts).
+const proporzioniDi = (d: DatiRiepilogo) =>
+  proporzioniRiepilogo({ ricaviCent: d.ricavi.totaleCent, variabiliCent: d.costiVariabili.totaleCent, fissiCent: d.costiFissi.totaleCent, risultatoCent: d.risultatoCent });
+
 function BarraProporzioni({ d, className = "" }: { d: DatiRiepilogo; className?: string }) {
   const ricavi = d.ricavi.totaleCent;
   // La barra e' sempre piena: se i costi superano i ricavi la base e' il totale dei costi.
@@ -110,7 +117,7 @@ function BarraProporzioni({ d, className = "" }: { d: DatiRiepilogo; className?:
     <div
       className={"flex overflow-hidden bg-riga " + className}
       role="img"
-      aria-label={`Costi variabili ${percentuale(variabili, ricavi)}, costi fissi ${percentuale(fissi, ricavi)}, risultato ${percentuale(d.risultatoCent, ricavi)} dei ricavi`}
+      aria-label={proporzioniDi(d).descrizione}
     >
       <div style={{ width: larghezza(variabili) }} className="bg-ambra" />
       <div style={{ width: larghezza(fissi) }} className="bg-verdebordo" />
@@ -120,12 +127,12 @@ function BarraProporzioni({ d, className = "" }: { d: DatiRiepilogo; className?:
 }
 
 function Legenda({ d }: { d: DatiRiepilogo }) {
-  const ricavi = d.ricavi.totaleCent;
+  const p = proporzioniDi(d);
   return (
-    <ul className="m-0 mt-2.5 flex list-none flex-wrap gap-x-6 gap-y-1 p-0 text-[13px] text-spento max-md:hidden">
-      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-ambra" />Costi variabili {percentuale(d.costiVariabili.totaleCent, ricavi)}</li>
-      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-verdebordo" />Costi fissi {percentuale(d.costiFissi.totaleCent, ricavi)}</li>
-      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-verde" />Risultato {percentuale(d.risultatoCent, ricavi)}</li>
+    <ul className="num m-0 mt-2.5 flex list-none flex-wrap gap-x-6 gap-y-1 p-0 text-[13px] text-spento max-md:hidden">
+      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-ambra" />Costi variabili {p.variabili}</li>
+      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-verdebordo" />Costi fissi {p.fissi}</li>
+      <li className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-[3px] bg-verde" />Risultato {p.risultato}</li>
     </ul>
   );
 }
@@ -136,10 +143,7 @@ function PerSede({ righe }: { righe: NonNullable<DatiRiepilogo["perSede"]> }) {
   const info = useSedi().info;
   return (
     <section className="scheda px-[18px] pb-1.5 pt-3.5 max-md:rounded-2xl md:px-6 md:pt-5" aria-label="Confronto tra sedi">
-      <div className="flex items-baseline justify-between gap-3 md:mb-1">
-        <h2 className="text-[18px] font-bold md:text-[20px]">Per sede</h2>
-        <span className="etichettaMaiuscola md:hidden">Ricavi · Risultato</span>
-      </div>
+      <h2 className="text-[18px] font-bold md:mb-1 md:text-[20px]">Per sede</h2>
       <div className="hidden grid-cols-[26px_minmax(0,1fr)_110px_110px_110px] items-center gap-x-3 pt-2 md:grid" aria-hidden="true">
         <span />
         <span className="etichettaMaiuscola">Sede</span>
@@ -152,22 +156,35 @@ function PerSede({ righe }: { righe: NonNullable<DatiRiepilogo["perSede"]> }) {
           const colore = info(r.sede.id)?.colore.testo ?? "var(--color-verdescuro)";
           return (
             <li key={r.sede.id} className="border-t border-riga py-2.5 md:pb-3.5">
-              <div className="flex items-center gap-2.5 md:grid md:grid-cols-[26px_minmax(0,1fr)_110px_110px_110px] md:gap-x-3">
+              {/* Telefono: il nome intero sulla prima riga (va a capo, non si tronca), sotto «Ricavi … · Risultato …». */}
+              <div className="md:hidden">
+                <div className="flex items-start gap-2.5">
+                  <BadgeSede id={r.sede.id} decorativo />
+                  <span className="min-w-0 flex-1 break-words pt-0.5 font-bold leading-snug">{r.sede.nome}</span>
+                </div>
+                <div className="num mt-1 flex flex-wrap gap-x-1.5 text-[14px] text-spento">
+                  <span>
+                    Ricavi <b className="text-testo">{euro(r.ricaviCent)}</b>
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <span>
+                    Risultato <b className={r.risultatoCent < 0 ? "text-rosso" : "text-verdescuro"}>{euro(r.risultatoCent)}</b>
+                  </span>
+                </div>
+              </div>
+              {/* Computer: una riga con le colonne Ricavi, Costi e Risultato. */}
+              <div className="hidden grid-cols-[26px_minmax(0,1fr)_110px_110px_110px] items-center gap-x-3 md:grid">
                 <BadgeSede id={r.sede.id} decorativo />
-                <span className="min-w-0 flex-1 font-bold">
-                  <span className="block truncate">{r.sede.nome}</span>
-                  {/* Sui telefoni stretti i ricavi vanno sotto il nome, altrimenti il nome resterebbe di poche lettere. */}
-                  <span aria-hidden="true" className="num block text-[13px] font-normal text-spento min-[390px]:hidden">{euro(r.ricaviCent)}</span>
-                </span>
-                <span className="num text-[14px] text-spento max-[389px]:hidden md:text-right md:text-[15px]">
+                <span className="min-w-0 truncate font-bold">{r.sede.nome}</span>
+                <span className="num text-right text-[15px] text-spento">
                   <span className="sr-only">Ricavi </span>
                   {euro(r.ricaviCent)}
                 </span>
-                <span className="num hidden text-right text-[15px] text-spento md:inline">
+                <span className="num text-right text-[15px] text-spento">
                   <span className="sr-only">Costi </span>
                   {euro(r.costiCent)}
                 </span>
-                <span className={"num min-w-[78px] text-right font-bold " + (r.risultatoCent < 0 ? "text-rosso" : "text-verdescuro")}>
+                <span className={"num text-right font-bold " + (r.risultatoCent < 0 ? "text-rosso" : "text-verdescuro")}>
                   <span className="sr-only">Risultato </span>
                   {euro(r.risultatoCent)}
                 </span>
@@ -197,7 +214,7 @@ export default function Riepilogo() {
   const conScontrino = !!totaleStat && totaleStat.ordini > 0;
   // Se le sedi scelte non sono tutte, il titolo dice quali sono incluse («Risultato della settimana · Via Roma + Lungomare»).
   const nomePeriodo = NOME_PERIODO[periodo.tipo];
-  const titoloRisultato = sedi.piu ? `${nomePeriodo} · ${sedi.incluse ?? "tutte le sedi"}` : nomePeriodo;
+  const titoloRisultato = sedi.selettore ? `${nomePeriodo} · ${sedi.incluse ?? "tutte le sedi"}` : nomePeriodo;
   const perSede = sedi.piu && sedi.selezionate.length >= 2 ? (d?.perSede ?? []) : [];
   const verso = (b: BloccoRiepilogo) => indirizzoStatisticheDelBlocco(b, { tipo: periodo.tipo, da, a });
   const coloreRisultato = d && d.risultatoCent < 0 ? "text-rosso" : "text-verdescuro";
@@ -212,6 +229,7 @@ export default function Riepilogo() {
         </div>
 
         <SchedaFattureDaFare />
+        <SchedaDaPagare />
 
         {(q.isPending || !sedi.pronto) && <Caricamento />}
         {q.isError && <ErroreCaricamento errore={q.error} onRiprova={() => void q.refetch()} />}
@@ -263,7 +281,7 @@ export default function Riepilogo() {
                   </div>
                 )}
                 {conScontrino && (
-                  <SchedaScontrinoMedio titolo={sedi.piu ? `Scontrino medio · ${sedi.incluse ?? "tutte le sedi"}` : "Scontrino medio"} scontrinoCent={totaleStat.scontrinoMedioCent} ordini={totaleStat.ordini} pizze={totaleStat.pizze} />
+                  <SchedaScontrinoMedio titolo={sedi.selettore ? `Scontrino medio · ${sedi.incluse ?? "tutte le sedi"}` : "Scontrino medio"} scontrinoCent={totaleStat.scontrinoMedioCent} ordini={totaleStat.ordini} pizze={totaleStat.pizze} />
                 )}
               </div>
             )}

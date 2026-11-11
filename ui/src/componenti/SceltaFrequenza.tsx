@@ -9,7 +9,7 @@ interface ProprietaFrequenza {
   disabled?: boolean;
 }
 
-const CAMPO_NUMERO = "num h-10 min-h-0 text-center font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none";
+const CAMPO_NUMERO = "num h-11 min-h-0 text-center font-bold [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none";
 
 // Ogni quanto si ripete: «Ogni mese» (basta il giorno) oppure «Personalizzata» (ogni N giorni, settimane, mesi o anni).
 export default function SceltaFrequenza({ campi, errori, onCambia, disabled }: ProprietaFrequenza) {

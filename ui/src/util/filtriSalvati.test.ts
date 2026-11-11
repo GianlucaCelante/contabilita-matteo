@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { leggiFiltri, periodoDopoSalvataggio, salvaFiltri } from "./filtriSalvati";
+import { leggiFiltri, periodoDopoImportazione, periodoDopoSalvataggio, salvaFiltri } from "./filtriSalvati";
 
 // Un magazzino finto, come localStorage.
 function finto(iniziale: Record<string, string> = {}) {
@@ -18,6 +18,10 @@ describe("filtri salvati", () => {
   it("senza niente di salvato non c'è nessun filtro", () => {
     expect(leggiFiltri(finto())).toEqual({});
     expect(leggiFiltri(null)).toEqual({});
+  });
+
+  it("tipo COSTI (solo dell'indirizzo di Movimenti) non vale come filtro salvato: si scarta", () => {
+    expect(leggiFiltri(finto({ [CHIAVE]: JSON.stringify({ tipo: "COSTI", p: "mese" }) }))).toEqual({ p: "mese" });
   });
 
   it("quello che si salva si ritrova, e i salvataggi si sommano", () => {
@@ -94,5 +98,35 @@ describe("scartaIdInesistenti", () => {
   });
   it("senza elenco non scarta niente", () => {
     expect(scartaIdInesistenti([1, 9], undefined)).toEqual([1, 9]);
+  });
+});
+
+describe("periodoDopoImportazione: il Riepilogo segue le fatture appena importate", () => {
+  const oggi = "2026-11-11";
+  it("niente date o tutte già nel periodo mostrato: non cambia niente", () => {
+    expect(periodoDopoImportazione([], { p: "settimana", r: oggi }, oggi)).toBeNull();
+    expect(periodoDopoImportazione(["2026-11-03", "2026-11-08"], { p: "mese", r: oggi }, oggi)).toBeNull();
+    expect(periodoDopoImportazione(["2026-10-31", "2026-11-08"], { p: "anno", r: oggi }, oggi)).toBeNull();
+    expect(periodoDopoImportazione(["2026-10-31", "2026-11-08"], { p: "periodo", da: "2026-10-01", a: "2026-11-30" }, oggi)).toBeNull();
+  });
+  it("tutte in un mese solo, fuori dal periodo mostrato: quel mese", () => {
+    expect(periodoDopoImportazione(["2026-11-03", "2026-11-08"], { p: "settimana", r: oggi }, oggi)).toEqual({ filtri: { p: "mese", r: "2026-11-08" }, etichetta: "novembre 2026" });
+  });
+  it("anche una sola fuori dal periodo basta per spostarlo", () => {
+    expect(periodoDopoImportazione(["2026-11-10", "2026-11-03"], { p: "settimana", r: oggi }, oggi)?.filtri).toEqual({ p: "mese", r: "2026-11-10" });
+  });
+  it("su più mesi: un periodo di mesi interi che le comprende tutte", () => {
+    expect(periodoDopoImportazione(["2026-11-08", "2026-10-31", "2026-11-03"], { p: "settimana", r: oggi }, oggi)).toEqual({
+      filtri: { p: "periodo", da: "2026-10-01", a: "2026-11-30" },
+      etichetta: "da ottobre a novembre 2026",
+    });
+    expect(periodoDopoImportazione(["2025-12-20", "2026-02-02"], { p: "mese", r: oggi }, oggi)).toEqual({
+      filtri: { p: "periodo", da: "2025-12-01", a: "2026-02-28" },
+      etichetta: "da dicembre 2025 a febbraio 2026",
+    });
+  });
+  it("senza periodo salvato vale il mese corrente", () => {
+    expect(periodoDopoImportazione(["2026-11-03"], {}, oggi)).toBeNull();
+    expect(periodoDopoImportazione(["2026-10-03"], {}, oggi)?.etichetta).toBe("ottobre 2026");
   });
 });

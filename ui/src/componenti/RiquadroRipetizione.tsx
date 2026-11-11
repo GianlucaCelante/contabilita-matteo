@@ -11,11 +11,13 @@ interface ProprietaRiquadro {
   onFerma: () => void;
   onRiattiva: () => void;
   disabled?: boolean;
+  // Un'avvertenza sotto la frequenza (util/ripetizione.ts, aiutoRipetizioneDivisa): solo con la ripetizione attiva.
+  aiuto?: string | null;
 }
 
 // La ripetizione di un movimento: lo stato, la frequenza (sempre modificabile: e' della ripetizione) e il pulsante per fermarla
 // o riattivarla. Se si cambiano anche importo o voce, la domanda «solo questo o anche i prossimi» arriva al salvataggio.
-export default function RiquadroRipetizione({ attiva, descrizione, campi, errori, onCambia, onFerma, onRiattiva, disabled }: ProprietaRiquadro) {
+export default function RiquadroRipetizione({ attiva, descrizione, campi, errori, onCambia, onFerma, onRiattiva, disabled, aiuto }: ProprietaRiquadro) {
   if (!attiva) {
     return (
       <section className="flex flex-col gap-3 rounded-xl border border-bordo2 bg-crema px-[18px] py-4 max-md:px-3.5" aria-label="Ripetizione">
@@ -37,6 +39,7 @@ export default function RiquadroRipetizione({ attiva, descrizione, campi, errori
         <span className="etichettaTipo bg-verdechiaro text-verdescuro">Attiva</span>
       </div>
       <SceltaFrequenza campi={campi} errori={errori} onCambia={onCambia} />
+      {aiuto && <p className="m-0 text-[13px] text-spento">{aiuto}</p>}
       <button type="button" className="btn pericolo self-start max-md:w-full" onClick={onFerma} disabled={disabled}>
         Ferma la ripetizione
       </button>

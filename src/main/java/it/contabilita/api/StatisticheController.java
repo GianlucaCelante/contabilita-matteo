@@ -1,5 +1,8 @@
 package it.contabilita.api;
 
+import it.contabilita.api.Dto.GiorniInput;
+import it.contabilita.api.Dto.SerieStatistiche;
+import it.contabilita.api.Dto.SettimanaCompletaInput;
 import it.contabilita.api.Dto.SettimanaDto;
 import it.contabilita.api.Dto.SettimanaInput;
 import it.contabilita.api.Dto.Statistiche;
@@ -16,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 
-/** Statistiche settimanali: pizze e ordini per sede, scontrino medio (docs/api.md, "Statistiche"). */
+/** Statistiche di pizze e ordini per sede (giorno per giorno o vecchi totali settimanali), scontrino medio (docs/api.md, "Statistiche"). */
 @RestController
 @RequestMapping("/api/statistiche")
 public class StatisticheController {
@@ -24,9 +27,11 @@ public class StatisticheController {
     private final StatisticheService statistiche;
 
     private final StatisticheVociService vociPerPeriodo;
+    private final SediService sediService;
 
-    public StatisticheController(StatisticheService statistiche, StatisticheVociService vociPerPeriodo) {
+    public StatisticheController(StatisticheService statistiche, StatisticheVociService vociPerPeriodo, SediService sediService) {
         this.statistiche = statistiche;
+        this.sediService = sediService;
         this.vociPerPeriodo = vociPerPeriodo;
     }
 
@@ -40,6 +45,26 @@ public class StatisticheController {
         return statistiche.salva(corpo);
     }
 
+    @PutMapping("/giorni")
+    public SettimanaDto salvaGiorni(@RequestBody GiorniInput corpo) {
+        return statistiche.salvaGiorni(corpo);
+    }
+
+    /** Giorni e totali settimanali di piu' sedi in un solo salvataggio, tutto o niente. */
+    @PutMapping("/settimana-completa")
+    public SettimanaDto salvaSettimanaCompleta(@RequestBody SettimanaCompletaInput corpo) {
+        return statistiche.salvaSettimanaCompleta(corpo);
+    }
+
+    @GetMapping("/serie")
+    public SerieStatistiche serie(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
+            @RequestParam(required = false) String passo,
+            @RequestParam(required = false) String sedi) {
+        return statistiche.serie(da, a, passo, sediService.filtro(sedi));
+    }
+
     @GetMapping("/voci")
     public StatisticheVociService.StatisticheVoci voci(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
@@ -47,7 +72,7 @@ public class StatisticheController {
             @RequestParam(required = false) String raggruppa,
             @RequestParam(required = false) String tipo,
             @RequestParam(required = false) String sedi) {
-        return vociPerPeriodo.calcola(da, a, raggruppa, tipo, SediService.idsDa(sedi));
+        return vociPerPeriodo.calcola(da, a, raggruppa, tipo, sediService.filtro(sedi));
     }
 
     @GetMapping
@@ -55,6 +80,6 @@ public class StatisticheController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate da,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate a,
             @RequestParam(required = false) String sedi) {
-        return statistiche.calcola(da, a, SediService.idsDa(sedi));
+        return statistiche.calcola(da, a, sediService.filtro(sedi));
     }
 }

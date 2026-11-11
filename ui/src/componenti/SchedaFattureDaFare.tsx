@@ -7,7 +7,7 @@ import { IconaAllarme, IconaDestra, IconaOrologio } from "./Icone";
 // Nel Riepilogo: un promemoria discreto «Fatture da emettere questo mese: N» che porta alle Fatture. Riguarda SEMPRE il mese corrente
 // (GET /api/fatture/promemoria), anche se il Riepilogo mostra un altro periodo. Se qualche casella e' in scadenza (entro 3 giorni, o gia'
 // scaduta) sotto ci sono, in evidenza, al massimo due righe come «Fattura a Rossi: scade tra 3 giorni» e «e altre N».
-// Non compare se non c'e' niente da fare o se il servizio non risponde (il Riepilogo resta com'e').
+// Non compare se non c'e' niente da emettere o se il servizio non risponde (il Riepilogo resta com'e').
 export default function SchedaFattureDaFare() {
   const q = useQuery({ queryKey: chiavi.promemoriaFatture, queryFn: () => api.promemoriaFatture(), staleTime: 15_000 });
   const n = q.data?.daFare ?? 0;

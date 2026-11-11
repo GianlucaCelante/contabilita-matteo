@@ -73,9 +73,11 @@ describe("demo: statistiche (pizze e ordini)", () => {
   });
 
   it("una voce con pizze e ordini null cancella il dato (e cancellare ciò che non c'è non è un errore)", () => {
-    expect(put({ settimana: "2026-10-19", voci: [{ sedeId: 1, pizze: null, ordini: null }] }).stato).toBe(200);
-    expect(settimana("2026-10-19").sedi[0]).toMatchObject({ completa: false, pizze: null, ordini: null, scontrinoMedioCent: null });
-    expect(put({ settimana: "2026-10-19", voci: [{ sedeId: 1, pizze: null, ordini: null }] }).stato).toBe(200);
+    // il 14 settembre e' una delle settimane di prova con il totale settimanale (le ultime quattro sono giorno per giorno)
+    expect(settimana("2026-09-14").sedi[0]).toMatchObject({ completa: true, fonte: "SETTIMANA" });
+    expect(put({ settimana: "2026-09-14", voci: [{ sedeId: 1, pizze: null, ordini: null }] }).stato).toBe(200);
+    expect(settimana("2026-09-14").sedi[0]).toMatchObject({ completa: false, pizze: null, ordini: null, scontrinoMedioCent: null });
+    expect(put({ settimana: "2026-09-14", voci: [{ sedeId: 1, pizze: null, ordini: null }] }).stato).toBe(200);
   });
 
   it("gli errori sono quelli del servizio e non si salva niente (tutto o niente)", () => {
@@ -87,10 +89,10 @@ describe("demo: statistiche (pizze e ordini)", () => {
     expect(errore([{ pizze: 1, ordini: 1 }])).toBe("Ogni voce deve avere la sede.");
     expect(
       errore([
-        { sedeId: 1, pizze: 1, ordini: 1 },
-        { sedeId: 1, pizze: 2, ordini: 2 },
+        { sedeId: 3, pizze: 1, ordini: 1 },
+        { sedeId: 3, pizze: 2, ordini: 2 },
       ]),
-    ).toBe("La sede 1 compare più volte.");
+    ).toBe("La sede 3 compare più volte.");
     expect(errore([{ sedeId: 9, pizze: 1, ordini: 1 }])).toBe("Sede non trovata.");
     expect(errore([{ sedeId: 3, pizze: 2.5, ordini: 1 }])).toBe("Sede «Mercato»: pizze deve essere un numero intero.");
     expect(errore([{ sedeId: 3, pizze: 5, ordini: -1 }])).toBe("Sede «Mercato»: ordini non può essere negativo.");
@@ -105,6 +107,15 @@ describe("demo: statistiche (pizze e ordini)", () => {
       ]),
     ).toBe("Sede «Lungomare»: con 0 ordini le pizze devono essere 0.");
     expect(JSON.stringify(settimana())).toBe(prima);
+  });
+
+  it("il totale della settimana sostituisce i giorni della sede (e solo di quella sede)", () => {
+    expect(settimana().sedi[0]).toMatchObject({ fonte: "GIORNI" });
+    const r = put({ settimana: OGGI, voci: [{ sedeId: 1, pizze: 300, ordini: 100 }] });
+    expect(r.stato).toBe(200);
+    const s = (r.corpo as Settimana).sedi;
+    expect(s[0]).toMatchObject({ fonte: "SETTIMANA", pizze: 300, ordini: 100, giorniInseriti: 0 });
+    expect(s[1]).toMatchObject({ fonte: "GIORNI" });
   });
 
   it("una sede archiviata non accetta dati e compare solo se ha dati o ricavi", () => {

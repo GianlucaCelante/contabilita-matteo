@@ -1,15 +1,18 @@
-import { useId, useMemo, useState } from "react";
+import { useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api, chiavi } from "../api/client";
 import type { Anagrafica, Tipo } from "../api/tipi";
+import { controlliFocalizzabili } from "../hooks/useModale";
+import { vicinoDi } from "../util/fuoco";
 import { testoMovimenti } from "../util/voci";
-import AzioniVoce, { type FaseVoce, type VoceGestita } from "./AzioniVoce";
+import AzioniVoce, { type EsitoVoce, type FaseVoce, type VoceGestita } from "./AzioniVoce";
+import { IconaMatita } from "./Icone";
 import { Caricamento, ErroreCaricamento } from "./Stati";
 import { BOTTONE_RIGA, DETTAGLIO_RIGA, TESTO_INTRO, TITOLO_RIGA, TITOLO_SCHEDA } from "./stileImpostazioni";
 
 // Impostazioni > «Elenchi»: le categorie, i fornitori e i dipendenti in un posto solo, con quanti movimenti li usano, per correggere
-// un errore di battitura (Rinomina), fondere due doppioni (Unisci) o togliere una voce (Elimina). Solo computer: sul telefono le stesse
-// azioni stanno nelle statistiche per voce e nella matita dei campi del movimento (docs/interfaccia.md).
+// un errore di battitura (Rinomina), fondere due doppioni (Unisci) o togliere una voce (Elimina). Sul computer i tre pulsanti stanno su
+// ogni riga; sul telefono c'e' una matita che apre il foglio con le tre azioni, lo stesso delle statistiche per voce (docs/interfaccia.md).
 
 const SCHEDE: { valore: Anagrafica; etichetta: string; cerca: string }[] = [
   { valore: "categorie", etichetta: "Categorie", cerca: "Cerca una categoria" },
@@ -31,19 +34,24 @@ interface Aperta {
   fase: FaseVoce;
 }
 
+// Telefono: una riga con il nome intero (va a capo, non si tronca) e una matita sola, che apre il foglio «Rinomina / Unisci… / Elimina»
+// (lo stesso del dettaglio di una voce). Computer: i tre pulsanti sulla riga.
 function RigaVoce({ anagrafica, voce, onApri }: { anagrafica: Anagrafica; voce: Riga; onApri: (fase: FaseVoce) => void }) {
   const classe = BOTTONE_RIGA;
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-riga py-2">
-      <div className="min-w-0 flex-1 basis-[220px]">
-        <div className="flex items-center gap-2">
-          <span className={`min-w-0 truncate ${TITOLO_RIGA}`}>{voce.nome}</span>
+    <li data-voce={voce.id} className="flex items-center gap-x-4 gap-y-2 border-t border-riga py-2 md:flex-wrap">
+      <div className="min-w-0 flex-1 md:basis-[220px]">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className={`min-w-0 break-words md:truncate ${TITOLO_RIGA}`}>{voce.nome}</span>
           {/* Un contrassegno a parole, non solo di colore: la categoria chiede dipendente, regolare ed extra. */}
           {voce.retribuzione && <span className="shrink-0 rounded-md border border-verdebordo bg-verdechiaro px-1.5 py-px text-[12px] font-bold text-verdescuro">Retribuzione</span>}
         </div>
         <div className={`num ${DETTAGLIO_RIGA}`}>{testoMovimenti(voce.usi)}</div>
       </div>
-      <div className="ml-auto flex shrink-0 gap-2">
+      <button type="button" className="btnIcona shrink-0 md:hidden" aria-label={`Modifica «${voce.nome}»: rinomina, unisci o elimina`} onClick={() => onApri("scelta")}>
+        <IconaMatita larghezza={18} spessoreTratto={2} />
+      </button>
+      <div className="ml-auto flex shrink-0 gap-2 max-md:hidden">
         <button type="button" className={classe} aria-label={`Rinomina «${voce.nome}»`} onClick={() => onApri("rinomina")}>
           Rinomina
         </button>
@@ -114,9 +122,32 @@ export default function SezioneElenchi() {
   const idCerca = useId();
   const corrente = SCHEDE.find((s) => s.valore === scheda) ?? SCHEDE[0]!;
 
+  // Una voce eliminata o unita a un'altra sparisce dall'elenco, e con lei il pulsante che aveva aperto la finestra: il fuoco finiva
+  // sul contenuto principale. Va sulla voce successiva (sulla precedente se era l'ultima), o sul titolo «Elenchi» se non ne restano.
+  // Si sposta in un effetto di layout, quando la finestra si chiude: la pagina non e' piu' «inert» e useModale, che restituirebbe il
+  // fuoco al pulsante della riga che sta per sparire, non tocca un fuoco gia' messo altrove.
+  const rifSezione = useRef<HTMLElement>(null);
+  const rifTitolo = useRef<HTMLHeadingElement>(null);
+  const fuocoDopo = useRef<{ vicina: string | null } | null>(null);
+  function dopoAzione(esito: EsitoVoce) {
+    if (!aperta || esito.azione === "rinomina") return;
+    const ordine = Array.from(rifSezione.current?.querySelectorAll<HTMLElement>("[data-voce]") ?? [], (n) => n.dataset.voce ?? "");
+    fuocoDopo.current = { vicina: vicinoDi(ordine, String(aperta.voce.id)) };
+  }
+  useLayoutEffect(() => {
+    if (aperta || !fuocoDopo.current) return;
+    const { vicina } = fuocoDopo.current;
+    fuocoDopo.current = null;
+    const riga = vicina === null ? null : rifSezione.current?.querySelector<HTMLElement>(`[data-voce="${vicina}"]`);
+    // Il primo controllo della riga che si vede: la matita sul telefono, «Rinomina» sul computer (mai «Elimina»).
+    ((riga && controlliFocalizzabili(riga)[0]) ?? rifTitolo.current)?.focus();
+  }, [aperta]);
+
   return (
-    <section className="scheda min-w-0 px-6 py-[22px]" aria-label="Elenchi">
-      <h2 className={TITOLO_SCHEDA}>Elenchi</h2>
+    <section ref={rifSezione} className="scheda min-w-0 px-6 py-[22px]" aria-label="Elenchi">
+      <h2 ref={rifTitolo} tabIndex={-1} className={TITOLO_SCHEDA + " rounded-md"}>
+        Elenchi
+      </h2>
       <p className={TESTO_INTRO}>
         Correggi un nome scritto male, unisci due voci uguali o togli quelle che non servono. I movimenti già registrati restano: se elimini una voce, restano senza.
       </p>
@@ -158,6 +189,7 @@ export default function SezioneElenchi() {
           voce={aperta.voce}
           inizio={aperta.fase}
           onChiudi={() => setAperta(null)}
+          onFatto={dopoAzione}
         />
       )}
     </section>

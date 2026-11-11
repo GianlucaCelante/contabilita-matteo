@@ -7,6 +7,7 @@ import { euroPerCampo } from "../util/formato";
 import { erroreNomeCasella, erroreNotaFattura, ETICHETTA_STATO, leggiGiornoScadenza, leggiImportoFattura, MASSIMO_NOTA_FATTURA, nomeMeseAnno, STATI } from "../util/fatture";
 import { IconaMatita } from "./Icone";
 import { iconaStato } from "./statoFattura";
+import Conferma from "./Conferma";
 import Finestra from "./Finestra";
 
 // Le due finestre delle Fatture da fare: importo, nota e stato di un mese, e nome (o eliminazione) di una casella.
@@ -256,20 +257,12 @@ export function FinestraCasellaFattura({ casella, onChiudi }: ProprietaCasella) 
 
   if (chiediElimina && casella) {
     return (
-      <Finestra
+      <Conferma
         titolo={`Eliminare «${casella.nome}»?`}
         sottotitolo="Spariscono anche gli stati di tutti i mesi di questa casella. Le fatture vere non c'entrano: questo è solo il promemoria."
-        onChiudi={() => setChiediElimina(false)}
-        piede={
-          <div className="flex w-full gap-3">
-            <button type="button" className="btn max-md:flex-1" data-focus-iniziale onClick={() => setChiediElimina(false)}>
-              Tienila
-            </button>
-            <button type="button" className="btn pericolo pieno max-md:flex-1" disabled={occupato} onClick={() => void elimina()}>
-              Elimina
-            </button>
-          </div>
-        }
+        onAnnulla={() => setChiediElimina(false)}
+        occupato={occupato}
+        azione={{ etichetta: "Elimina", stile: "distruttiva", onClick: () => void elimina() }}
       />
     );
   }
@@ -356,7 +349,7 @@ export function FinestraCasellaFattura({ casella, onChiudi }: ProprietaCasella) 
             </span>
           </div>
           <p id={`${idGiorno}-aiuto`} className="m-0 mt-1 text-[13px] text-spento">
-            Da 1 a 31, oppure vuoto per nessuna. Nei mesi più corti vale l&apos;ultimo giorno. Tre giorni prima la Home te lo ricorda.
+            Da 1 a 31, oppure vuoto per nessuna. Nei mesi più corti vale l&apos;ultimo giorno. Tre giorni prima il Riepilogo te lo ricorda.
           </p>
           <MessaggioErrore id={`${idGiorno}-e`} testo={errGiorno} />
         </div>

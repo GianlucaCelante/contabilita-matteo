@@ -20,6 +20,10 @@ export interface FatturaLetta {
   notaDiCredito: boolean;
   // Un'integrazione (TD17, TD18, TD19): l'autofattura per un acquisto dall'estero, conteggiata come costo.
   integrazione: boolean;
+  // Il codice del tipo di documento nel file (TD01, TD05…): non si mostra al cliente.
+  tipoDocumento: string;
+  // Una nota di debito (TD05, TD09): si importa come una fattura, e' un costo in piu'.
+  notaDiDebito: boolean;
 }
 
 export interface ErroreFileImportato {

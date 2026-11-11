@@ -221,6 +221,15 @@ class MovimentiApiTest extends ProvaBase {
         assertThat(soloCostiFissi.get("elementi")).hasSize(1);
         assertThat(soloCostiFissi.get("totali").get("ricaviCent").asLong()).isZero();
 
+        // tipo=COSTI: costi variabili + costi fissi, senza ricavi (anche nei totali)
+        JsonNode soloCosti = leggi("/api/movimenti?tipo=COSTI");
+        assertThat(soloCosti.get("elementi")).hasSize(3);
+        assertThat(soloCosti.get("elementi")).extracting(e -> e.get("tipo").asText()).doesNotContain("RICAVO");
+        assertThat(soloCosti.get("totali").get("ricaviCent").asLong()).isZero();
+        assertThat(soloCosti.get("totali").get("costiCent").asLong()).isEqualTo(82000);
+        assertThat(soloCosti.get("totali").get("saldoCent").asLong()).isEqualTo(-82000);
+        assertThat(leggi("/api/movimenti?tipo=COSTI&da=2026-04-01").get("elementi")).hasSize(1);
+
         // q: fornitore, descrizione, note, senza distinguere maiuscole
         assertThat(leggi("/api/movimenti?q=molino").get("elementi")).hasSize(2);
         assertThat(leggi("/api/movimenti?q=FARINA").get("elementi")).hasSize(1);
@@ -236,6 +245,9 @@ class MovimentiApiTest extends ProvaBase {
         errore(get("/api/movimenti?da=2026-05-01&a=2026-04-01"), null, 400);
         errore(get("/api/movimenti?da=ieri"), null, 400);
         errore(get("/api/movimenti?tipo=BOH"), null, 400);
+        assertThat(errore(get("/api/movimenti?tipo=BOH"), null, 400).get("errore").asText()).isEqualTo("tipo: valore non valido: BOH");
+        // COSTI va scritto esatto, come gli altri valori di tipo
+        errore(get("/api/movimenti?tipo=costi"), null, 400);
     }
 
     @Test
@@ -344,6 +356,22 @@ class MovimentiApiTest extends ProvaBase {
 
         // categoria + periodo
         assertThat(leggi("/api/movimenti?da=2026-03-02&a=2026-03-02&categorie=" + farina).get("elementi")).hasSize(1);
+    }
+
+    @Test
+    void laRicercaTrovaUnaRetribuzioneDalNomeDelDipendente() throws Exception {
+        crea(retribuzione("2026-03-05", "RETRIBUZIONE_REGOLARE", 150000).put("dipendente", "Mario Rossi"));
+        crea(retribuzione("2026-03-06", "RETRIBUZIONE_EXTRA", 20000).put("dipendente", "Anna"));
+        crea(retribuzione("2026-03-07", "RETRIBUZIONE_EXTRA", 5000));
+        crea(movimento("2026-03-08", "COSTO_VARIABILE", "SCONTRINO", 700).put("fornitore", "Molino"));
+        JsonNode r = leggi("/api/movimenti?q=ROSSI");
+        assertThat(r.get("elementi")).singleElement().satisfies(m -> {
+            assertThat(m.get("dipendente").get("nome").asText()).isEqualTo("Mario Rossi");
+            assertThat(m.get("importoCent").asLong()).isEqualTo(150000);
+        });
+        assertThat(r.get("totali").get("costiCent").asLong()).isEqualTo(150000);
+        assertThat(leggi("/api/movimenti?q=anna").get("elementi")).hasSize(1);
+        assertThat(leggi("/api/movimenti?q=nessuno").get("elementi")).isEmpty();
     }
 
     @Test

@@ -33,6 +33,8 @@ public class ImportaController {
     public Anteprima anteprima(@RequestParam(name = "files", required = false) List<MultipartFile> files) {
         List<FileCaricato> caricati = new ArrayList<>();
         if (files != null) {
+            // prima di portarli in memoria: la somma non deve superare quello che una lettura puo' tenere
+            importazione.controllaCaricamento(files.stream().mapToLong(MultipartFile::getSize).sum());
             for (MultipartFile f : files) {
                 try {
                     caricati.add(new FileCaricato(f.getOriginalFilename(), f.getBytes()));

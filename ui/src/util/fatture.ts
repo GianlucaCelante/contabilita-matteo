@@ -60,7 +60,7 @@ export function nomeRelativoMese(mese: string, oggiMese = meseCorrente()): strin
 // Si puo' guardare avanti solo di un mese: il promemoria serve per questo e per i mesi passati.
 export const puoAndareAvantiMese = (mese: string, oggiMese = meseCorrente()): boolean => mese < aggiungiMesiMese(oggiMese, 1);
 
-export const ETICHETTA_STATO: Record<StatoFattura, string> = { DA_FARE: "Da fare", EMESSA: "Emessa", PAGATA: "Pagata" };
+export const ETICHETTA_STATO: Record<StatoFattura, string> = { DA_FARE: "Da emettere", EMESSA: "Emessa", PAGATA: "Pagata" };
 
 // Il passo successivo con un tocco: Da fare -> Emessa -> Pagata. Dopo «Pagata» non c'e' altro: si usa la finestra con le scelte.
 export function passoSuccessivo(stato: StatoFattura): { stato: StatoFattura; azione: string; fatto: string } | null {
@@ -184,7 +184,7 @@ export function tonoScadenza(scadenza: string, oggi = oggiIso()): TonoScadenza {
   return g < 0 ? "scaduta" : g <= GIORNI_PREAVVISO ? "vicina" : "neutro";
 }
 
-// La scheda della Home: la riga fissa e le (al massimo due) righe in evidenza, con «e altre N» per le altre.
+// La scheda del Riepilogo: la riga fissa e le (al massimo due) righe in evidenza, con «e altre N» per le altre.
 export const testoDaEmettere = (n: number): string => `Fatture da emettere questo mese: ${n}`;
 export const MASSIMO_RIGHE_PROMEMORIA = 2;
 export function righePromemoria(inScadenza: ScadenzaFattura[]): { righe: string[]; altre: number } {

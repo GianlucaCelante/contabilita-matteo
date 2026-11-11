@@ -12,10 +12,14 @@ public final class ImportaDto {
     public record FornitoreLetto(String nome, String partitaIva) {
     }
 
+    /**
+     * {@code tipoDocumento}: il codice del tracciato ({@code TD01}, {@code TD05}…), per chi vuole distinguere; al cliente non
+     * si mostra. {@code notaDiDebito}: {@code TD05}/{@code TD09}, che si importano come fatture (un costo in piu').
+     */
     public record FatturaLetta(int indice, String nomeFile, FornitoreLetto fornitore, String numero, LocalDate data,
                                long imponibileCent, long ivaCent, long totaleCent,
                                String categoriaSuggerita, boolean duplicata, String motivo, boolean notaDiCredito,
-                               boolean integrazione) {
+                               boolean integrazione, String tipoDocumento, boolean notaDiDebito) {
     }
 
     public record ErroreImportazione(String nomeFile, String messaggio) {

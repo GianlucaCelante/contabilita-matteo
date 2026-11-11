@@ -38,3 +38,12 @@ export function descriviFrequenza({ unita, intervallo, giorno }: Frequenza): str
       : `Ogni ${intervallo} ${nomeUnita(unita, true)}`;
   return usaIlGiornoDelMese(unita) ? `${base}, il giorno ${giorno}` : base;
 }
+
+// L'avvertenza nel riquadro «Ripetizione» del dettaglio, per una parte di un movimento diviso fra sedi (`divisione`): le parti di ogni
+// scadenza stanno insieme perche' cadono nello stesso giorno; cambiando giorno o frequenza di una sede sola, le sue scadenze cadono
+// in altre date e nelle Ricevute diventano fatture a parte. Null se il movimento non e' diviso, non e' ripetuto o la ripetizione e'
+// ferma (li' la frequenza non si cambia).
+export function aiutoRipetizioneDivisa(m: { divisione: string | null; ricorrenza: { attiva: boolean } | null }): string | null {
+  if (!m.divisione || !m.ricorrenza?.attiva) return null;
+  return "È una parte di un movimento diviso: cambiando giorno o frequenza si separa dalle altre sedi.";
+}

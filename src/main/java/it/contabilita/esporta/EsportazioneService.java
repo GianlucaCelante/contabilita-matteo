@@ -11,7 +11,9 @@ import it.contabilita.dati.Origine;
 import it.contabilita.dati.Tipo;
 import it.contabilita.movimenti.RiepilogoService;
 import it.contabilita.movimenti.StatisticheService;
+import it.contabilita.movimenti.StatisticheService.RigaGiorno;
 import it.contabilita.movimenti.StatisticheService.RigaStatistica;
+import it.contabilita.movimenti.StatisticheService.StatisticheEsportate;
 import org.dhatim.fastexcel.Workbook;
 import org.dhatim.fastexcel.Worksheet;
 import org.springframework.data.domain.Sort;
@@ -57,7 +59,7 @@ public class EsportazioneService {
             "Descrizione", "N. documento", "Note", "Importo", "Origine", "Sede"};
     private static final int COLONNA_DATA = 0;
     private static final int COLONNA_IMPORTO = 9;
-    private static final int[] LARGHEZZE = {12, 16, 22, 20, 28, 20, 36, 16, 36, 14, 12, 24};
+    private static final int[] LARGHEZZE = {12, 16, 22, 20, 28, 20, 36, 16, 36, 14, 20, 24};
     private static final String FORMATO_DATA = "yyyy-mm-dd";
     private static final String FORMATO_VALUTA = "#,##0.00 [$€-410]";
 
@@ -106,8 +108,8 @@ public class EsportazioneService {
                     dellaSede.add(riepilogoService.calcola(da, a, Set.of(rs.sede().id())));
                 }
             }
-            List<RigaStatistica> statistiche = statisticheNelFile
-                    ? statisticheService.righePerEsportazione(da, a, sediIds) : List.of();
+            StatisticheEsportate statistiche = statisticheNelFile
+                    ? statisticheService.righePerEsportazione(da, a, sediIds) : new StatisticheEsportate(List.of(), List.of());
             corpo = out -> scriviXlsx(righe, riepilogo, nomiSedi, dellaSede, statistiche, out);
         }
         return new Esportazione(nomeFile, formato.tipoContenuto(), corpo);
@@ -169,7 +171,7 @@ public class EsportazioneService {
     static String etichetta(Origine o) {
         return switch (o) {
             case MANO -> "A mano";
-            case XML -> "XML";
+            case XML -> "Fattura elettronica"; // nel file il cliente non legge «XML»; uguale a ORIGINE_FILE della demo
             case RICORRENZA -> "Ricorrenza";
         };
     }
@@ -240,7 +242,7 @@ public class EsportazioneService {
      * memoria: coerente con lo streaming).
      */
     void scriviXlsx(List<Riga> righe, Riepilogo riepilogo, List<String> nomiSedi, List<Riepilogo> dellaSede,
-                    List<RigaStatistica> statistiche, OutputStream out) throws IOException {
+                    StatisticheEsportate statistiche, OutputStream out) throws IOException {
         try (Workbook cartella = new Workbook(out, "Contabilita", "1.0")) {
             Worksheet foglio = cartella.newWorksheet("Movimenti");
             for (int c = 0; c < INTESTAZIONI.length; c++) {
@@ -269,23 +271,24 @@ public class EsportazioneService {
                 riga++;
             }
             scriviRiepilogo(cartella.newWorksheet("Riepilogo"), riepilogo, nomiSedi, dellaSede);
-            if (!statistiche.isEmpty()) { // il foglio c'e' solo se nel periodo qualcuno ha caricato pizze e ordini
-                scriviStatistiche(cartella.newWorksheet("Statistiche"), statistiche);
+            if (!statistiche.vuote()) { // il foglio c'e' solo se nel periodo qualcuno ha caricato pizze e ordini
+                scriviStatistiche(cartella.newWorksheet("Statistiche"), statistiche.settimane());
+            }
+            if (!statistiche.giorni().isEmpty()) { // e il dettaglio solo se ci sono dati giorno per giorno
+                scriviGiorni(cartella.newWorksheet("Pizze per giorno"), statistiche.giorni());
             }
         }
     }
 
-    private static final String[] INTESTAZIONI_STATISTICHE = {"Settimana", "Sede", "Pizze", "Ordini", "Ricavi", "Scontrino medio"};
+    private static final String[] INTESTAZIONI_STATISTICHE = {"Settimana", "Sede", "Pizze", "Ordini", "Ricavi", "Scontrino medio",
+            "Ricavi extra", "Ricavi dei giorni con dati", "Giorni inseriti"};
 
-    /** Una riga per sede e settimana (il lunedi'); lo scontrino medio e' vuoto se gli ordini sono 0. */
+    /**
+     * Una riga per sede e settimana (il lunedi'); lo scontrino medio (ricavi dei giorni con dati / ordini) e' vuoto se gli
+     * ordini sono 0. «Giorni inseriti» dice quanti giorni sono stati inseriti, o «Totale settimanale» per i vecchi dati.
+     */
     private void scriviStatistiche(Worksheet f, List<RigaStatistica> righe) {
-        int[] larghezze = {12, 24, 10, 10, 14, 16};
-        for (int c = 0; c < INTESTAZIONI_STATISTICHE.length; c++) {
-            f.inlineString(0, c, INTESTAZIONI_STATISTICHE[c]);
-            f.width(c, larghezze[c]);
-        }
-        f.range(0, 0, 0, INTESTAZIONI_STATISTICHE.length - 1).style().bold().fillColor("D9D9D9").set();
-        f.freezePane(0, 1);
+        intestazione(f, INTESTAZIONI_STATISTICHE, new int[]{12, 24, 10, 10, 14, 16, 14, 24, 18});
         int riga = 1;
         for (RigaStatistica r : righe) {
             f.value(riga, 0, r.settimana());
@@ -293,14 +296,54 @@ public class EsportazioneService {
             f.inlineString(riga, 1, r.sede());
             f.value(riga, 2, r.pizze());
             f.value(riga, 3, r.ordini());
-            f.value(riga, 4, r.ricaviCent() / 100.0);
-            f.style(riga, 4).format(FORMATO_VALUTA).set();
+            euro(f, riga, 4, r.ricaviCent());
             if (r.scontrinoMedioCent() != null) {
-                f.value(riga, 5, r.scontrinoMedioCent() / 100.0);
-                f.style(riga, 5).format(FORMATO_VALUTA).set();
+                euro(f, riga, 5, r.scontrinoMedioCent());
+            }
+            euro(f, riga, 6, r.ricaviExtraCent());
+            euro(f, riga, 7, r.ricaviConDatiCent());
+            if (r.giorniInseriti() == null) {
+                f.inlineString(riga, 8, "Totale settimanale");
+            } else {
+                f.value(riga, 8, r.giorniInseriti());
             }
             riga++;
         }
+    }
+
+    private static final String[] INTESTAZIONI_GIORNI = {"Data", "Sede", "Pizze", "Ordini", "Ricavi", "Ricavi extra", "Scontrino medio"};
+
+    /** Una riga per sede e giorno inserito; i ricavi sono quelli di quel giorno, lo scontrino e' vuoto se gli ordini sono 0. */
+    private void scriviGiorni(Worksheet f, List<RigaGiorno> righe) {
+        intestazione(f, INTESTAZIONI_GIORNI, new int[]{12, 24, 10, 10, 14, 14, 16});
+        int riga = 1;
+        for (RigaGiorno r : righe) {
+            f.value(riga, 0, r.data());
+            f.style(riga, 0).format(FORMATO_DATA).horizontalAlignment("left").set();
+            f.inlineString(riga, 1, r.sede());
+            f.value(riga, 2, r.pizze());
+            f.value(riga, 3, r.ordini());
+            euro(f, riga, 4, r.ricaviCent());
+            euro(f, riga, 5, r.ricaviExtraCent());
+            if (r.scontrinoMedioCent() != null) {
+                euro(f, riga, 6, r.scontrinoMedioCent());
+            }
+            riga++;
+        }
+    }
+
+    private static void intestazione(Worksheet f, String[] intestazioni, int[] larghezze) {
+        for (int c = 0; c < intestazioni.length; c++) {
+            f.inlineString(0, c, intestazioni[c]);
+            f.width(c, larghezze[c]);
+        }
+        f.range(0, 0, 0, intestazioni.length - 1).style().bold().fillColor("D9D9D9").set();
+        f.freezePane(0, 1);
+    }
+
+    private static void euro(Worksheet f, int riga, int colonna, long cent) {
+        f.value(riga, colonna, cent / 100.0);
+        f.style(riga, colonna).format(FORMATO_VALUTA).set();
     }
 
     /** Una riga del foglio Riepilogo: come si legge il suo importo da un {@link Riepilogo}. */

@@ -1,0 +1,71 @@
+databaseChangeLog:
+  # Versione 11: pizze e ordini giorno per giorno (docs/api.md, «Statistiche»). Solo aggiunte: la tabella dati_settimana
+  # resta com'e', con i suoi dati; per una (sede, settimana) valgono i giorni se ce n'e' almeno uno, altrimenti il vecchio
+  # totale settimanale (lo decide il servizio).
+  # - tabella dati_giorno: una riga per (sede, giorno); giorno e' la data (yyyy-MM-dd); indice unico (sede_id, giorno);
+  # - pizze e ordini non negativi (due trigger, come per dati_settimana); la coerenza fra i due la controlla il servizio.
+  # Il contesto «giorni» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 110-dati-giorno
+      author: contabilita
+      context: giorni
+      changes:
+        - createTable:
+            tableName: dati_giorno
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: sede_id
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_dati_giorno_sede
+                    references: sede(id)
+              - column:
+                  name: giorno
+                  type: TEXT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: pizze
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ordini
+                  type: INTEGER
+                  constraints:
+                    nullable: false
+              - column:
+                  name: modificato_il
+                  type: TEXT
+                  constraints:
+                    nullable: false
+        - createIndex:
+            indexName: ux_dati_giorno_sede_giorno
+            tableName: dati_giorno
+            unique: true
+            columns:
+              - column:
+                  name: sede_id
+              - column:
+                  name: giorno
+        - sql:
+            splitStatements: false
+            comment: "Numeri non negativi anche scrivendo nel database senza passare dal servizio."
+            sql: >
+              CREATE TRIGGER tr_dati_giorno_ins BEFORE INSERT ON dati_giorno
+              WHEN NEW.pizze < 0 OR NEW.ordini < 0
+              BEGIN SELECT RAISE(ABORT, 'pizze e ordini non possono essere negativi'); END
+        - sql:
+            splitStatements: false
+            sql: >
+              CREATE TRIGGER tr_dati_giorno_upd BEFORE UPDATE ON dati_giorno
+              WHEN NEW.pizze < 0 OR NEW.ordini < 0
+              BEGIN SELECT RAISE(ABORT, 'pizze e ordini non possono essere negativi'); END

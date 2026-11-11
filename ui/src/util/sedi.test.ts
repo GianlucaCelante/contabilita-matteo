@@ -6,22 +6,27 @@ import {
   coloreDiPosizione,
   coloreSede,
   conPiuSedi,
+  conPiuSediDelLocale,
   dividiImporto,
   etichettaSedi,
   idSelezionati,
   leggiScelta,
   letteraSede,
   lettereSedi,
+  localePoiPersonali,
   PALETTE_SEDI,
   parametroSedi,
   rapportoContrasto,
   salvaScelta,
   sedePreselezionata,
+  sediDelLocale,
+  sediSelezionabili,
+  senzaSede,
   sediIncluse,
   soloSede,
 } from "./sedi";
 
-const sede = (id: number, nome: string, extra: Partial<Sede> = {}): Sede => ({ id, nome, archiviata: false, ordine: id, movimenti: 0, ...extra });
+const sede = (id: number, nome: string, extra: Partial<Sede> = {}): Sede => ({ id, nome, archiviata: false, personale: false, ordine: id, movimenti: 0, ...extra });
 const TRE = [sede(1, "Via Roma"), sede(2, "Lungomare"), sede(3, "Mercato")];
 const UNA = [sede(1, "Sede principale")];
 
@@ -147,6 +152,129 @@ describe("selezione delle sedi", () => {
 
   it("una sede aggiunta dopo entra in «tutte»", () => {
     expect(idSelezionati([...TRE, sede(4, "Porto")], null)).toEqual([1, 2, 3, 4]);
+  });
+});
+
+describe("sede personale (spese dei titolari)", () => {
+  // Una sede vera e una personale; poi due vere, una personale e una vera archiviata.
+  const VERA_E_PERSONALE = [sede(1, "Via Roma"), sede(5, "Casa", { personale: true })];
+  const QUATTRO = [sede(1, "Via Roma"), sede(2, "Lungomare"), sede(5, "Casa", { personale: true }), sede(7, "Vecchia", { archiviata: true })];
+
+  it("le sedi del locale sono le attive non personali; il selettore compare con due attive qualsiasi", () => {
+    expect(sediDelLocale(VERA_E_PERSONALE).map((s) => s.id)).toEqual([1]);
+    expect(conPiuSedi(VERA_E_PERSONALE)).toBe(true);
+    expect(conPiuSediDelLocale(VERA_E_PERSONALE)).toBe(false);
+    expect(conPiuSediDelLocale(QUATTRO)).toBe(true);
+  });
+
+  it("nelle scelte le personali vengono dopo le sedi del locale", () => {
+    const misto = [sede(5, "Casa", { personale: true, ordine: 0 }), sede(1, "Via Roma"), sede(2, "Lungomare")];
+    expect(localePoiPersonali(misto).map((s) => s.id)).toEqual([1, 2, 5]);
+  });
+
+  it("di partenza e con «Tutte le sedi» la personale resta fuori, e il filtro si omette", () => {
+    expect(idSelezionati(VERA_E_PERSONALE, null)).toEqual([1]);
+    expect(parametroSedi(VERA_E_PERSONALE, null)).toBeUndefined();
+    expect(etichettaSedi(VERA_E_PERSONALE, null)).toBe("Tutte le sedi");
+    expect(sediIncluse(VERA_E_PERSONALE, null)).toBeNull();
+    expect(idSelezionati(QUATTRO, null)).toEqual([1, 2]);
+    expect(parametroSedi(QUATTRO, null)).toBeUndefined();
+  });
+
+  it("la sola personale scelta: filtro esplicito, mai «Tutte le sedi», nessuna preselezione", () => {
+    const solo = soloSede(VERA_E_PERSONALE, 5);
+    expect(solo).toEqual([5]);
+    expect(parametroSedi(VERA_E_PERSONALE, solo)).toBe("5");
+    expect(etichettaSedi(VERA_E_PERSONALE, solo)).toBe("Casa");
+    expect(sediIncluse(VERA_E_PERSONALE, solo)).toBe("Casa");
+    expect(sedePreselezionata(VERA_E_PERSONALE, solo)).toBeNull();
+  });
+
+  it("accesa la personale insieme a tutto il locale: resta esplicita, con le archiviate del locale per non perdere il passato", () => {
+    const conCasa = alternaSede(QUATTRO, null, 5);
+    expect(conCasa).toEqual([1, 2, 5]);
+    expect(idSelezionati(QUATTRO, conCasa)).toEqual([1, 2, 5]);
+    expect(parametroSedi(QUATTRO, conCasa)).toBe("1,2,5,7");
+    expect(etichettaSedi(QUATTRO, conCasa)).toBe("Tutte le sedi + Casa");
+    expect(sediIncluse(QUATTRO, conCasa)).toBe("Tutte le sedi + Casa");
+    // Spenta di nuovo la personale si torna a «tutte».
+    expect(alternaSede(QUATTRO, conCasa, 5)).toBeNull();
+  });
+
+  it("una sede vera più la personale, con lo stesso numero di sedi del locale, non è «tutte»", () => {
+    const mista = alternaSede(QUATTRO, [1], 5);
+    expect(mista).toEqual([1, 5]);
+    expect(parametroSedi(QUATTRO, mista)).toBe("1,5");
+    expect(etichettaSedi(QUATTRO, mista)).toBe("Via Roma + Casa");
+    expect(sedePreselezionata(QUATTRO, [2])).toBe(2);
+    expect(sedePreselezionata(QUATTRO, [5])).toBeNull();
+  });
+
+  it("con una sede vera e la personale accesa: l'unica vera si può spegnere, la personale da sola resta", () => {
+    expect(alternaSede(VERA_E_PERSONALE, [1, 5], 1)).toEqual([5]);
+    expect(alternaSede(VERA_E_PERSONALE, [5], 5)).toEqual([5]);
+  });
+
+  it("scelte salvate prima della sede personale restano valide; quelle non più valide tornano al locale", () => {
+    expect(idSelezionati(QUATTRO, [2])).toEqual([2]);
+    expect(idSelezionati(QUATTRO, [1, 2])).toEqual([1, 2]);
+    expect(parametroSedi(QUATTRO, [1, 2])).toBeUndefined();
+    expect(idSelezionati(QUATTRO, [7, 9])).toEqual([1, 2]);
+    expect(leggiScelta(finto({ "contabilita.sedi.v1": JSON.stringify({ scelte: null }) }))).toBeNull();
+    expect(leggiScelta(finto({ "contabilita.sedi.v1": JSON.stringify({ scelte: [1, 2] }) }))).toEqual([1, 2]);
+  });
+
+  it("oltre tre sedi il titolo conta sulle attive", () => {
+    const sei = [1, 2, 3, 4].map((i) => sede(i, `Sede ${i}`)).concat([sede(5, "Casa", { personale: true })]);
+    expect(sediIncluse(sei, [1, 2, 3, 5])).toBe("4 sedi su 5");
+  });
+});
+
+describe("sedi personali archiviate", () => {
+  // 1 e 2 del locale, 5 personale attiva, 6 personale archiviata con movimenti, 8 personale archiviata vuota, 7 del locale archiviata.
+  const SEDI = [
+    sede(1, "Via Roma"),
+    sede(2, "Lungomare"),
+    sede(5, "Casa", { personale: true }),
+    sede(6, "Casa vecchia", { personale: true, archiviata: true, movimenti: 4 }),
+    sede(8, "Vuota", { personale: true, archiviata: true }),
+    sede(7, "Vecchia", { archiviata: true, movimenti: 9 }),
+  ];
+
+  it("si possono scegliere le attive e le personali archiviate con movimenti (in fondo)", () => {
+    expect(sediSelezionabili(SEDI).map((s) => s.id)).toEqual([1, 2, 5, 6]);
+  });
+
+  it("una personale archiviata scelta da sola: filtro esplicito con il suo id", () => {
+    const solo = soloSede(SEDI, 6);
+    expect(solo).toEqual([6]);
+    expect(idSelezionati(SEDI, solo)).toEqual([6]);
+    expect(parametroSedi(SEDI, solo)).toBe("6");
+    expect(etichettaSedi(SEDI, solo)).toBe("Casa vecchia");
+  });
+
+  it("accese tutte le personali attive, il filtro porta anche le personali archiviate", () => {
+    expect(parametroSedi(SEDI, [5])).toBe("5,6,8");
+    expect(parametroSedi(SEDI, [1, 2, 5])).toBe("1,2,5,7,6,8");
+    // la personale archiviata gia' scelta non si ripete
+    expect(parametroSedi(SEDI, [5, 6])).toBe("5,6,8");
+  });
+
+  it("con una sola sede attiva e una personale archiviata con movimenti il selettore serve", () => {
+    const due = [sede(1, "Via Roma"), sede(6, "Casa vecchia", { personale: true, archiviata: true, movimenti: 4 })];
+    expect(conPiuSedi(due)).toBe(false);
+    expect(sediSelezionabili(due).length).toBe(2);
+    expect(parametroSedi(due, [6])).toBe("6");
+    expect(parametroSedi(due, null)).toBeUndefined();
+  });
+});
+
+describe("una sede che diventa personale esce dalla scelta salvata", () => {
+  it("si toglie l'id; se non resta niente si torna a «tutte»", () => {
+    expect(senzaSede([1, 3], 3)).toEqual([1]);
+    expect(senzaSede([3], 3)).toBeNull();
+    expect(senzaSede(null, 3)).toBeNull();
+    expect(senzaSede([1, 2], 3)).toEqual([1, 2]);
   });
 });
 

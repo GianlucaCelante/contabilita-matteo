@@ -85,6 +85,7 @@ public abstract class ProvaBase {
         }
         jdbc.update("DELETE FROM fattura_mese");
         jdbc.update("DELETE FROM fattura_casella");
+        jdbc.update("DELETE FROM dati_giorno");
         jdbc.update("DELETE FROM dati_settimana");
         jdbc.update("DELETE FROM movimento");
         jdbc.update("DELETE FROM ricorrenza");

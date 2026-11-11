@@ -41,6 +41,19 @@ class EstrattoreP7mTest {
         assertThat(new String(estratto, StandardCharsets.UTF_8)).isEqualTo(xml);
     }
 
+    // s38: anche la fattura semplificata (radice FatturaElettronicaSemplificata) si trova per posizione
+    @Test
+    void trovaPerPosizioneAncheLaFatturaSemplificata() throws Exception {
+        String semplificata = FattureProva.semplificata("p", FattureProva.cedenteSemplificato("Ferramenta Bianchi Snc", "02468013579"),
+                "TD07", "S-12", "2026-10-06", FattureProva.rigaSemplificata("Viti", "36.60", "6.60", null));
+        ByteArrayOutputStream o = new ByteArrayOutputStream();
+        o.write(new byte[]{0x30, (byte) 0x82, 0x13, 0x37, 0x06, 0x09, 0x2A, 0x01, 0x02, (byte) 0xFF, 0x00});
+        o.write(byt(semplificata));
+        o.write(new byte[]{0x00, 0x00, (byte) 0xA0, (byte) 0x82, 0x03, 0x01, 'z', 'z', 0x00});
+        assertThat(new String(EstrattoreP7m.estraiXml(o.toByteArray()), StandardCharsets.UTF_8)).isEqualTo(semplificata);
+        assertThat(ParserFatturaPa.leggi(EstrattoreP7m.estraiXml(FattureProva.p7mContiguo(byt(semplificata)))).get(0).totaleCent()).isEqualTo(3660);
+    }
+
     @Test
     void trovaLXmlSenzaDichiarazioneEConPrefissoDiNamespace() throws Exception {
         String senzaDichiarazione = fatturaConPrefisso("p", denominazione("X", "1"),
@@ -63,7 +76,10 @@ class EstrattoreP7mTest {
     @Test
     void senzaXmlDentroDaErroreChiaro() {
         assertThatThrownBy(() -> EstrattoreP7m.estraiXml(new byte[]{0x30, 0x03, 0x02, 0x01, 0x05}))
-                .isInstanceOf(ParserFatturaPa.ErroreLettura.class).hasMessageContaining("firmato");
+                .isInstanceOf(ParserFatturaPa.ErroreLettura.class).hasMessageContaining("firmato")
+                // il messaggio lo legge il cliente: «fattura elettronica», non «XML» (resta solo l'estensione .xml)
+                .hasMessageContaining("fattura elettronica")
+                .satisfies(e -> assertThat(e.getMessage()).doesNotContain("XML"));
         assertThatThrownBy(() -> EstrattoreP7m.estraiXml(new byte[0])).isInstanceOf(ParserFatturaPa.ErroreLettura.class);
     }
 }

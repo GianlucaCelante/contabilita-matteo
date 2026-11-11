@@ -18,3 +18,8 @@ export default function BadgeSede({ id, taglia = "grande", decorativo }: { id: n
     </span>
   );
 }
+
+// Il contrassegno testuale di una sede personale (spese dei titolari), accanto al nome: la sede si riconosce dalla parola, non dal colore.
+export function SegnoPersonale({ className = "" }: { className?: string }) {
+  return <span className={`inline-flex shrink-0 items-center rounded-md border border-dashed border-bordo2 px-1.5 py-px text-[11px] font-bold leading-[1.3] text-tenue ${className}`}>Personale</span>;
+}

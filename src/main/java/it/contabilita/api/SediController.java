@@ -34,7 +34,7 @@ public class SediController {
 
     @PostMapping
     public ResponseEntity<SedeDto> crea(@RequestBody SedeInput corpo) {
-        Esito e = sedi.crea(corpo == null ? null : corpo.nome());
+        Esito e = sedi.crea(corpo == null ? null : corpo.nome(), corpo == null ? null : corpo.personale());
         return ResponseEntity.status(e.creata() ? HttpStatus.CREATED : HttpStatus.OK).body(e.sede());
     }
 

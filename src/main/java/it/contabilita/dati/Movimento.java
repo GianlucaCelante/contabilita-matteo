@@ -66,6 +66,13 @@ public class Movimento {
     @Column(nullable = false)
     private boolean pagata;
 
+    /**
+     * L'identificativo comune delle parti di un movimento diviso fra sedi («dividi»): lo stesso per tutte le parti, null
+     * per un movimento non diviso. Non si cambia: resta anche se una parte viene modificata o le altre eliminate.
+     */
+    @Column(updatable = false)
+    private String divisione;
+
     @Column(name = "allegato_nome")
     private String allegatoNome;
 
@@ -114,6 +121,8 @@ public class Movimento {
     public void setAnnoMese(String annoMese) { this.annoMese = annoMese; }
     public boolean isPagata() { return pagata; }
     public void setPagata(boolean pagata) { this.pagata = pagata; }
+    public String getDivisione() { return divisione; }
+    public void setDivisione(String divisione) { this.divisione = divisione; }
     public String getAllegatoNome() { return allegatoNome; }
     public void setAllegatoNome(String allegatoNome) { this.allegatoNome = allegatoNome; }
     public String getAllegatoFile() { return allegatoFile; }

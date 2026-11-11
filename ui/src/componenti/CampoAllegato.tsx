@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
+import { notaAllegato } from "../util/allegatoDemo";
 import { controllaAllegato, preparaAllegato, tipoDi } from "../util/immagini";
 import LenteImmagine from "./LenteImmagine";
 import { IconaFotocamera, IconaGraffetta } from "./IconeMovimento";
@@ -8,6 +9,14 @@ interface ProprietaCampoAllegato {
   file: File | null;
   onCambia: (file: File | null) => void;
   disabilitato?: boolean;
+  // Il file scelto sta partendo (nel dettaglio l'allegato si carica subito): il pulsante dice «Carico…» e non si tocca.
+  inCaricamento?: boolean;
+  // Il file scelto non va bene (il motivo e' scritto sotto il campo): il nome del file rifiutato, o null quando l'errore non c'e'
+  // piu' (un altro file, «Rimuovi»). Serve a «Nuovo movimento» per ricordarlo nell'avviso dopo il salvataggio.
+  onRifiutato?: (nomeFile: string | null) => void;
+  // Il file scelto si sta preparando (ridimensionamento e controllo, asincroni): chi salva aspetta, altrimenti il movimento partirebbe
+  // senza il file appena scelto.
+  onPreparazione?: (inCorso: boolean) => void;
 }
 
 // Sul telefono (puntatore "grossolano") il pulsante invita a scattare.
@@ -18,9 +27,12 @@ function suTelefono(): boolean {
 // Scelta dell'allegato facoltativo PRIMA del salvataggio: anteprima (miniatura per le
 // immagini, icona e nome per i PDF), «Rimuovi», controlli in italiano e ridimensionamento
 // delle foto grandi. Il file arriva al genitore gia' pronto per l'invio.
-export default function CampoAllegato({ file, onCambia, disabilitato }: ProprietaCampoAllegato) {
+export default function CampoAllegato({ file, onCambia, disabilitato, inCaricamento, onRifiutato, onPreparazione }: ProprietaCampoAllegato) {
   const idEtichetta = useId();
   const idErrore = useId();
+  const idNota = useId();
+  // Solo nella demo: gli allegati non si salvano, e si dice prima di scegliere il file. Nell'app vera non c'e' nessuna nota.
+  const nota = notaAllegato(import.meta.env.VITE_DEMO === "1");
   const rifInput = useRef<HTMLInputElement>(null);
   const [errore, setErrore] = useState<string | null>(null);
   const [inCorso, setInCorso] = useState(false);
@@ -38,18 +50,36 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
     return () => URL.revokeObjectURL(url);
   }, [file, eImmagine]);
 
+  // La preparazione e' asincrona: se nel frattempo il campo e' stato smontato (dopo un salvataggio «Nuovo movimento» lo rimonta
+  // pulito) il risultato si butta, altrimenti il file o il rifiuto finirebbero sul modulo del movimento successivo.
+  const montato = useRef(true);
+  useEffect(() => {
+    montato.current = true;
+    return () => {
+      montato.current = false;
+    };
+  }, []);
+
   async function scelto(scelto: File | undefined) {
     if (rifInput.current) rifInput.current.value = ""; // si puo' riscegliere lo stesso file
     if (!scelto) return;
     setErrore(null);
+    onRifiutato?.(null);
     setInCorso(true);
+    onPreparazione?.(true);
     try {
       const pronto = await preparaAllegato(scelto);
       const problema = await controllaAllegato(pronto);
-      if (problema) setErrore(problema);
-      else onCambia(pronto);
+      if (!montato.current) return;
+      if (problema) {
+        setErrore(problema);
+        onRifiutato?.(scelto.name);
+      } else onCambia(pronto);
     } finally {
-      setInCorso(false);
+      if (montato.current) {
+        setInCorso(false);
+        onPreparazione?.(false);
+      }
     }
   }
 
@@ -97,6 +127,7 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
             aria-label={`Rimuovi l'allegato ${file.name}`}
             onClick={() => {
               setErrore(null);
+              onRifiutato?.(null);
               onCambia(null);
             }}
           >
@@ -107,12 +138,14 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
         <button
           type="button"
           className="flex min-h-[52px] w-full items-center gap-2 rounded-[10px] border border-dashed border-tratteggio bg-carta px-3.5 text-left text-[15px] text-spento hover:bg-sabbia disabled:opacity-60 md:gap-2.5"
-          disabled={disabilitato || inCorso}
-          aria-describedby={errore ? idErrore : undefined}
+          disabled={disabilitato || inCorso || inCaricamento}
+          aria-describedby={errore ? idErrore : nota ? idNota : undefined}
           onClick={() => rifInput.current?.click()}
         >
           {inCorso ? (
             "Preparo il file…"
+          ) : inCaricamento ? (
+            "Carico…"
           ) : (
             <>
               {icona}
@@ -120,6 +153,11 @@ export default function CampoAllegato({ file, onCambia, disabilitato }: Propriet
             </>
           )}
         </button>
+      )}
+      {nota && (
+        <p id={idNota} className="m-0 mt-1 text-[13px] leading-snug text-spento">
+          {nota}
+        </p>
       )}
       {lente && file && miniatura && <LenteImmagine titolo={file.name} src={miniatura} onChiudi={() => setLente(false)} />}
       <div aria-live="polite">

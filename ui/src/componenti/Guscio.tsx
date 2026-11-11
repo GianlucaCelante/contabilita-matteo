@@ -3,7 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useBarreFisse } from "../hooks/useBarreFisse";
 import { useTastieraVirtuale } from "../hooks/useTastieraVirtuale";
 import { titoloDellaVista, titoloDocumento, titoloPer } from "../util/titoloPagina";
-import { azzeraPosizioneLista, inMovimenti, posizioneLista } from "../util/posizioneLista";
+import { cambioDiVista, inMovimenti, posizioneLista, ricordaLoScorrimento } from "../util/posizioneLista";
 import ErroreVista from "./ErroreVista";
 import { IconaEsporta,IconaImpostazioni, IconaMarchio, IconaMovimenti, IconaPiu, IconaRiepilogo, IconaStatistiche, type ProprietaIcona } from "./Icone";
 
@@ -23,7 +23,7 @@ const VOCI: Voce[] = [
 
 // Impianto della pagina: barra laterale larga 88 px sul computer, barra in
 // basso sul telefono (la scelta la fa il CSS con la media query "md"), con il
-// pulsante tondo «+» per il nuovo movimento in Riepilogo e Movimenti.
+// pulsante tondo «+» per il nuovo movimento in Riepilogo, Movimenti e nelle statistiche per voce.
 // Il nuovo movimento e il suo dettaglio stanno sotto /movimenti, «Pizze e ordini» sotto /statistiche: la voce
 // Movimenti (o Statistiche) resta evidenziata (NavLink senza "end").
 export default function Guscio() {
@@ -49,26 +49,38 @@ export default function Guscio() {
     percorsoPrecedente.current = posizione.pathname;
     const principale = rifPrincipale.current;
     principale?.focus({ preventScroll: true });
-    if (!inMovimenti(posizione.pathname)) azzeraPosizioneLista();
-    // Si torna alla lista dal dettaglio: si riparte da dove eri, appena la lista ha la sua altezza.
-    if (principale && posizione.pathname === "/movimenti" && prima.startsWith("/movimenti/")) {
-      const meta = posizioneLista.scroll;
-      let tentativi = 0;
-      ripristinando.current = true;
-      const prova = () => {
-        principale.scrollTop = meta;
-        if (Math.abs(principale.scrollTop - meta) > 1 && tentativi++ < 40) requestAnimationFrame(prova);
-        else ripristinando.current = false;
-      };
-      requestAnimationFrame(prova);
+    // Le liste (Movimenti, statistiche per voce, fatture) ricordano dove eri: tornando dalla pagina aperta da li' si riparte
+    // da quel punto, appena la lista ha la sua altezza. In ogni altro caso si parte dall'alto (util/posizioneLista).
+    const { ripristina, dimentica } = cambioDiVista(prima, posizione.pathname);
+    const meta = ripristina ? (posizioneLista.scorrimenti.get(posizione.pathname) ?? 0) : 0;
+    for (const lista of dimentica) posizioneLista.scorrimenti.delete(lista);
+    if (!inMovimenti(posizione.pathname)) posizioneLista.ricerca = "";
+    if (!principale || meta <= 0) {
+      principale?.scrollTo({ top: 0 });
       return;
     }
-    principale?.scrollTo({ top: 0 });
+    let tentativi = 0;
+    let interrotto = false;
+    ripristinando.current = true;
+    const prova = () => {
+      if (interrotto) return;
+      principale.scrollTop = meta;
+      if (Math.abs(principale.scrollTop - meta) > 1 && tentativi++ < 40) requestAnimationFrame(prova);
+      else ripristinando.current = false;
+    };
+    requestAnimationFrame(prova);
+    // Se si cambia vista mentre la lista si sta ancora riposizionando, ci si ferma.
+    return () => {
+      interrotto = true;
+      ripristinando.current = false;
+    };
   }, [posizione.pathname]);
 
-  // La lista dei Movimenti ricorda dove sei arrivato scorrendo.
+  // Le liste ricordano dove sei arrivato scorrendo. Finche' il cambio di vista non e' stato elaborato (qui sopra) non si
+  // registra niente: lo scorrimento che il browser aggiusta da solo cambiando contenuto non deve coprire la posizione ricordata.
   const ricordaScorrimento = (evento: UIEvent<HTMLElement>) => {
-    if (posizione.pathname === "/movimenti" && !ripristinando.current) posizioneLista.scroll = evento.currentTarget.scrollTop;
+    if (ripristinando.current || percorsoPrecedente.current !== posizione.pathname) return;
+    if (ricordaLoScorrimento(posizione.pathname)) posizioneLista.scorrimenti.set(posizione.pathname, evento.currentTarget.scrollTop);
   };
 
   const saltaAlContenuto = (evento: MouseEvent<HTMLAnchorElement>) => {
@@ -76,7 +88,8 @@ export default function Guscio() {
     rifPrincipale.current?.focus();
   };
 
-  const mostraNuovo = posizione.pathname === "/riepilogo" || posizione.pathname === "/movimenti";
+  // Il «+» del telefono: nelle viste da cui si aggiunge un movimento. Chi lo apre dice da dove, per tornarci dopo.
+  const mostraNuovo = ["/riepilogo", "/movimenti", "/statistiche/voci", "/statistiche/voci/dettaglio"].includes(posizione.pathname);
 
   return (
     <div className="guscio fixed inset-0 flex flex-col md:flex-row">
@@ -118,12 +131,14 @@ export default function Guscio() {
       {mostraNuovo && (
         <Link
           to="/movimenti/nuovo"
+          state={{ da: posizione.pathname + posizione.search }}
           aria-label="Nuovo movimento"
-          className={
-            // In Movimenti sul telefono sopra la barra c'e' quella dei totali: il pulsante sale per non coprirla.
-            (posizione.pathname === "/movimenti" ? "bottom-[calc(var(--d-nav)+78px+env(safe-area-inset-bottom))] " : "bottom-[calc(var(--d-nav)+20px+env(safe-area-inset-bottom))] ") +
-            "pulsanteNuovo fixed right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
-          }
+          // l'avviso in basso non lo copre: gli si mette di fianco (util/avviso.ts)
+          data-avviso-di-fianco
+          // Sta 20 px sopra la barra di navigazione e, se la vista ha una barra fissa in fondo (i totali di Movimenti), sopra anche a
+          // quella: --h-barra-basso e' la sua altezza misurata (useBarreFisse), 0 dove non c'e'. Nessun numero per vista: la barra dei
+          // totali cambia altezza (con o senza la riga del conteggio) e il «+» la segue.
+          className="pulsanteNuovo fixed bottom-[calc(var(--d-nav)+var(--h-barra-basso)+20px+env(safe-area-inset-bottom))] right-4 z-20 flex h-14 w-14 items-center justify-center rounded-full bg-verde text-white shadow-ombra md:hidden"
         >
           <IconaPiu larghezza={26} spessoreTratto={2.25} />
         </Link>

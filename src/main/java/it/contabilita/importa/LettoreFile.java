@@ -1,6 +1,10 @@
 package it.contabilita.importa;
 
+import it.contabilita.PerLog;
 import it.contabilita.importa.ParserFatturaPa.ErroreLettura;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -27,8 +31,15 @@ import java.util.zip.ZipFile;
  * totale DOPO la decompressione. La lettura si ferma appena un limite e' superato (non si decomprime il resto) e
  * l'intero archivio e' rifiutato con un errore chiaro. Si ignorano cartelle, {@code __MACOSX}, {@code .DS_Store}
  * e ogni altro file che non sia {@code .xml} o {@code .xml.p7m} (gli zip annidati non si aprono).
+ *
+ * <p>Il totale vale per tutta una lettura, non per ogni zip: chi legge piu' file insieme passa a
+ * {@link #leggi(String, byte[], long)} i byte gia' letti. E i 200 MB sono solo il massimo: {@link ImportazioneService}
+ * costruisce il lettore con un totale piu' basso se la memoria del programma e' poca (vedi
+ * {@link ImportazioneService#limiteLettura}), perche' tutto quello che si legge resta in memoria fino alla conferma.
  */
 public class LettoreFile {
+
+    private static final Logger log = LoggerFactory.getLogger(LettoreFile.class);
 
     public static final int MAX_FILE = 2000;
     public static final long MAX_BYTE_FILE = 20L * 1024 * 1024;
@@ -58,16 +69,28 @@ public class LettoreFile {
         this.maxByteTotale = maxByteTotale;
     }
 
-    /** Un file caricato; mai eccezioni: i problemi finiscono in {@link Risultato#errori()}. */
+    /** Un file caricato, da solo. */
     public Risultato leggi(String nome, byte[] contenuto) {
+        return leggi(nome, contenuto, 0);
+    }
+
+    /**
+     * Un file caricato; mai eccezioni: i problemi finiscono in {@link Risultato#errori()}. {@code giaLetti}: i byte dei
+     * file gia' letti nella stessa anteprima, che contano nel totale insieme a questo.
+     */
+    public Risultato leggi(String nome, byte[] contenuto, long giaLetti) {
         List<FileXml> file = new ArrayList<>();
         List<ErroreFile> errori = new ArrayList<>();
         String minuscolo = nome.toLowerCase(Locale.ROOT);
         if (minuscolo.endsWith(".zip")) {
-            leggiZip(nome, contenuto, file, errori);
+            leggiZip(nome, contenuto, giaLetti, file, errori);
         } else if (eXml(minuscolo) || eP7m(minuscolo)) {
-            if (contenuto.length > maxByteFile) {
-                errori.add(new ErroreFile(nome, "Il file è troppo grande (massimo " + formato(maxByteFile) + ")."));
+            if (contenuto.length > Math.min(maxByteFile, maxByteTotale)) {
+                errori.add(new ErroreFile(nome, "Il file è troppo grande (massimo " + formato(Math.min(maxByteFile, maxByteTotale)) + ")."));
+            } else if (giaLetti + contenuto.length > maxByteTotale) {
+                log.warn("Importazione, {}: oltre il totale di una lettura (già letti {} byte, file {} byte, massimo {})", PerLog.pulisci(nome),
+                        giaLetti, contenuto.length, maxByteTotale);
+                errori.add(new ErroreFile(nome, troppiInsieme(nome)));
             } else {
                 aggiungi(nome, nome, contenuto, file, errori);
             }
@@ -90,6 +113,7 @@ public class LettoreFile {
             byte[] xml = eP7m(nomeAllegato.toLowerCase(Locale.ROOT)) ? EstrattoreP7m.estraiXml(originale) : originale;
             file.add(new FileXml(nomeFile, nomeAllegato, xml, originale));
         } catch (ErroreLettura e) {
+            log.warn("Importazione, {}: {}", PerLog.pulisci(nomeFile), PerLog.pulisci(e.dettaglio()));
             errori.add(new ErroreFile(nomeFile, e.getMessage()));
         }
     }
@@ -102,7 +126,13 @@ public class LettoreFile {
         }
     }
 
-    private void leggiZip(String nomeZip, byte[] contenuto, List<FileXml> file, List<ErroreFile> errori) {
+    /** Il totale e' superato contando anche gli altri file della stessa lettura. */
+    private String troppiInsieme(String nome) {
+        return "I file scelti sono troppo grandi tutti insieme (massimo " + formato(maxByteTotale) + " per volta): «" + nome
+                + "» non è stato letto. Leggi meno file per volta.";
+    }
+
+    private void leggiZip(String nomeZip, byte[] contenuto, long giaLetti, List<FileXml> file, List<ErroreFile> errori) {
         List<FileXml> trovati = new ArrayList<>();
         List<ErroreFile> avvisi = new ArrayList<>();
         long totale = 0;
@@ -116,7 +146,7 @@ public class LettoreFile {
                 for (Enumeration<? extends ZipEntry> elenco = zip.entries(); elenco.hasMoreElements(); ) {
                     ZipEntry voce = elenco.nextElement();
                     if (++voci > maxFile * 10L) {
-                        throw new LimiteSuperato("Lo zip ha troppe voci: archivio rifiutato.");
+                        throw new LimiteSuperato("Lo zip contiene troppi elementi: non è stato letto.");
                     }
                     if (voce.isDirectory()) {
                         continue;
@@ -124,11 +154,11 @@ public class LettoreFile {
                     String percorso = voce.getName();
                     String etichetta = nomeZip + " › " + percorso;
                     if (!nomeValido(percorso)) {
-                        avvisi.add(new ErroreFile(etichetta, "Nome non valido nello zip: voce ignorata."));
+                        avvisi.add(new ErroreFile(etichetta, "Nome non valido nello zip: file saltato."));
                         continue;
                     }
                     if (++fileContati > maxFile) {
-                        throw new LimiteSuperato("Lo zip contiene troppi file (massimo " + maxFile + "): archivio rifiutato.");
+                        throw new LimiteSuperato("Lo zip contiene troppi file (massimo " + maxFile + "): non è stato letto.");
                     }
                     String base = percorso.substring(Math.max(percorso.lastIndexOf('/'), percorso.lastIndexOf('\\')) + 1);
                     String minuscolo = base.toLowerCase(Locale.ROOT);
@@ -139,16 +169,19 @@ public class LettoreFile {
                     }
                     Lettura letto;
                     try (InputStream in = zip.getInputStream(voce)) {
-                        letto = leggiLimitato(in, percorso, true, totale);
+                        letto = leggiLimitato(in, nomeZip, percorso, giaLetti, totale);
                     }
                     totale += letto.contati();
                     aggiungi(etichetta, base, letto.dati(), trovati, avvisi);
                 }
             }
         } catch (LimiteSuperato e) {
+            log.warn("Importazione, {}: {} (voci {}, file {}, byte letti {})", PerLog.pulisci(nomeZip), PerLog.pulisci(e.getMessage()), voci,
+                    fileContati, totale);
             errori.add(new ErroreFile(nomeZip, e.getMessage()));
             return;
         } catch (IOException | IllegalArgumentException e) {
+            log.warn("Importazione, {}: zip non leggibile: {}", PerLog.pulisci(nomeZip), PerLog.pulisci(e));
             errori.add(new ErroreFile(nomeZip, "Lo zip non si può leggere: è danneggiato o non è uno zip valido."));
             return;
         } finally {
@@ -167,13 +200,16 @@ public class LettoreFile {
         }
     }
 
-    /** {@code dati} e' null per una voce scartata; {@code contati} conta comunque i byte decompressi. */
+    /** I byte della voce e quanti sono. */
     private record Lettura(byte[] dati, long contati) {
     }
 
-    /** Legge la voce corrente fermandosi al superamento dei limiti; se {@code conserva} e' falso i byte si contano e si scartano. */
-    private Lettura leggiLimitato(InputStream in, String nome, boolean conserva, long totaleFinora) throws IOException, LimiteSuperato {
-        ByteArrayOutputStream out = conserva ? new ByteArrayOutputStream() : null;
+    /**
+     * Legge la voce corrente fermandosi al superamento dei limiti. Nel totale contano i byte gia' letti da questo zip
+     * ({@code totaleFinora}) e quelli degli altri file della stessa lettura ({@code giaLetti}).
+     */
+    private Lettura leggiLimitato(InputStream in, String nomeZip, String nome, long giaLetti, long totaleFinora) throws IOException, LimiteSuperato {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         long contati = 0;
         int n;
@@ -181,17 +217,18 @@ public class LettoreFile {
             contati += n;
             if (contati > maxByteFile) {
                 throw new LimiteSuperato("Il file «" + nome + "» nello zip è troppo grande (massimo "
-                        + formato(maxByteFile) + " decompresso): archivio rifiutato.");
+                        + formato(maxByteFile) + " una volta estratto): lo zip non è stato letto.");
             }
             if (totaleFinora + contati > maxByteTotale) {
-                throw new LimiteSuperato("Il contenuto decompresso dello zip supera il totale consentito ("
-                        + formato(maxByteTotale) + "): archivio rifiutato.");
+                throw new LimiteSuperato("Il contenuto dello zip è troppo grande (massimo " + formato(maxByteTotale)
+                        + " in totale): non è stato letto.");
             }
-            if (out != null) {
-                out.write(buffer, 0, n);
+            if (giaLetti + totaleFinora + contati > maxByteTotale) {
+                throw new LimiteSuperato(troppiInsieme(nomeZip));
             }
+            out.write(buffer, 0, n);
         }
-        return new Lettura(out == null ? null : out.toByteArray(), contati);
+        return new Lettura(out.toByteArray(), contati);
     }
 
     /** Falso per percorsi assoluti, con unita' disco o con segmenti "..": il tipico "zip-slip". */

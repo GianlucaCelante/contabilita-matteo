@@ -20,7 +20,8 @@ import java.util.Set;
 
 /**
  * Le sedi della pizzeria: elenco, creazione dal nome (senza distinguere maiuscole), rinomina, archiviazione.
- * Una sede non si cancella; l'ultima sede attiva non si puo' archiviare.
+ * Una sede non si cancella; l'ultima sede attiva non si puo' archiviare. Una sede «personale» (spese dei titolari) non ha
+ * pizze e ordini e resta fuori dai totali se il filtro sedi manca; il locale ha sempre almeno una sede attiva non personale.
  */
 @Service
 public class SediService {
@@ -71,15 +72,17 @@ public class SediService {
     public record Esito(SedeDto sede, boolean creata) {
     }
 
+    /** {@code personale} vale solo per una sede nuova (null = no); una sede che esiste gia' torna com'e'. */
     @Transactional
-    public Esito crea(String nome) {
+    public Esito crea(String nome, Boolean personale) {
         String n = nomeObbligatorio(nome);
         return sedi.findByNomeChiave(AnagraficheService.chiave(n))
                 .map(s -> new Esito(dto(s), false))
                 .orElseGet(() -> {
-                    Sede nuova = sedi.save(new Sede(n, AnagraficheService.chiave(n), sedi.ordineMassimo() + 1,
-                            LocalDateTime.now(clock).withNano(0)));
-                    return new Esito(dto(nuova, 0), true);
+                    Sede s = new Sede(n, AnagraficheService.chiave(n), sedi.ordineMassimo() + 1,
+                            LocalDateTime.now(clock).withNano(0));
+                    s.setPersonale(Boolean.TRUE.equals(personale));
+                    return new Esito(dto(sedi.save(s), 0), true);
                 });
     }
 
@@ -98,11 +101,24 @@ public class SediService {
             s.setNome(n);
             s.setNomeChiave(chiave);
         }
-        if (in.archiviata() != null && in.archiviata() != s.isArchiviata()) {
-            if (in.archiviata() && sedi.countByArchiviataFalse() <= 1) {
-                throw new ErroreApi(HttpStatus.CONFLICT, "Non si può archiviare l'ultima sede attiva.");
-            }
+        boolean archiviare = in.archiviata() != null && in.archiviata() && !s.isArchiviata();
+        boolean renderePersonale = Boolean.TRUE.equals(in.personale()) && !s.isPersonale();
+        // i conteggi prima di cambiare l'entita'
+        if (archiviare && sedi.countByArchiviataFalse() <= 1) {
+            throw new ErroreApi(HttpStatus.CONFLICT, "Non si può archiviare l'ultima sede attiva.");
+        }
+        // il locale deve avere almeno una sede attiva e non personale
+        if ((archiviare || renderePersonale) && !s.isArchiviata() && !s.isPersonale()
+                && sedi.countByArchiviataFalseAndPersonaleFalse() <= 1) {
+            throw new ErroreApi(HttpStatus.CONFLICT, archiviare
+                    ? "Non si può archiviare l'ultima sede attiva del locale (le altre sono personali)."
+                    : "L'ultima sede attiva del locale non può diventare personale.");
+        }
+        if (in.archiviata() != null) {
             s.setArchiviata(in.archiviata());
+        }
+        if (in.personale() != null) {
+            s.setPersonale(in.personale());
         }
         return dto(sedi.save(s));
     }
@@ -136,8 +152,28 @@ public class SediService {
     }
 
     /**
+     * Il filtro {@code sedi=1,2} di elenchi, riepilogo, statistiche ed esportazione: gli id dati (sedi personali comprese);
+     * se assente o vuoto, tutte le sedi non personali (archiviate comprese). Null = nessun filtro (tutte le sedi): succede
+     * solo quando non esistono sedi personali, cosi' le query restano quelle di prima.
+     */
+    @Transactional(readOnly = true)
+    public Set<Long> filtro(String parametro) {
+        Set<Long> ids = idsDa(parametro);
+        if (ids != null || !sedi.existsByPersonaleTrue()) {
+            return ids;
+        }
+        Set<Long> delLocale = new LinkedHashSet<>();
+        for (Sede s : tutte()) {
+            if (!s.isPersonale()) {
+                delLocale.add(s.getId());
+            }
+        }
+        return delLocale;
+    }
+
+    /**
      * Il parametro {@code sedi=1,2}: gli id, oppure null se assente o vuoto (= tutte le sedi, archiviate comprese).
-     * Un valore che non e' un numero e' un 400.
+     * Un valore che non e' un numero e' un 400. Per i filtri dei totali si usa {@link #filtro(String)}.
      */
     public static Set<Long> idsDa(String parametro) {
         if (parametro == null || parametro.isBlank()) {
@@ -177,6 +213,6 @@ public class SediService {
     }
 
     private static SedeDto dto(Sede s, long numeroMovimenti) {
-        return new SedeDto(s.getId(), s.getNome(), s.isArchiviata(), s.getOrdine(), numeroMovimenti);
+        return new SedeDto(s.getId(), s.getNome(), s.isArchiviata(), s.isPersonale(), s.getOrdine(), numeroMovimenti);
     }
 }

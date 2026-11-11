@@ -1,0 +1,23 @@
+databaseChangeLog:
+  # Versione 13: l'identificativo comune dei movimenti divisi fra sedi (docs/api.md, «Movimenti», «divisione»).
+  # POST /api/movimenti/dividi crea un movimento per sede: prima erano indipendenti, ora hanno tutti lo stesso valore in
+  # «divisione». La ripetizione di ogni sede porta lo stesso valore, da cui nasce l'id comune delle parti di ogni scadenza.
+  # Solo aggiunte: due colonne facoltative, null per tutto quello che c'e' gia' (nessun dato viene toccato), e un indice.
+  # Il contesto «divisione» serve solo alle prove di migrazione; senza contesti si applica sempre.
+  - changeSet:
+      id: 130-movimento-divisione
+      author: contabilita
+      context: divisione
+      changes:
+        - sql:
+            comment: "Null = movimento non diviso (anche tutti quelli di prima)."
+            sql: ALTER TABLE movimento ADD COLUMN divisione TEXT
+        - sql:
+            comment: "Null = ripetizione non nata da una divisione."
+            sql: ALTER TABLE ricorrenza ADD COLUMN divisione TEXT
+        - createIndex:
+            indexName: ix_movimento_divisione
+            tableName: movimento
+            columns:
+              - column:
+                  name: divisione

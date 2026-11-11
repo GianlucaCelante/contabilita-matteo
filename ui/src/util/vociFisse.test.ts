@@ -116,6 +116,7 @@ describe("daMovimento: il flag si legge dal documento", () => {
     allegatoNome: null,
     creatoIl: "2026-10-05T09:00:00",
     modificatoIl: null,
+    divisione: null,
   };
   it("RETRIBUZIONE_EXTRA e RETRIBUZIONE_REGOLARE accendono il flag; il nome della categoria non conta", () => {
     expect(daMovimento({ ...base, documento: "RETRIBUZIONE_EXTRA" })).toMatchObject({ eRetribuzione: true, retribuzione: "EXTRA", categoria: "Paghe" });

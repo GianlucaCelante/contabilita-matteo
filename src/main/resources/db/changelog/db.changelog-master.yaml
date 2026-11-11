@@ -29,3 +29,12 @@ databaseChangeLog:
   - include:
       file: v10-fatture-da-fare.yaml
       relativeToChangelogFile: true
+  - include:
+      file: v11-pizze-giorni.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v12-sede-personale.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: v13-divisione.yaml
+      relativeToChangelogFile: true

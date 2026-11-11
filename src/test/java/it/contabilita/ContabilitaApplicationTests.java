@@ -24,9 +24,9 @@ class ContabilitaApplicationTests extends ProvaBase {
         List<String> tabelle = jdbc.queryForList("SELECT name FROM sqlite_master WHERE type='table'", String.class);
         assertThat(tabelle).contains("categoria", "fornitore", "dipendente", "ricorrenza", "movimento", "impostazione");
         List<String> indici = jdbc.queryForList("SELECT name FROM sqlite_master WHERE type='index'", String.class);
-        assertThat(indici).contains("ix_movimento_data", "ix_movimento_tipo", "ix_movimento_ricorrenza_data",
+        assertThat(indici).contains("ix_movimento_data", "ix_movimento_tipo", "ix_movimento_ricorrenza_data", "ix_movimento_divisione",
                 "ux_categoria_nome_tipo", "ux_fornitore_nome", "ux_dipendente_nome");
-        assertThat(jdbc.queryForList("SELECT id FROM databasechangelog", String.class)).hasSize(17); // 6 della versione 1 + allegato_file (fase 4) + 2 delle ripetizioni (frequenza, indice per data) + 2 delle sedi (tabella, colonne) + 1 delle statistiche (dati_settimana) + 1 delle categorie (personalizzata) + 1 della retribuzione (flag sulla categoria) + 1 della versione 8 (via la colonna personalizzata) + 1 della versione 9 (pagata) + 1 della versione 10 (fatture da fare: caselle e stati mensili)
+        assertThat(jdbc.queryForList("SELECT id FROM databasechangelog", String.class)).hasSize(20);// 6 della versione 1 + allegato_file (fase 4) + 2 delle ripetizioni (frequenza, indice per data) + 2 delle sedi (tabella, colonne) + 1 delle statistiche (dati_settimana) + 1 delle categorie (personalizzata) + 1 della retribuzione (flag sulla categoria) + 1 della versione 8 (via la colonna personalizzata) + 1 della versione 9 (pagata) + 1 della versione 10 (fatture da fare: caselle e stati mensili) + 1 della versione 11 (pizze e ordini giorno per giorno) + 1 della versione 12 (sede personale) + 1 della versione 13 (divisione: id comune dei movimenti divisi)
     }
 
     @Test

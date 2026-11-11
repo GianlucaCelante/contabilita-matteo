@@ -1,14 +1,21 @@
 package it.contabilita.api;
 
+import it.contabilita.PerLog;
 import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.util.unit.DataSize;
+import org.springframework.web.HttpMediaTypeNotAcceptableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
@@ -32,6 +39,19 @@ public class GestoreErrori {
 
     private static final Logger log = LoggerFactory.getLogger(GestoreErrori.class);
 
+    /** Quanto si puo' caricare in una richiesta ({@code spring.servlet.multipart.max-request-size}): lo dice il 400 del caricamento troppo grande. */
+    private final DataSize caricamentoMassimo;
+
+    /** Con il limite di application.yml: per i test che costruiscono il gestore a mano. */
+    public GestoreErrori() {
+        this(DataSize.ofMegabytes(120));
+    }
+
+    @Autowired
+    public GestoreErrori(@Value("${spring.servlet.multipart.max-request-size:120MB}") DataSize caricamentoMassimo) {
+        this.caricamentoMassimo = caricamentoMassimo;
+    }
+
     @ExceptionHandler(ErroreApi.class)
     public ResponseEntity<Map<String, Object>> gestisciErroreApi(ErroreApi e) {
         Map<String, Object> corpo = new java.util.LinkedHashMap<>();
@@ -44,11 +64,18 @@ public class GestoreErrori {
      * Una risorsa statica mancante (un asset con un nome sbagliato, un percorso API senza
      * controller) non e' un errore del servizio: senza questo handler finiva nel catch-all
      * {@link #gestisciErroreGenerico(Exception)} e rispondeva 500 invece di 404.
+     *
+     * <p>Il messaggio e' come gli altri (maiuscola, parole del cliente): «Indirizzo non trovato: /api/…», con la barra
+     * iniziale che Spring toglie dal percorso. Il percorso lo scrive chi chiama: nella risposta e nel log (a DEBUG, non e'
+     * un guasto) passa da {@link PerLog#pulisci}, che toglie a capo e caratteri di controllo e lo accorcia oltre 300 caratteri.
      */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> gestisciRisorsaMancante(NoResourceFoundException e) {
+        String percorso = e.getResourcePath() == null ? "" : e.getResourcePath();
+        String pulito = PerLog.pulisci(percorso.startsWith("/") ? percorso : "/" + percorso);
+        log.debug("indirizzo non trovato: {}", pulito);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("errore", "risorsa non trovata: " + e.getResourcePath()));
+                .body(Map.of("errore", "Indirizzo non trovato: " + pulito));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
@@ -78,9 +105,32 @@ public class GestoreErrori {
      */
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     public ResponseEntity<Map<String, String>> gestisciMetodoNonSupportato(HttpRequestMethodNotSupportedException e) {
-        log.debug("metodo non supportato: {}", e.getMessage());
+        log.debug("metodo non supportato: {}", PerLog.pulisci(e.getMessage())); // il nome del metodo lo scrive chi chiama
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("errore", "Metodo non ammesso per questo indirizzo."));
+    }
+
+    /**
+     * Un {@code Content-Type} che la rotta non legge (o che non e' nemmeno un tipo valido): errore di chi chiama, non del
+     * servizio. Senza questo handler finiva nel catch-all: 500, una riga a ERROR con lo stack e, nel corpo, il messaggio di
+     * Spring con dentro il valore scritto dal cliente. Il valore non torna nella risposta; nel log va solo a DEBUG, pulito.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Map<String, String>> gestisciTipoDiContenutoNonAmmesso(HttpMediaTypeNotSupportedException e) {
+        log.debug("tipo di contenuto non ammesso: {}", PerLog.pulisci(e.getMessage()));
+        return ResponseEntity.status(HttpStatus.UNSUPPORTED_MEDIA_TYPE).contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Tipo di contenuto non ammesso per questo indirizzo."));
+    }
+
+    /**
+     * Un {@code Accept} che la rotta non sa soddisfare (per esempio un PDF chiesto a una rotta che da' JSON): 406. La
+     * risposta resta JSON, come ogni errore: il Content-Type e' forzato, quindi Spring non rinegozia.
+     */
+    @ExceptionHandler(HttpMediaTypeNotAcceptableException.class)
+    public ResponseEntity<Map<String, String>> gestisciFormatoNonDisponibile(HttpMediaTypeNotAcceptableException e) {
+        log.debug("formato della risposta non disponibile: {}", PerLog.pulisci(e.getMessage()));
+        return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Formato della risposta non disponibile per questo indirizzo."));
     }
 
     /**
@@ -108,11 +158,35 @@ public class GestoreErrori {
                 .body(Map.of("errore", "Richiesta non leggibile: JSON non valido."));
     }
 
-    /** Caricamento troppo grande per i limiti multipart (fase 4): errore di chi chiama, non del servizio. */
+    /**
+     * Caricamento troppo grande per i limiti multipart (fase 4): errore di chi chiama, non del servizio. Il testo vale per
+     * un file come per tanti (l'importazione ne carica piu' d'uno) e dice il massimo: i due limiti di application.yml, per
+     * file e per richiesta, sono uguali apposta, cosi' il numero e' vero in tutti e due i casi.
+     */
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, String>> gestisciCaricamentoTroppoGrande(Exception e) {
         return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("errore", "Il file è troppo grande."));
+                .body(Map.of("errore", "Il caricamento è troppo grande (massimo " + caricamentoMassimo.toMegabytes()
+                        + " MB per volta): scegli meno file, o file più piccoli, e riprova."));
+    }
+
+    /**
+     * Un caricamento che non si riesce a leggere: la richiesta non e' un caricamento (multipart) dove ne serve uno, oppure
+     * e' arrivata rotta o a meta'. Errore di chi chiama o della rete, non del servizio: 400, e nel log solo a DEBUG. Il
+     * file troppo grande ha il suo handler qui sopra (piu' specifico, quindi vince).
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MultipartException.class)
+    public ResponseEntity<Map<String, String>> gestisciCaricamentoNonValido(org.springframework.web.multipart.MultipartException e) {
+        log.debug("caricamento non valido: {}", PerLog.pulisci(e.getMessage()));
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Il caricamento del file non è valido: riprova."));
+    }
+
+    /** Manca un parametro obbligatorio della richiesta ({@code ?nome=}). Il nome e' quello dichiarato dalla rotta, non un valore del cliente. */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, String>> gestisciParametroMancante(MissingServletRequestParameterException e) {
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("errore", "Manca il parametro «" + e.getParameterName() + "»."));
     }
 
     /** Manca il campo multipart atteso (per esempio «file» o «files»). */
@@ -139,7 +213,7 @@ public class GestoreErrori {
      */
     @ExceptionHandler({AsyncRequestNotUsableException.class, ClientAbortException.class})
     public void gestisciConnessioneCadutaLatoClient(Exception e) {
-        log.debug("connessione interrotta dal client: {}", e.getMessage());
+        log.debug("connessione interrotta dal client: {}", PerLog.pulisci(e.getMessage()));
     }
 
     /**
@@ -152,14 +226,23 @@ public class GestoreErrori {
             "connessione interrotta|connection reset|connection was aborted|forcibly closed|broken pipe|connessione .* chiusa",
             Pattern.CASE_INSENSITIVE);
 
+    /** Il testo del 500 per il cliente: sempre questo, mai il messaggio dell'eccezione. */
+    static final String ERRORE_INTERNO = "Errore interno: riprova. Se continua, riavvia il programma sul computer.";
+
+    /**
+     * Tutto quello che non ha un handler suo: un guasto del servizio. Al cliente arriva un testo generico (il messaggio
+     * dell'eccezione puo' contenere dati suoi o dettagli interni, e non gli direbbe cosa fare); il dettaglio va solo nel
+     * log, a ERROR con lo stack, passando da {@link PerLog#conStack}: tipo e messaggio veri, ma senza a capo ne' caratteri
+     * di controllo, perche' il messaggio puo' riportare un valore arrivato con la richiesta.
+     */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> gestisciErroreGenerico(Exception e) {
         if (e instanceof IOException && e.getMessage() != null && CONNESSIONE_CADUTA.matcher(e.getMessage()).find()) {
-            log.debug("connessione interrotta dal client mentre si scriveva la risposta: {}", e.getMessage());
+            log.debug("connessione interrotta dal client mentre si scriveva la risposta: {}", PerLog.pulisci(e.getMessage()));
             return null;
         }
-        log.error("errore non gestito in una richiesta API", e);
+        log.error("errore non gestito in una richiesta API", PerLog.conStack(e));
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("errore", "errore interno: " + e.getMessage()));
+                .body(Map.of("errore", ERRORE_INTERNO));
     }
 }

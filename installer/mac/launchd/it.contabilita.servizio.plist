@@ -10,6 +10,8 @@
     padre e la JVM deve spegnersi se WinSW muore. Su macOS il padre e' launchd (PID 1), che non
     sparisce mai, e launchd ferma la JVM da solo con SIGTERM: la sorveglianza sarebbe inutile.
     Niente -Djava.awt.headless: non c'e' grafica/stampa in questo progetto.
+    -Xmx512m: lo stesso massimo di memoria del servizio Windows (installer/Contabilita.xml, dove e' spiegato): i limiti
+    dell'importazione delle fatture si regolano su questo valore.
     La classe principale e' quella del jar eseguibile Spring Boot (it.contabilita.ContabilitaApplication),
     avviata con "-jar".
 -->
@@ -21,7 +23,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/Applications/Contabilita.app/Contents/Resources/runtime/bin/java</string>
-        <string>-Xmx256m</string>
+        <string>-Xmx512m</string>
         <string>-jar</string>
         <string>/Applications/Contabilita.app/Contents/Resources/app/contabilita.jar</string>
     </array>
