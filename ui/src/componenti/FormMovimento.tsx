@@ -372,10 +372,7 @@ export default function FormMovimento({ campi, onCambia, errori, modifica, alleg
       {!modifica && <Scelte legenda="Che cos'è" valore={campi.tipo} opzioni={TIPI} onScegli={cambiaTipo} />}
 
       {campi.tipo === "RICAVO" && (
-        <div>
-          <Scelte legenda="Che ricavo è" valore={campi.tipoRicavo} opzioni={OPZIONI_RICAVO} onScegli={(v) => onCambia({ tipoRicavo: v })} bassa={modifica} />
-          <p className="m-0 mt-1.5 text-[13px] text-spento">Nel Riepilogo: «Fatturati» se c&apos;è la fattura, «Extra» se no.</p>
-        </div>
+        <Scelte legenda="Che ricavo è" valore={campi.tipoRicavo} opzioni={OPZIONI_RICAVO} onScegli={(v) => onCambia({ tipoRicavo: v })} bassa={modifica} />
       )}
 
       {/* Fattura, Scontrino o Nota di credito: si sceglie in «Nuovo» e nel dettaglio, sul computer e sul telefono. */}
