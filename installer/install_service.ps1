@@ -22,7 +22,7 @@
 #      avvio, non serve nessun comando apposta per farlo), ripristina
 #      l'avvio automatico ritardato e le azioni di ripristino, e lo fa
 #      partire.
-#   4. Crea il collegamento "Contabilita" sul desktop pubblico, in
+#   4. Crea il collegamento "Fuorigioco" (il nome mostrato del programma) sul desktop pubblico, in
 #      "Esecuzione automatica" e nel menu Start di tutti gli utenti: Edge in
 #      modalita' app su http://localhost:8766/.
 #   5. Se non e' -Silent, apre la pagina alla fine.
@@ -54,7 +54,9 @@ $BackupDir  = Join-Path $DataDir "backup"
 $FirewallRuleName = "Contabilita 8766"
 $FirewallPort = 8766
 $AppUrl     = "http://localhost:8766/"
-$ShortcutName = "Contabilita.lnk"
+$ShortcutName = "Fuorigioco.lnk"
+# Il nome delle scorciatoie di prima del cambio di nome: si tolgono, cosi' dopo un aggiornamento non restano doppie.
+$OldShortcutName = "Contabilita.lnk"
 $ServiceStopTimeoutSeconds = 30
 
 $ServiceCommonScript = Join-Path $ScriptDir "service_common.ps1"
@@ -157,7 +159,7 @@ function Set-ContabilitaFirewallRule {
     # internet, quindi va bene. Mai la porta 80, che potrebbe servire al
     # gestionale di cassa.
     Set-OrCreateFirewallRule -DisplayName $FirewallRuleName -Protocol TCP -LocalPort $FirewallPort `
-        -Description "Contabilita Matteo: interfaccia web su TCP $FirewallPort per telefoni e tablet in rete locale."
+        -Description "Fuorigioco: interfaccia web su TCP $FirewallPort per telefoni e tablet in rete locale."
 
 }
 
@@ -222,7 +224,7 @@ function New-ContabilitaShortcut {
         $shortcut = $shell.CreateShortcut($ShortcutPath)
         $shortcut.TargetPath = $EdgePath
         $shortcut.Arguments = "--app=$AppUrl"
-        $shortcut.Description = "Contabilita Matteo"
+        $shortcut.Description = "Fuorigioco"
         if (Test-Path $IconPath) {
             $shortcut.IconLocation = $IconPath
         }
@@ -272,6 +274,40 @@ function Set-ContabilitaShortcuts {
         } else {
             New-ContabilitaUrlShortcut -ShortcutPath ([IO.Path]::ChangeExtension($target, ".url"))
         }
+        # Le scorciatoie col nome vecchio, nella stessa cartella (.lnk o .url).
+        $old = Join-Path (Split-Path -Parent $target) $OldShortcutName
+        foreach ($oldPath in @($old, [IO.Path]::ChangeExtension($old, ".url"))) {
+            if (Test-Path -LiteralPath $oldPath) {
+                Write-Host "  - tolgo la scorciatoia col nome di prima: $oldPath"
+                Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+
+function Set-ServiceDisplayInfo {
+    # Il nome mostrato in services.msc e la descrizione, quelli di Contabilita.xml. WinSW li scrive solo quando
+    # registra il servizio: chi aggiorna un'installazione di prima del cambio di nome terrebbe "Contabilita' Matteo".
+    # L'id del servizio ("Contabilita") NON cambia. Un errore qui non ferma l'installazione: e' solo un'etichetta.
+    param([Parameter(Mandatory = $true)] [string]$ScExe)
+    try {
+        $info = Get-ServiceDisplayInfo -XmlPath $WinswXml
+        if ($null -eq $info) {
+            Write-Warning "Nome del servizio non letto da $WinswXml; in services.msc resta quello di prima."
+            return
+        }
+        & $ScExe config "Contabilita" DisplayName= $info.Name 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "sc.exe config DisplayName ha restituito $LASTEXITCODE; in services.msc resta il nome di prima."
+        }
+        if (-not [string]::IsNullOrWhiteSpace($info.Description)) {
+            & $ScExe description "Contabilita" $info.Description 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "sc.exe description ha restituito $LASTEXITCODE; la descrizione del servizio resta quella di prima."
+            }
+        }
+    } catch {
+        Write-Warning "Impossibile aggiornare nome e descrizione del servizio: $($_.Exception.Message)"
     }
 }
 
@@ -357,6 +393,9 @@ function Install-OrRestart-ContabilitaService {
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "sc.exe failure ha restituito $LASTEXITCODE; le azioni di ripristino potrebbero non essere state ripristinate."
         }
+        # Nome mostrato e descrizione: servono a chi AGGIORNA (il servizio e' gia' registrato e "winsw install" non
+        # viene richiamato); dopo una registrazione nuova riscrivono gli stessi valori, e' idempotente.
+        Set-ServiceDisplayInfo -ScExe $sc
     }
 
     Write-Host "  Avvio il servizio..."
@@ -399,7 +438,7 @@ Set-ContabilitaShortcuts
 Install-OrRestart-ContabilitaService
 
 Write-Host ""
-Write-Host "Fatto. Il servizio Contabilita e' installato e in esecuzione." -ForegroundColor Green
+Write-Host "Fatto. Fuorigioco (servizio Contabilita) e' installato e in esecuzione." -ForegroundColor Green
 Write-Host "Cartella dati : $DataDir"
 Write-Host "Log           : $LogDir"
 Write-Host "Indirizzo     : $AppUrl"

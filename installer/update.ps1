@@ -179,7 +179,11 @@ function Open-ContabilitaAppWindows {
     }
 
     $publicDesktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
-    $shortcut = Join-Path $publicDesktop "Contabilita.lnk"
+    # "Fuorigioco.lnk" e' il nome di adesso; "Contabilita.lnk" quello di prima, se l'installazione nuova non l'ha sostituito.
+    $shortcut = Join-Path $publicDesktop "Fuorigioco.lnk"
+    if (-not (Test-Path -LiteralPath $shortcut)) {
+        $shortcut = Join-Path $publicDesktop "Contabilita.lnk"
+    }
 
     if (Test-Path -LiteralPath $shortcut) {
         # Il collegamento pubblico punta gia' all'indirizzo giusto (stessa

@@ -30,7 +30,8 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $WinswExe  = Join-Path $ScriptDir "Contabilita.exe"
 $DataDir   = "C:\ProgramData\Contabilita"
 $FirewallRuleName = "Contabilita 8766"
-$ShortcutName = "Contabilita.lnk"
+# Le scorciatoie si chiamano "Fuorigioco"; "Contabilita" e' il nome di prima (installazioni non ancora aggiornate).
+$ShortcutNames = @("Fuorigioco.lnk", "Fuorigioco.url", "Contabilita.lnk", "Contabilita.url")
 # 30s: coerente con lo <stoptimeout> di Contabilita.xml, per dare tempo alla
 # chiusura pulita di Spring Boot e dei file SQLite di chiudersi.
 $ServiceStopTimeoutSeconds = 30
@@ -107,9 +108,10 @@ function Remove-ContabilitaShortcuts {
     $commonDesktop  = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonDesktopDirectory)
     $commonStartup  = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonStartup)
     $commonPrograms = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonPrograms)
-    if (-not [string]::IsNullOrWhiteSpace($commonDesktop))  { $paths += (Join-Path $commonDesktop $ShortcutName) }
-    if (-not [string]::IsNullOrWhiteSpace($commonStartup))  { $paths += (Join-Path $commonStartup $ShortcutName) }
-    if (-not [string]::IsNullOrWhiteSpace($commonPrograms)) { $paths += (Join-Path $commonPrograms $ShortcutName) }
+    foreach ($folder in @($commonDesktop, $commonStartup, $commonPrograms)) {
+        if ([string]::IsNullOrWhiteSpace($folder)) { continue }
+        foreach ($name in $ShortcutNames) { $paths += (Join-Path $folder $name) }
+    }
 
     foreach ($path in $paths) {
         if (Test-Path $path) {

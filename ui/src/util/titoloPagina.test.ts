@@ -9,10 +9,10 @@ describe("titolo della pagina (scheda del browser)", () => {
     expect(titoloPer("/statistiche/voci/dettaglio")).toBe("Dettaglio voce");
     expect(titoloPer("/boh")).toBe("");
   });
-  it("«<titolo> · Contabilità»; senza titolo solo «Contabilità», mai «Contabilità · Contabilità»", () => {
-    expect(titoloDocumento("Bel Fungo")).toBe("Bel Fungo · Contabilità");
-    expect(titoloDocumento("")).toBe("Contabilità");
-    expect(titoloDocumento(titoloPer("/boh"))).toBe("Contabilità");
+  it("«<titolo> · Fuorigioco»; senza titolo solo «Fuorigioco», mai «Fuorigioco · Fuorigioco»", () => {
+    expect(titoloDocumento("Bel Fungo")).toBe("Bel Fungo · Fuorigioco");
+    expect(titoloDocumento("")).toBe("Fuorigioco");
+    expect(titoloDocumento(titoloPer("/boh"))).toBe("Fuorigioco");
   });
 });
 

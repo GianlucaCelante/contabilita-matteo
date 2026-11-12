@@ -26,6 +26,7 @@ import it.contabilita.movimenti.AnagraficheService;
 import it.contabilita.movimenti.SediService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -53,7 +54,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Importazione delle fatture elettroniche in due tempi (docs/api.md): {@link #anteprima} legge i file e tiene le
  * fatture in memoria sotto un {@code importazioneId} (scadenza 30 minuti, orologio iniettato; al massimo 20 e, in
- * byte, {@code contabilita.importa.memoria-massima}: vedi {@link #faiPosto}); {@link #conferma}
+ * byte, {@code contabilita.importa.memoria-massima}: vedi {@link #faiPosto} e {@link #faiPostoPerLaLettura}); {@link #conferma}
  * crea un movimento per riga scelta. Nulla si salva finche' non si conferma.
  *
  * <p>La conferma e' atomica per riga: ogni riga ha la sua transazione (fornitore, categoria, movimento e file
@@ -100,6 +101,20 @@ public class ImportazioneService {
     /** Quanta parte della memoria massima della JVM possono occupare, al piu', i file di UNA anteprima: vedi {@link #limiteLettura}. */
     private static final int PERCENTO_DI_UNA_LETTURA = 25;
 
+    /**
+     * Quante volte i suoi byte puo' occupare un XML aperto da {@link ParserFatturaPa} (un DOM): vedi {@link #limiteFile}.
+     * Misurato con Java 17 su file da 10 MB: una fattura con tante righe (elementi brevi, come {@code DettaglioLinee})
+     * occupa circa 6 volte i suoi byte dopo la visita, un allegato in base64 circa 1 volta, un file fatto apposta di
+     * elementi minimi ({@code <a>1</a>}) circa 26. 8 copre il caso peggiore misurato fra le fatture vere (6) con un terzo
+     * di margine, e non respinge i file grandi veri, che sono fatture con un PDF allegato (circa 1). NON copre il file
+     * fatto apposta, e la misura e' della memoria che resta a file aperto: il picco durante l'apertura non e' misurato.
+     */
+    static final int FATTORE_DOM = 8;
+
+    /** Un file caricato come lo dichiara il browser, prima di essere letto: nome e dimensione. */
+    public record Dichiarato(String nome, long byteTotali) {
+    }
+
     /** Segnala una riga gia' registrata al momento della conferma. */
     private static final class Duplicata extends RuntimeException {
         Duplicata(String motivo) {
@@ -123,10 +138,19 @@ public class ImportazioneService {
     private final Map<String, Importazione> importazioni = new ConcurrentHashMap<>();
     private final AtomicLong arrivate = new AtomicLong();
 
+    @Autowired
     public ImportazioneService(MovimentoRepository movimenti, FornitoreRepository fornitori, AnagraficheService anagrafiche,
                                AllegatiService allegati, SediService sedi, PlatformTransactionManager gestoreTransazioni,
                                Clock clock, @Value("${contabilita.importa.memoria-massima:96MB}") DataSize memoriaMassima,
                                @Value("${contabilita.importa.lettura-massima:200MB}") DataSize letturaMassima) {
+        this(movimenti, fornitori, anagrafiche, allegati, sedi, gestoreTransazioni, clock, memoriaMassima, letturaMassima,
+                Runtime.getRuntime().maxMemory());
+    }
+
+    /** Con la memoria massima della JVM passata da fuori: i limiti che la seguono si provano senza dipendere dalla macchina. */
+    ImportazioneService(MovimentoRepository movimenti, FornitoreRepository fornitori, AnagraficheService anagrafiche,
+                        AllegatiService allegati, SediService sedi, PlatformTransactionManager gestoreTransazioni,
+                        Clock clock, DataSize memoriaMassima, DataSize letturaMassima, long memoriaDellaJvm) {
         this.movimenti = movimenti;
         this.fornitori = fornitori;
         this.anagrafiche = anagrafiche;
@@ -136,17 +160,21 @@ public class ImportazioneService {
         this.txLettura = new TransactionTemplate(gestoreTransazioni);
         this.txLettura.setReadOnly(true);
         this.clock = clock;
-        this.memoriaMassima = tettoEffettivo(memoriaMassima.toBytes(), Runtime.getRuntime().maxMemory());
+        this.memoriaMassima = tettoEffettivo(memoriaMassima.toBytes(), memoriaDellaJvm);
         if (this.memoriaMassima < memoriaMassima.toBytes()) {
             log.info("Importazione: il tetto di memoria delle anteprime è {} MB invece di {} MB, perché la memoria del programma è {} MB.",
-                    this.memoriaMassima / (1024 * 1024), memoriaMassima.toMegabytes(), Runtime.getRuntime().maxMemory() / (1024 * 1024));
+                    this.memoriaMassima / (1024 * 1024), memoriaMassima.toMegabytes(), memoriaDellaJvm / (1024 * 1024));
         }
-        this.letturaMassima = limiteLettura(letturaMassima.toBytes(), Runtime.getRuntime().maxMemory());
-        String avviso = avvisoLimiteLettura(letturaMassima.toBytes(), Runtime.getRuntime().maxMemory());
+        this.letturaMassima = limiteLettura(letturaMassima.toBytes(), memoriaDellaJvm);
+        String avviso = avvisoLimiteLettura(letturaMassima.toBytes(), memoriaDellaJvm);
         if (avviso != null) {
             log.info(avviso);
         }
-        this.lettore = new LettoreFile(LettoreFile.MAX_FILE, LettoreFile.MAX_BYTE_FILE, this.letturaMassima);
+        String avvisoFile = avvisoLimiteFile(memoriaDellaJvm);
+        if (avvisoFile != null) {
+            log.info(avvisoFile);
+        }
+        this.lettore = new LettoreFile(LettoreFile.MAX_FILE, limiteFile(memoriaDellaJvm), this.letturaMassima);
     }
 
     /**
@@ -163,7 +191,7 @@ public class ImportazioneService {
      * compresi): il minimo fra il limite configurato ({@code contabilita.importa.lettura-massima}, al piu' i 200 MB di
      * {@link LettoreFile}) e il {@value #PERCENTO_DI_UNA_LETTURA}% della memoria massima della JVM. Stessa regola di
      * {@link #tettoEffettivo}, con una parte piu' piccola: mentre si legge, in memoria ci sono insieme il caricamento, i
-     * file estratti e le anteprime di prima (che si scartano solo dopo, quando la nuova e' pronta). Con i 512 MB
+     * file estratti e le anteprime di prima che il nuovo carico non fa uscire (vedi {@link #faiPostoPerLaLettura}). Con i 512 MB
      * dell'installer sono 128 MB; con 256 MB sarebbero 64.
      */
     static long limiteLettura(long configurato, long memoriaDellaJvm) {
@@ -187,10 +215,70 @@ public class ImportazioneService {
                 + LettoreFile.formato(configurato) + ", perché " + causa + ".";
     }
 
+    /**
+     * Quanto puo' pesare, al piu', UN file da leggere (caricato da solo o estratto da uno zip): il minimo fra i 20 MB di
+     * {@link LettoreFile} e il {@value #PERCENTO_DI_UNA_LETTURA}% della memoria massima della JVM diviso per
+     * {@value #FATTORE_DOM} ({@link #FATTORE_DOM}). Stessa regola e stessa parte di {@link #limiteLettura}: li' contano i
+     * byte dei file, qui la memoria che serve per APRIRNE uno, che e' molte volte i suoi byte (si apre un file alla
+     * volta, e il suo DOM si butta appena lette le fatture). Con i 512 MB dell'installer sono 16 MB; i 20 MB valgono da
+     * 640 MB di memoria in su. Dal megabyte in su il risultato e' in MB interi, per difetto: e' il numero che il
+     * messaggio dice al cliente («massimo 16 MB»), e un file fra 16 e 17 MB non deve passare con un massimo dichiarato di 16.
+     */
+    static long limiteFile(long memoriaDellaJvm) {
+        long limite = Math.min(LettoreFile.MAX_BYTE_FILE, parteDellaMemoria(Long.MAX_VALUE, memoriaDellaJvm, PERCENTO_DI_UNA_LETTURA) / FATTORE_DOM);
+        long megabyte = 1024 * 1024;
+        return limite >= megabyte ? limite / megabyte * megabyte : limite;
+    }
+
+    /** La riga di log dell'avvio quando la memoria abbassa il limite per file; {@code null} se valgono i 20 MB. */
+    static String avvisoLimiteFile(long memoriaDellaJvm) {
+        long effettivo = limiteFile(memoriaDellaJvm);
+        if (effettivo >= LettoreFile.MAX_BYTE_FILE) {
+            return null;
+        }
+        return "Importazione: un file si legge se pesa al massimo " + LettoreFile.formato(effettivo) + " invece di "
+                + LettoreFile.formato(LettoreFile.MAX_BYTE_FILE) + ", perché la memoria del programma è " + LettoreFile.formato(memoriaDellaJvm) + ".";
+    }
+
     private static long parteDellaMemoria(long configurato, long memoriaDellaJvm, int percento) {
         // quoziente e resto separati: il conto e' esatto (128 MB giusti con 512) e Long.MAX_VALUE non trabocca
         long perLaJvm = memoriaDellaJvm / 100 * percento + memoriaDellaJvm % 100 * percento / 100;
         return Math.max(0, Math.min(configurato, perLaJvm));
+    }
+
+    /**
+     * Da chiamare PRIMA di portare in memoria i file caricati (e dopo {@link #controllaCaricamento}), con nome e dimensione
+     * dichiarata di ognuno: toglie subito le anteprime piu' vecchie che il nuovo carico farebbe comunque uscire, invece di
+     * tenerle in memoria per tutta la lettura (prima uscivano solo a lettura finita: nel momento peggiore c'erano insieme
+     * le anteprime di prima, il caricamento e i file estratti). Regola in {@link #daScartarePrima}.
+     *
+     * <p>Se poi la lettura fallisce, le anteprime tolte qui sono perse per niente (chi le conferma riceve il 404 «rileggi i
+     * file»). Per questo si toglie il meno possibile: contano solo i byte che possono davvero entrare in memoria
+     * ({@link LettoreFile#pesoAtteso}: non un tipo non supportato, non un file oltre il massimo), vale solo il tetto in byte
+     * e non quello sul numero (20 anteprime leggere non pesano), e ci si ferma appena il carico ci sta. Il resto lo fa
+     * {@link #faiPosto} quando l'anteprima e' pronta, come prima. Mai alla conferma.
+     */
+    public void faiPostoPerLaLettura(List<Dichiarato> file) {
+        if (file == null || file.isEmpty()) {
+            return;
+        }
+        long inArrivo = 0;
+        for (Dichiarato d : file) {
+            inArrivo += d == null ? 0 : lettore.pesoAtteso(nomeBase(d.nome()), d.byteTotali());
+        }
+        faiPostoPrima(inArrivo);
+    }
+
+    private synchronized void faiPostoPrima(long inArrivo) {
+        pulisciScadute();
+        Map<String, Voce> voci = new java.util.HashMap<>();
+        importazioni.forEach((id, i) -> voci.put(id, new Voce(i.ordine(), i.peso())));
+        List<String> via = daScartarePrima(voci, inArrivo, memoriaMassima);
+        if (!via.isEmpty()) {
+            log.info("Importazione: {} anteprime scartate prima della lettura, per far posto a {} byte in arrivo (tetto {} byte)", via.size(),
+                    inArrivo, memoriaMassima);
+            via.forEach(importazioni::remove);
+        }
     }
 
     /**
@@ -523,6 +611,29 @@ public class ImportazioneService {
             }
             via.add(id);
             quante--;
+            byteTotali -= voci.get(id).peso();
+        }
+        return via;
+    }
+
+    /**
+     * Quali importazioni togliere PRIMA di leggere un carico di {@code inArrivo} byte perche' ci stia sotto {@code tetto}
+     * insieme a quelle che restano: le piu' vecchie per numero d'arrivo, una alla volta, finche' ci sta. E' la stessa
+     * scelta che {@link #daScartare} farebbe a lettura riuscita con un'anteprima di quel peso; in piu', qui un carico che
+     * non pesa niente non fa togliere niente (nemmeno se si e' gia' oltre il tetto) e il numero di anteprime non conta.
+     */
+    static List<String> daScartarePrima(Map<String, Voce> voci, long inArrivo, long tetto) {
+        if (inArrivo <= 0) {
+            return List.of();
+        }
+        List<String> vecchie = voci.keySet().stream().sorted(Comparator.comparingLong((String id) -> voci.get(id).ordine())).toList();
+        long byteTotali = voci.values().stream().mapToLong(Voce::peso).sum();
+        List<String> via = new ArrayList<>();
+        for (String id : vecchie) {
+            if (byteTotali <= tetto - inArrivo) { // la sottrazione non trabocca: tetto >= 0 e inArrivo > 0
+                break;
+            }
+            via.add(id);
             byteTotali -= voci.get(id).peso();
         }
         return via;

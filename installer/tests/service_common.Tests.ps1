@@ -27,6 +27,26 @@ Describe "Get-PostInstallAction" {
     }
 }
 
+Describe "Get-ServiceDisplayInfo" {
+    It "legge da Contabilita.xml il nome mostrato e la descrizione del servizio" {
+        $info = Get-ServiceDisplayInfo -XmlPath (Join-Path $PSScriptRoot "..\Contabilita.xml")
+        $info.Name | Should Be "Fuorigioco"
+        $info.Description | Should Match "pizzeria"
+        $info.Description | Should Match "^Fuorigioco"
+    }
+    It "l'id del servizio resta Contabilita" {
+        $doc = New-Object System.Xml.XmlDocument
+        $doc.Load((Join-Path $PSScriptRoot "..\Contabilita.xml"))
+        $doc.SelectSingleNode("/service/id").InnerText | Should Be "Contabilita"
+    }
+    It "file che manca o senza nome: niente, senza errori" {
+        Get-ServiceDisplayInfo -XmlPath (Join-Path $PSScriptRoot "non-esiste.xml") | Should Be $null
+        $vuoto = Join-Path $env:TEMP ("servizio-senza-nome-" + [guid]::NewGuid().ToString("N") + ".xml")
+        Set-Content -Path $vuoto -Value "<service><id>X</id></service>" -Encoding UTF8
+        try { Get-ServiceDisplayInfo -XmlPath $vuoto | Should Be $null } finally { Remove-Item -LiteralPath $vuoto -Force }
+    }
+}
+
 Describe "Wait-ForServiceRunning" {
     It "se il servizio e' gia' attivo torna subito" {
         Mock Get-Service { [pscustomobject]@{ Status = "Running" } }

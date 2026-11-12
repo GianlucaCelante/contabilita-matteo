@@ -142,10 +142,10 @@ class EsportaApiTest extends ProvaBase {
     void ilNomeDelFileRiportaIlPeriodo() throws Exception {
         MockHttpServletResponse csv = scarica("/api/esporta?formato=csv&da=2026-03-01&a=2026-03-31");
         assertThat(csv.getHeader("Content-Disposition"))
-                .isEqualTo("attachment; filename=\"contabilita-2026-03-01_2026-03-31.csv\"");
+                .isEqualTo("attachment; filename=\"fuorigioco-2026-03-01_2026-03-31.csv\"");
         MockHttpServletResponse xlsx = scarica("/api/esporta?formato=xlsx&da=2026-01-01&a=2026-12-31");
         assertThat(xlsx.getHeader("Content-Disposition"))
-                .isEqualTo("attachment; filename=\"contabilita-2026-01-01_2026-12-31.xlsx\"");
+                .isEqualTo("attachment; filename=\"fuorigioco-2026-01-01_2026-12-31.xlsx\"");
         assertThat(xlsx.getContentType()).isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     }
 

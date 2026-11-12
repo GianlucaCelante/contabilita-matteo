@@ -7,6 +7,7 @@ import { osservaAccesso } from "./api/accesso";
 import { ProviderAvviso } from "./componenti/Avviso";
 import Cancello from "./componenti/Cancello";
 import { ProviderSedi } from "./componenti/ProviderSedi";
+import { NOME_PROGRAMMA } from "./util/nomeProgramma";
 import "./index.css";
 
 // Build della demo (npm run build:demo): il servizio e' finto, dentro il browser (src/demo), e il router usa
@@ -15,7 +16,7 @@ const demo = import.meta.env.VITE_DEMO === "1";
 if (demo) {
   const { installaDemo } = await import("./demo/installa");
   installaDemo();
-  document.title = "Contabilità · demo";
+  document.title = `${NOME_PROGRAMMA} · demo`;
 }
 osservaAccesso();
 

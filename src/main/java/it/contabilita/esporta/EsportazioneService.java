@@ -1,5 +1,6 @@
 package it.contabilita.esporta;
 
+import it.contabilita.NomeProgramma;
 import it.contabilita.api.Dto.Riepilogo;
 import it.contabilita.api.Dto.RisultatoSede;
 import it.contabilita.api.Dto.VoceCategoria;
@@ -92,7 +93,7 @@ public class EsportazioneService {
                 : cb.and(cb.greaterThanOrEqualTo(root.get("data"), da), cb.lessThanOrEqualTo(root.get("data"), a),
                         root.get("tipo").in(tipi), root.get("sede").get("id").in(sediIds));
         List<Riga> righe = movimenti.findAll(spec, Sort.by("data", "id")).stream().map(EsportazioneService::riga).toList();
-        String nomeFile = "contabilita-" + da + "_" + a + "." + formato.estensione();
+        String nomeFile = NomeProgramma.PREFISSO_FILE + "-" + da + "_" + a + "." + formato.estensione();
 
         StreamingResponseBody corpo;
         if (formato == FormatoEsportazione.CSV) {
@@ -243,7 +244,7 @@ public class EsportazioneService {
      */
     void scriviXlsx(List<Riga> righe, Riepilogo riepilogo, List<String> nomiSedi, List<Riepilogo> dellaSede,
                     StatisticheEsportate statistiche, OutputStream out) throws IOException {
-        try (Workbook cartella = new Workbook(out, "Contabilita", "1.0")) {
+        try (Workbook cartella = new Workbook(out, NomeProgramma.NOME, "1.0")) {
             Worksheet foglio = cartella.newWorksheet("Movimenti");
             for (int c = 0; c < INTESTAZIONI.length; c++) {
                 foglio.inlineString(0, c, INTESTAZIONI[c]);

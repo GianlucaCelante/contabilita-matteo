@@ -3,9 +3,15 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Contabilita</string>
+    <string>Fuorigioco</string>
+    <!-- Deve restare uguale al nome del pacchetto sul disco (Contabilita.app): solo cosi' il Finder mostra il nome
+         localizzato, "Fuorigioco", preso da Resources/<lingua>.lproj/InfoPlist.strings. -->
     <key>CFBundleDisplayName</key>
     <string>Contabilita</string>
+    <key>LSHasLocalizedDisplayName</key>
+    <true/>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>it</string>
     <key>CFBundleIdentifier</key>
     <string>it.contabilita.app</string>
     <key>CFBundleExecutable</key>
@@ -21,6 +27,6 @@
     <key>LSMinimumSystemVersion</key>
     <string>11.0</string>
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright (C) 2026 Contabilita Matteo</string>
+    <string>Copyright (C) 2026 Fuorigioco</string>
 </dict>
 </plist>

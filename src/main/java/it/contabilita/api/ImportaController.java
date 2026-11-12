@@ -5,6 +5,7 @@ import it.contabilita.importa.ImportaDto.Conferma;
 import it.contabilita.importa.ImportaDto.EsitoConferma;
 import it.contabilita.importa.ImportaDto.FileCaricato;
 import it.contabilita.importa.ImportazioneService;
+import it.contabilita.importa.ImportazioneService.Dichiarato;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,6 +36,8 @@ public class ImportaController {
         if (files != null) {
             // prima di portarli in memoria: la somma non deve superare quello che una lettura puo' tenere
             importazione.controllaCaricamento(files.stream().mapToLong(MultipartFile::getSize).sum());
+            // e ancora prima di portarli in memoria si fa posto fra le anteprime vecchie: non devono restare per tutta la lettura
+            importazione.faiPostoPerLaLettura(files.stream().map(f -> new Dichiarato(f.getOriginalFilename(), f.getSize())).toList());
             for (MultipartFile f : files) {
                 try {
                     caricati.add(new FileCaricato(f.getOriginalFilename(), f.getBytes()));

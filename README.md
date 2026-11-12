@@ -1,7 +1,10 @@
-# Contabilità Matteo
+# Fuorigioco
+
+Il programma si chiama **Fuorigioco** (come nel calcio: il nome sa di pallone, come la schermata della password, e non dice che dentro ci sono conti e fatture). È il nome che si legge: scheda del browser, app sul telefono, scorciatoie, «App installate», file esportati (`fuorigioco-…`). I nomi tecnici restano quelli di prima e non vanno cambiati, altrimenti gli aggiornamenti non ritrovano l'installazione e i dati: package `it.contabilita`, proprietà e chiavi `contabilita.*`, `CONTABILITA_DATA_DIR`, `contabilita.db`, servizio Windows `Contabilita`, cartelle `Contabilita`, repository.
 
 Gestione di ricavi e costi di una pizzeria: movimenti (fatture, scontrini, retribuzioni, ricavi), voci ricorrenti,
-riepilogo per periodo, export Excel/CSV, import delle fatture XML. Nessun login: si usa sulla rete locale, anche dal telefono.
+riepilogo per periodo, export Excel/CSV, import delle fatture XML. Si usa sulla rete locale, anche dal telefono; si può mettere una password (Impostazioni),
+e allora chi apre l'app vede prima la schermata della password. Non ci sono utenti né nomi da scrivere.
 
 ## Stack
 

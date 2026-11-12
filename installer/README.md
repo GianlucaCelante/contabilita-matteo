@@ -1,4 +1,4 @@
-# Installer di Contabilità Matteo
+# Installer di Fuorigioco
 
 Due installer per la stessa app (servizio Java con interfaccia web su `http://localhost:8766/`):
 
@@ -7,14 +7,21 @@ Due installer per la stessa app (servizio Java con interfaccia web su `http://lo
 | Formato | `Contabilita-<versione>.msi` | `Contabilita-<versione>-<arch>.pkg` |
 | Si costruisce con | `installer\Build-Setup.ps1` (su Windows) | `installer/mac/Build-Setup.sh` (**solo su un Mac**) |
 | App | `C:\Program Files\Contabilita` | `/Applications/Contabilita.app` |
-| Servizio | servizio Windows `Contabilita` («Contabilità Matteo»), WinSW, avvio automatico ritardato, account LocalSystem | LaunchDaemon `it.contabilita.servizio` (root, `RunAtLoad` + `KeepAlive`) |
+| Servizio | servizio Windows `Contabilita` (nome mostrato «Fuorigioco»), WinSW, avvio automatico ritardato, account LocalSystem | LaunchDaemon `it.contabilita.servizio` (root, `RunAtLoad` + `KeepAlive`) |
 | Dati | `C:\ProgramData\Contabilita` | `/Library/Application Support/Contabilita` |
 | Log | `C:\ProgramData\Contabilita\log` | dati: `.../Contabilita/log`; avvio launchd: `/Library/Logs/Contabilita/launchd.log` |
 | Variabile dati | `CONTABILITA_DATA_DIR` (nel file WinSW) | `CONTABILITA_DATA_DIR` (nel plist), più `TZ=Europe/Rome` |
 | Firewall | regola TCP «Contabilita 8766», tutti i profili | nessuna regola esplicita (vedi sotto) |
-| Apertura | scorciatoie (desktop, avvio automatico, menu Start): Edge/Chrome in modalità app | `Contabilita.app` (apre Chrome/Edge in modalità app o il browser predefinito) + LaunchAgent che la apre a ogni accesso |
+| Apertura | scorciatoie «Fuorigioco» (desktop, avvio automatico, menu Start): Edge/Chrome in modalità app | `Contabilita.app`, nome mostrato «Fuorigioco» (apre Chrome/Edge in modalità app o il browser predefinito) + LaunchAgent che la apre a ogni accesso |
 | Aggiornamento | `update.ps1 <msi>` (backup del DB, ferma, `msiexec`) oppure MSI sopra | `.pkg` sopra: `preinstall` fa il backup e ferma il servizio |
 | Disinstallazione | `uninstall_service.ps1` (anche dall'MSI) | `sudo .../Resources/uninstall.sh` |
+
+**Nome mostrato e nomi tecnici.** Il programma si chiama «Fuorigioco»: è il nome del prodotto in «App installate» (`Product Name` in `wix\main.install.wxs`), del servizio in `services.msc` (`<name>` e `<description>` in `Contabilita.xml`), delle scorciatoie (`Fuorigioco.lnk`; quelle vecchie `Contabilita.lnk` si tolgono all'aggiornamento), della descrizione della regola firewall e dell'app Mac. Il nome dell'interfaccia sta in `ui/src/util/nomeProgramma.ts`, `ui/index.html` e `ui/public/manifest.webmanifest`; quello dei file esportati in `NomeProgramma.java`; editore e copyright in `Build-Setup.ps1` e `mac/app/Info.plist`.
+
+- **Servizio Windows, installazione nuova:** WinSW registra il servizio con il nome e la descrizione di `Contabilita.xml`.
+- **Servizio Windows, aggiornamento:** il servizio è già registrato e WinSW non lo registra di nuovo, quindi terrebbe il nome di prima («Contabilità Matteo»). `install_service.ps1` li riscrive ogni volta con `sc.exe config … DisplayName=` e `sc.exe description`, leggendoli da `Contabilita.xml` (`Get-ServiceDisplayInfo` in `service_common.ps1`). Se non ci riesce avvisa e prosegue: il servizio parte lo stesso, con l'etichetta vecchia.
+- **Mac:** il pacchetto resta `Contabilita.app`. Il Finder mostra «Fuorigioco» grazie a `LSHasLocalizedDisplayName` e a `Resources/it.lproj/InfoPlist.strings` (più `en.lproj`), che `Build-Setup.sh` copia da `mac/app/`. Perché funzioni, `CFBundleDisplayName` in `Info.plist` deve restare uguale al nome del pacchetto sul disco (`Contabilita`): non «correggerlo». Nel Terminale e nei percorsi si vede comunque `Contabilita.app`. **Non provato su un Mac.**
+ Tutto il resto resta `Contabilita` e **non va rinominato**: id del servizio, `--name` di jpackage (cartella `C:\Program Files\Contabilita`, nome dell'MSI), cartella dati, regola firewall, `Contabilita.app`, id launchd, UpgradeCode. Cambiarli spezzerebbe gli aggiornamenti e l'accesso ai dati.
 
 Il codice è un adattamento a pezzi degli installer del progetto gemello (vedi `docs/stack.md`): servizio,
 cartella dati, regola firewall e **UpgradeCode WiX** sono tutti rinominati, così le due app possono
@@ -141,9 +148,52 @@ l'icona; il resto (pacchetto **non ricollocabile**, `bootout` atteso prima del `
 - macOS: vedi sopra.
 - Il database ha anche il backup automatico dell'app (cartella `backup` dei dati).
 
+## Memoria del servizio (`-Xmx512m`): cosa è provato e cosa no
+
+Il servizio parte con `-Xmx512m` (`Contabilita.xml` su Windows, `launchd/it.contabilita.servizio.plist` sul Mac); i limiti
+dell'importazione delle fatture seguono quel valore (`docs/api.md`, «Quanto si legge in una volta»).
+
+Provato l'11 novembre 2026, **senza installare niente**:
+
+- `MemoriaDelServizioTest` (JUnit, gira con `mvn test`): `Contabilita.xml` e il plist sono XML ben formati, hanno un solo
+  `-Xmx`, prima di `-jar`, uguale nei due file e pari a 512 MB; `wix\main.install.wxs` toglie la versione di prima
+  subito dopo `InstallInitialize` e ha `Product Id="*"`; `Build-Setup.ps1` mette nell'MSI proprio quel file.
+- Costruzione vera del solo MSI (il passo 4 di `Build-Setup.ps1`: jpackage 17 + WiX 3.14, in una cartella temporanea, con
+  il jar e l'immagine jlink già in `target`): riuscita. Dall'MSI, aperto in sola lettura (`dark.exe -x` e le tabelle):
+  `app\Contabilita.xml` è identico a `installer\Contabilita.xml` e ha `-Xmx512m`; l'MSI costruito in ottobre aveva `-Xmx256m`.
+- Aggiornamento, letto dalle tabelle dei due MSI: stesso `UpgradeCode`, `ProductCode` diversi, **stessa versione 0.1.0**
+  (la versione viene dal `pom.xml`, che non è cambiato). La riga `Upgrade` ha il massimo **compreso**, quindi anche a
+  parità di versione il nuovo MSI riconosce il vecchio come da sostituire; `RemoveExistingProducts` è alla posizione 1501,
+  subito dopo `InstallInitialize` (1500) e prima di `InstallFiles` (4000): la versione di prima viene tolta **tutta**
+  (anche un `Contabilita.xml` modificato a mano dopo l'installazione) e poi si copiano i file nuovi. Dopo `CreateShortcuts`
+  parte `install_service.ps1 -Silent`, che ferma e riavvia il servizio: WinSW rilegge `Contabilita.xml` a ogni avvio.
+- La JRE jlink dell'MSI accetta gli argomenti: `runtime\bin\java.exe -Dcontabilita.sorveglia-padre=true -Xmx512m
+  -XX:+PrintFlagsFinal -version` dice `MaxHeapSize = 536870912`.
+- `Invoke-Pester installer\tests`: 9 prove su 9 (riguardano `service_common.ps1`, non la memoria).
+
+**Non provato** (serve una macchina di prova, per esempio Windows Sandbox, o un Mac):
+
+- l'installazione e l'aggiornamento veri (`msiexec /i` sopra una versione con 256 MB) e che dopo l'aggiornamento il
+  servizio giri davvero con 512 MB. Controllo da fare lì: `Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+  Select CommandLine` deve mostrare `-Xmx512m`, e nel log dell'app all'avvio ci deve essere «Importazione: in una sola
+  lettura si accettano al massimo 128 MB invece di 200 MB, perché la memoria del programma è 512 MB.» (su un PC con un
+  solo processore o meno di 2 GB la JVM sceglie un altro gestore della memoria e ne conta qualche MB in meno: i limiti
+  scendono di conseguenza, per esempio 15 MB per file invece di 16);
+- che WinSW passi `-Xmx512m` alla JVM così com'è scritto (è un argomento come `-Dcontabilita.sorveglia-padre=true`, che
+  nel progetto gemello arriva; qui non si è avviato WinSW, perché partirebbe sui dati veri);
+- rilanciare **lo stesso file MSI** già installato non sostituisce niente («modalità manutenzione»): non è un problema per
+  la memoria, perché lo stesso file ha lo stesso XML, ma un MSI ricostruito è sempre un file con `ProductCode` nuovo;
+- nello stesso log, la riga sul limite per file: «Importazione: un file si legge se pesa al massimo 16 MB invece di
+  20 MB, perché la memoria del programma è 512 MB.»;
+- **il nome nuovo nell'MSI.** La costruzione dell'MSI dell'11 novembre è precedente al cambio di nome: `Product Name`
+  «Fuorigioco», `--vendor`, la descrizione, le scorciatoie `Fuorigioco.lnk` (e la pulizia delle `Contabilita.lnk`) e
+  il nome del servizio riscritto con `sc.exe` a chi aggiorna non sono stati verificati in un MSI né in un'installazione;
+- tutto il lato Mac: il plist è stato solo letto come XML (niente `plutil`, niente `launchctl`, niente pacchetto); anche il
+  nome «Fuorigioco» nel Finder (`InfoPlist.strings`) non è stato visto su un Mac.
+
 ## Cosa NON è stato provato
 
-Scritto e controllato solo con parser/sintassi su Windows. **Mai eseguiti**: build dell'MSI e del PKG, installazione, avvio del
+Scritto e controllato solo con parser/sintassi su Windows. **Mai eseguiti**: build del PKG (quella dell'MSI sì, vedi la sezione qui sopra), installazione, avvio del
 servizio, firewall, scorciatoie, aggiornamento, disinstallazione, il comportamento su un Mac vero (launchd, Gatekeeper,
 firma/notarizzazione), il workflow GitHub. Mancano inoltre il jar vero (l'elenco dei moduli jlink è ereditato) e le icone.
 Punti da guardare alla prima prova: espansione di `%BASE%` in `Contabilita.xml`;

@@ -11,8 +11,8 @@ Stesso stack del progetto delle etichette, copiato e adattato a pezzi (mai inter
 | Importi | interi in centesimi (`long`), mai decimali; date `LocalDate` |
 | Interfaccia | React 19 + Vite 7 + TypeScript + Tailwind 4 + react-query, PWA solo installabile (nessun offline) |
 | Porta | **8766** (la 8765 è delle etichette: le due app possono girare sullo stesso PC) |
-| Nomi | package `it.contabilita`, prefisso `contabilita.*`, variabile `CONTABILITA_DATA_DIR`, servizio Windows `Contabilita`, dati in `C:\ProgramData\Contabilita` |
-| Accesso | nessun login (come le etichette): rete locale. PIN da valutare con Matteo, dato che i dati sono sensibili |
+| Nomi | nome mostrato **Fuorigioco** (`ui/src/util/nomeProgramma.ts`, `NomeProgramma.java`, `index.html`, manifest, installer); nomi tecnici invariati: package `it.contabilita`, prefisso `contabilita.*`, variabile `CONTABILITA_DATA_DIR`, servizio Windows `Contabilita`, dati in `C:\ProgramData\Contabilita` |
+| Accesso | rete locale, senza utenti. Una password sola, facoltativa (Impostazioni): se c'è, l'app si apre dalla schermata della password (campo da calcio) e la richiede di nuovo dopo mezz'ora senza uso; vedi `docs/api.md` |
 | Rete | QR con indirizzo IP e porta. **Niente mDNS** (`etichette.local` è stato tolto dal progetto sorgente il 2026-09-10) |
 | Export | Excel (fastexcel) e CSV punto e virgola UTF-8, in streaming. **Niente PDF** (non richiesto: non portare OpenPDF) |
 | Test | JUnit + MockMvc + `@SpringBootTest` (profilo `test`, cartella dati temporanea); UI: eslint + `tsc`, vitest da introdurre |

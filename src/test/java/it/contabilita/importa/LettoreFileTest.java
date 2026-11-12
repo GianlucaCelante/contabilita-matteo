@@ -117,14 +117,50 @@ class LettoreFileTest {
     }
 
     @Test
-    void unFileTroppoGrandeDecompressoRifiutaLArchivioSenzaDecomprimereTutto() throws Exception {
+    void unaVoceTroppoGrandeSiScartaDaSolaELeAltreDelloZipSiLeggono() throws Exception {
         LettoreFile piccolo = new LettoreFile(10, 1_000, 10_000_000);
-        byte[] z = zip(voci("a.xml", xml, "bomba.xml", new byte[50_000_000])); // 50 MB di zeri: lo zip pesa pochi KB
+        // 50 MB di zeri: lo zip pesa pochi KB. La voce grande sta in mezzo: quelle prima e dopo si leggono.
+        byte[] z = zip(voci("a.xml", xml, "sotto/bomba.xml", new byte[50_000_000], "c.xml", xml));
         assertThat(z.length).isLessThan(100_000);
         Risultato r = piccolo.leggi("x.zip", z);
+        assertThat(r.file()).extracting(f -> f.nomeFile()).containsExactly("x.zip › a.xml", "x.zip › c.xml");
+        assertThat(r.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("x.zip › sotto/bomba.xml");
+            assertThat(e.messaggio()).isEqualTo("Il file «sotto/bomba.xml» nello zip è troppo grande per essere letto (massimo 1000 byte).");
+        });
+    }
+
+    @Test
+    void unaVoceGiustaAlLimitePerFileSiLeggeEUnByteInPiuNo() throws Exception {
+        LettoreFile piccolo = new LettoreFile(10, 1_000, 10_000_000);
+        assertThat(piccolo.leggi("x.zip", zip(voci("giusta.xml", new byte[1_000]))).errori()).isEmpty();
+        Risultato r = piccolo.leggi("x.zip", zip(voci("oltre.xml", new byte[1_001])));
         assertThat(r.file()).isEmpty();
-        assertThat(r.errori()).singleElement().satisfies(e -> assertThat(e.messaggio()).contains("bomba.xml").contains("troppo grande")
-                .contains("(massimo 1000 byte una volta estratto)"));
+        assertThat(r.errori()).singleElement().satisfies(e -> assertThat(e.messaggio())
+                .isEqualTo("Il file «oltre.xml» nello zip è troppo grande per essere letto (massimo 1000 byte)."));
+    }
+
+    @Test
+    void leVociScartatePercheTroppoGrandiNonContanoNelTotaleDelloZip() throws Exception {
+        // tre voci da 9000 (oltre il limite per file di 5000) e due buone da 4000: il totale di 10.000 basta alle due buone
+        LettoreFile piccolo = new LettoreFile(100, 5_000, 10_000);
+        byte[] z = zip(voci("g1.xml", new byte[9_000], "a.xml", new byte[4_000], "g2.xml", new byte[9_000], "b.xml", new byte[4_000],
+                "g3.xml", new byte[9_000]));
+        Risultato r = piccolo.leggi("x.zip", z);
+        assertThat(r.file()).extracting(f -> f.nomeFile()).containsExactly("x.zip › a.xml", "x.zip › b.xml");
+        assertThat(r.errori()).extracting(e -> e.nomeFile()).containsExactly("x.zip › g1.xml", "x.zip › g2.xml", "x.zip › g3.xml");
+    }
+
+    @Test
+    void ilTotaleEstrattoRifiutaAncoraTuttoLoZipAncheConUnaVoceTroppoGrande() throws Exception {
+        LettoreFile piccolo = new LettoreFile(100, 5_000, 7_000);
+        byte[] z = zip(voci("grande.xml", new byte[9_000], "a.xml", new byte[4_000], "b.xml", new byte[4_000]));
+        Risultato r = piccolo.leggi("x.zip", z);
+        assertThat(r.file()).isEmpty();
+        assertThat(r.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("x.zip");
+            assertThat(e.messaggio()).isEqualTo("Il contenuto dello zip è troppo grande (massimo 7000 byte in totale): non è stato letto.");
+        });
     }
 
     @Test
@@ -156,14 +192,15 @@ class LettoreFileTest {
     void unFileDaSoloOltreIlTotaleDiceIlMassimoCheValeDavvero() {
         LettoreFile piccolo = new LettoreFile(100, 10_000, 5_000); // poca memoria: il totale e' sotto il limite per file
         assertThat(piccolo.leggi("a.xml", new byte[6_000]).errori()).singleElement()
-                .satisfies(e -> assertThat(e.messaggio()).isEqualTo("Il file è troppo grande (massimo 5000 byte)."));
+                .satisfies(e -> assertThat(e.messaggio()).isEqualTo("Il file «a.xml» è troppo grande per essere letto (massimo 5000 byte)."));
     }
 
     @Test
     void ilLimitePredefinitoPerFileEVentiMegabyte() throws Exception {
         Risultato r = lettore.leggi("x.zip", zip(voci("grande.xml", new byte[21 * 1024 * 1024])));
         assertThat(r.file()).isEmpty();
-        assertThat(r.errori()).singleElement().satisfies(e -> assertThat(e.messaggio()).contains("(massimo 20 MB una volta estratto)"));
+        assertThat(r.errori()).singleElement().satisfies(e -> assertThat(e.messaggio())
+                .isEqualTo("Il file «grande.xml» nello zip è troppo grande per essere letto (massimo 20 MB)."));
     }
 
     @Test
@@ -173,5 +210,36 @@ class LettoreFileTest {
         assertThat(danneggiato.errori()).hasSize(1);
         Risultato vuoto = lettore.leggi("v.zip", zip(Map.of("note.txt", byt("x"))));
         assertThat(vuoto.errori()).singleElement().satisfies(e -> assertThat(e.messaggio()).contains("nessuna fattura"));
+    }
+
+    // s52: il limite per file e' quello con cui il lettore e' costruito (segue la memoria), e il messaggio dice il nome e il massimo.
+    @Test
+    void unFileSingoloOltreIlLimitePerFileDiceIlNomeEIlMassimo() {
+        LettoreFile sedici = new LettoreFile(100, 16L * 1024 * 1024, 128L * 1024 * 1024);
+        assertThat(sedici.leggi("fattura grande.xml", new byte[16 * 1024 * 1024 + 1]).errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("fattura grande.xml");
+            assertThat(e.messaggio()).isEqualTo("Il file «fattura grande.xml» è troppo grande per essere letto (massimo 16 MB).");
+        });
+        // giusto al limite passa (il lettore non guarda se e' una fattura)
+        assertThat(sedici.leggi("al limite.xml", new byte[16 * 1024 * 1024]).errori()).isEmpty();
+        assertThat(sedici.leggi("firmata.xml.p7m", new byte[16 * 1024 * 1024 + 1]).errori()).singleElement()
+                .satisfies(e -> assertThat(e.messaggio()).isEqualTo("Il file «firmata.xml.p7m» è troppo grande per essere letto (massimo 16 MB)."));
+    }
+
+    // s51: quanti byte di un file caricato possono finire in memoria, saputi nome e dimensione (prima di leggerlo).
+    @Test
+    void ilPesoAttesoContaSoloIFileCheSiLeggeranno() {
+        LettoreFile piccolo = new LettoreFile(100, 10_000, 50_000);
+        assertThat(piccolo.pesoAtteso("a.xml", 9_000)).isEqualTo(9_000);
+        assertThat(piccolo.pesoAtteso("A.XML.P7M", 10_000)).isEqualTo(10_000);
+        assertThat(piccolo.pesoAtteso("a.xml", 10_001)).isZero();   // rifiutato senza leggerlo: troppo grande
+        assertThat(piccolo.pesoAtteso("elenco.pdf", 9_000)).isZero(); // tipo non supportato
+        assertThat(piccolo.pesoAtteso(null, 9_000)).isZero();
+        assertThat(piccolo.pesoAtteso("a.xml", -1)).isZero();
+        // uno zip conta per quanto pesa compresso (estratto pesera' di solito di piu'), anche oltre il limite per file
+        assertThat(piccolo.pesoAtteso("fatture.ZIP", 30_000)).isEqualTo(30_000);
+        assertThat(piccolo.pesoAtteso("fatture.zip", 50_001)).isEqualTo(50_001);
+        // poca memoria: il totale sotto il limite per file
+        assertThat(new LettoreFile(100, 10_000, 5_000).pesoAtteso("a.xml", 6_000)).isZero();
     }
 }

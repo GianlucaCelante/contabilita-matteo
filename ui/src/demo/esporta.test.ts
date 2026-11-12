@@ -588,7 +588,7 @@ describe("demo: i parametri di «esporta» si controllano come nel servizio", ()
     expect(get("/esporta", `formato=xlsx${DATE}`).stato).toBe(200);
     const unGiorno = get("/esporta", "formato=csv&da=2031-05-10&a=2031-05-10&sedi=1");
     expect(unGiorno.stato).toBe(200);
-    expect(unGiorno.testo!.nomeFile).toBe("contabilita-2031-05-10_2031-05-10.csv");
+    expect(unGiorno.testo!.nomeFile).toBe("fuorigioco-2031-05-10_2031-05-10.csv");
     expect((unGiorno.testo!.contenuto as string).split("\r\n")).toHaveLength(9);
   });
 });

@@ -1,4 +1,6 @@
-// I titoli delle viste, per la scheda del browser: «<titolo> · Contabilità» (le viste con un nome proprio, come il dettaglio
+import { NOME_PROGRAMMA } from "./nomeProgramma";
+
+// I titoli delle viste, per la scheda del browser: «<titolo> · Fuorigioco» (le viste con un nome proprio, come il dettaglio
 // di una voce, lo impostano da sole con useTitoloPagina).
 const TITOLI_PAGINA: [string, string][] = [
   ["/movimenti/nuovo", "Nuovo movimento"],
@@ -21,7 +23,7 @@ export function titoloPer(percorso: string): string {
 }
 
 export function titoloDocumento(titolo: string): string {
-  return titolo ? `${titolo} · Contabilità` : "Contabilità";
+  return titolo ? `${titolo} · ${NOME_PROGRAMMA}` : NOME_PROGRAMMA;
 }
 
 // Le viste che scrivono da sole il titolo (con il nome di cio' che mostrano): il Guscio non lo tocca, cosi' non lo sovrascrive.

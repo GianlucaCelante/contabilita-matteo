@@ -26,8 +26,8 @@ done
 
 if [ "$1" = "--remove-data" ]; then
     /bin/rm -rf "$DATI" "$LOGDIR"
-    echo "Contabilita disinstallata, dati cancellati."
+    echo "Fuorigioco disinstallato, dati cancellati."
 else
-    echo "Contabilita disinstallata. I dati sono rimasti in: $DATI"
+    echo "Fuorigioco disinstallato. I dati sono rimasti in: $DATI"
     echo "Per cancellarli:  sudo rm -rf \"$DATI\" \"$LOGDIR\""
 fi

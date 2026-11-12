@@ -1,0 +1,3 @@
+/* Il nome che il Finder mostra al posto di quello del pacchetto (Contabilita.app). */
+"CFBundleDisplayName" = "Fuorigioco";
+"CFBundleName" = "Fuorigioco";

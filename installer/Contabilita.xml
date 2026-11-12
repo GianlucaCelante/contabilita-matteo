@@ -33,8 +33,8 @@
 -->
 <service>
     <id>Contabilita</id>
-    <name>Contabilità Matteo</name>
-    <description>Contabilità della pizzeria: ricavi, costi e riepiloghi. Interfaccia web su http://localhost:8766/</description>
+    <name>Fuorigioco</name>
+    <description>Fuorigioco: i conti della pizzeria (ricavi, costi e riepiloghi). Interfaccia web su http://localhost:8766/</description>
 
     <!--
         -Xmx512m: il massimo di memoria del servizio (un tetto: la JVM ne prende solo quanta ne serve). Erano 256 MB,

@@ -187,6 +187,29 @@ function Wait-ForServiceRunning {
     }
 }
 
+function Get-ServiceDisplayInfo {
+    <#
+      Il nome mostrato e la descrizione del servizio, letti da Contabilita.xml (<name> e <description>): cosi' stanno
+      scritti in un posto solo. WinSW li usa solo quando REGISTRA il servizio; a un servizio gia' registrato li da'
+      install_service.ps1 con sc.exe (vedi Set-ServiceDisplayInfo li'). Restituisce $null se il file non si legge
+      o se manca il nome: chi chiama avvisa e prosegue.
+    #>
+    param([Parameter(Mandatory = $true)] [string]$XmlPath)
+    try {
+        $doc = New-Object System.Xml.XmlDocument
+        $doc.Load($XmlPath)   # Load rispetta la codifica del file (UTF-8), Get-Content di PowerShell 5 no
+        # SelectSingleNode, non $doc.service.name: senza <name> quella forma darebbe il nome del nodo ("service")
+        $nodeName = $doc.SelectSingleNode("/service/name")
+        $nodeDescription = $doc.SelectSingleNode("/service/description")
+        $name = if ($null -ne $nodeName) { [string]$nodeName.InnerText } else { "" }
+        $description = if ($null -ne $nodeDescription) { [string]$nodeDescription.InnerText } else { "" }
+        if ([string]::IsNullOrWhiteSpace($name)) { return $null }
+        return [pscustomobject]@{ Name = $name.Trim(); Description = $description.Trim() }
+    } catch {
+        return $null
+    }
+}
+
 function Get-PostInstallAction {
     <#
       Cosa fare dopo msiexec, dato il suo codice di uscita e lo stato del servizio:

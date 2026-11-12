@@ -102,6 +102,10 @@ cp -R "$RUNTIME" "$RISORSE/runtime"
 cp "$QUI/uninstall.sh" "$RISORSE/uninstall.sh"
 cp "$QUI/app/Contabilita" "$APP/Contents/MacOS/Contabilita"
 sed "s/@VERSIONE@/$VERSIONE/g" "$QUI/app/Info.plist" > "$APP/Contents/Info.plist"
+# Il nome mostrato dal Finder ("Fuorigioco"): il pacchetto resta Contabilita.app, il nome sta in InfoPlist.strings.
+for LPROJ in "$QUI"/app/*.lproj; do
+    [ -d "$LPROJ" ] && cp -R "$LPROJ" "$RISORSE/"
+done
 cp "$QUI/launchd/it.contabilita.servizio.plist" "$STAGE/Library/LaunchDaemons/"
 cp "$QUI/launchd/it.contabilita.avvio.plist" "$STAGE/Library/LaunchAgents/"
 chmod 755 "$APP/Contents/MacOS/Contabilita" "$RISORSE/uninstall.sh"

@@ -1,4 +1,4 @@
-# Contabilità Matteo — piano di lavoro
+# Fuorigioco — piano di lavoro
 
 Gestione di ricavi e costi di una pizzeria, come da schizzo di Matteo.
 

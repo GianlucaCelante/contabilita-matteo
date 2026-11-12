@@ -15,7 +15,7 @@ for _ in $(seq 1 90); do
 done
 
 if ! /usr/bin/curl -s -o /dev/null --max-time 2 "$URL"; then
-    /usr/bin/osascript -e 'display dialog "Il servizio Contabilita non risponde. Riavvia il Mac; se il problema resta, chiama l'"'"'assistenza." buttons {"OK"} default button 1 with icon caution with title "Contabilita"' >/dev/null 2>&1
+    /usr/bin/osascript -e 'display dialog "Il programma non risponde. Riavvia il Mac; se il problema resta, chiama l'"'"'assistenza." buttons {"OK"} default button 1 with icon caution with title "Fuorigioco"' >/dev/null 2>&1
     exit 1
 fi
 

@@ -291,14 +291,16 @@ Copy-Item $WixTemplate -Destination (Join-Path $WixResourceDir "main.wxs")
 $jpackageArgs = @(
     "--type", "msi",
     "--input", $StageDir,
+    # --name resta "Contabilita": e' il nome tecnico (cartella d'installazione, nome dell'MSI). Il nome mostrato,
+    # "Fuorigioco", sta in wix\main.install.wxs (Product Name), nel servizio (Contabilita.xml) e nelle scorciatoie.
     "--name", "Contabilita",
     "--main-jar", "contabilita.jar",
     "--main-class", "org.springframework.boot.loader.launch.JarLauncher",
     "--runtime-image", $RuntimeDir,
     "--app-version", $Version,
-    "--vendor", "Contabilita Matteo",
-    "--copyright", "Copyright (C) 2026 Contabilita Matteo",
-    "--description", "Contabilita della pizzeria: ricavi, costi e riepiloghi (servizio Windows, interfaccia web su porta 8766)",
+    "--vendor", "Fuorigioco",
+    "--copyright", "Copyright (C) 2026 Fuorigioco",
+    "--description", "Fuorigioco, i conti della pizzeria: ricavi, costi e riepiloghi (servizio Windows, interfaccia web su porta 8766)",
     "--win-upgrade-uuid", $UpgradeUuid,
     "--resource-dir", $WixResourceDir,
     "--dest", $InstallerDir
@@ -355,7 +357,7 @@ if ($CodeSign) {
                 /fd sha256 `
                 /tr $TimestampUrl `
                 /td sha256 `
-                /d "Contabilita Matteo" `
+                /d "Fuorigioco" `
                 $Msi.FullName
             if ($LASTEXITCODE -eq 0) { break }
             if ($SignAttempt -ge $MaxSignAttempts) {

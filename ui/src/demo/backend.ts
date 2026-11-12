@@ -7,6 +7,7 @@ import type { AnteprimaImportazione, FatturaLetta } from "../api/importa";
 import { MASSIMO_INTERVALLO, type UnitaRipetizione } from "../util/ripetizione";
 import { elencoMesi, contaMesi, dataScadenza, giorniMancanti, GIORNI_PREAVVISO, meseValido, MASSIMO_NOME_CASELLA, MASSIMO_NOTA_FATTURA, STATI } from "../util/fatture";
 import { dividiImporto } from "../util/sedi";
+import { PREFISSO_FILE } from "../util/nomeProgramma";
 import { INTESTAZIONI_FILE, negativoNelFile, righeFoglioRiepilogo, righeTotaliRiepilogo, RIGHE_PRIMA_DELLE_VOCI, testiRigaFile } from "../api/esporta";
 import { con, costruisciXlsx, type Cella, type Foglio } from "./xlsx";
 import { dataIsoValida, righeEsportazione, salvaGiorni, salvaSettimana, salvaSettimanaCompleta, serieStatistiche, settimanaStatistiche, statistichePeriodo } from "./statistiche";
@@ -567,14 +568,14 @@ function esportaFile(q: URLSearchParams, ids: Set<number> | null, parametri: Par
         });
       }
     }
-    return { stato: 200, testo: { contenuto: costruisciXlsx(fogli), tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeFile: `contabilita-${da}_${a}.xlsx` } };
+    return { stato: 200, testo: { contenuto: costruisciXlsx(fogli), tipo: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", nomeFile: `${PREFISSO_FILE}-${da}_${a}.xlsx` } };
   }
   const testa = INTESTAZIONI_FILE.join(";");
   const corpo = righe.map((m) => {
     const { prima, dopo } = testiRigaFile(m);
     return [...prima, (negativoNelFile(m) ? "-" : "") + virgola(m.importoCent), ...dopo].map(cella).join(";");
   });
-  return { stato: 200, testo: { contenuto: "﻿" + [testa, ...corpo].join("\r\n"), tipo: "text/csv;charset=utf-8", nomeFile: `contabilita-${da}_${a}.csv` } };
+  return { stato: 200, testo: { contenuto: "﻿" + [testa, ...corpo].join("\r\n"), tipo: "text/csv;charset=utf-8", nomeFile: `${PREFISSO_FILE}-${da}_${a}.csv` } };
 }
 
 // ---- fatture da fare (stesse regole di docs/api.md, «Fatture da fare») ----

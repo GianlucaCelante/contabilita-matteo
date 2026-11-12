@@ -7,6 +7,7 @@ import it.contabilita.dati.MovimentoRepository;
 import it.contabilita.importa.ImportaDto.Anteprima;
 import it.contabilita.importa.ImportaDto.Conferma;
 import it.contabilita.importa.ImportaDto.FileCaricato;
+import it.contabilita.importa.ImportazioneService.Dichiarato;
 import it.contabilita.movimenti.AnagraficheService;
 import it.contabilita.movimenti.SediService;
 import org.junit.jupiter.api.Test;
@@ -50,6 +51,14 @@ class ImportaMemoriaTest {
         return new ImportazioneService(mock(MovimentoRepository.class), mock(FornitoreRepository.class), mock(AnagraficheService.class),
                 mock(AllegatiService.class), mock(SediService.class), mock(PlatformTransactionManager.class),
                 Clock.fixed(Instant.parse("2026-01-01T10:00:00Z"), ZoneOffset.UTC), tetto, lettura);
+    }
+
+    /** Con la memoria della JVM dichiarata (s52): i limiti che la seguono non dipendono dalla macchina dei test. */
+    private static ImportazioneService servizioConMemoria(long memoriaDellaJvm) {
+        return new ImportazioneService(mock(MovimentoRepository.class), mock(FornitoreRepository.class), mock(AnagraficheService.class),
+                mock(AllegatiService.class), mock(SediService.class), mock(PlatformTransactionManager.class),
+                Clock.fixed(Instant.parse("2026-01-01T10:00:00Z"), ZoneOffset.UTC), DataSize.ofMegabytes(96), DataSize.ofMegabytes(200),
+                memoriaDellaJvm);
     }
 
     /** Una fattura di {@code byteTotali} byte esatti: in coda un commento, che per l'XML non conta. */
@@ -195,5 +204,119 @@ class ImportaMemoriaTest {
             assertThat(e.getStato()).isEqualTo(HttpStatus.BAD_REQUEST);
             assertThat(e.getMessage()).isEqualTo("I file scelti sono troppo grandi tutti insieme (massimo 10000 byte per volta): scegline meno e riprova.");
         });
+    }
+
+    // ---- s51: si fa posto PRIMA di leggere il nuovo carico, con la dimensione dichiarata dei file ----
+
+    private static Dichiarato dichiarato(String nome, long byteTotali) {
+        return new Dichiarato(nome, byteTotali);
+    }
+
+    @Test
+    void primaDiLeggereSiFaPostoPerIlCaricoDichiarato() {
+        String prima = anteprima(file("I-1", PESO));
+        String seconda = anteprima(file("I-2", PESO)); // 8000 in memoria, tetto 10 KB
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("nuovo.xml", PESO))); // ne arrivano 4000: la piu' vecchia esce gia' adesso
+        scartata(prima);
+        inMemoria(seconda);
+        // la lettura che segue non scarta altro: il posto c'e' gia'
+        String terza = anteprima(file("I-3", PESO));
+        inMemoria(seconda);
+        inMemoria(terza);
+    }
+
+    @Test
+    void primaDiLeggereNonSiScartaSeIlCaricoCiSta() {
+        String prima = anteprima(file("J-1", PESO));
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("a.xml", 3_000), dichiarato("b.xml", 3_000))); // 4000 + 6000 = il tetto giusto
+        inMemoria(prima);
+        servizio.faiPostoPerLaLettura(List.of()); // nessun file
+        servizio.faiPostoPerLaLettura(null);
+        inMemoria(prima);
+    }
+
+    @Test
+    void unCaricoCheSaraRifiutatoSenzaLeggerloNonFaScartareNiente() {
+        servizio = servizio(DataSize.ofKilobytes(10), DataSize.ofBytes(20_000));
+        String prima = anteprima(file("K-1", PESO));
+        String seconda = anteprima(file("K-2", PESO));
+        // un tipo non supportato e un file oltre il massimo di una lettura: non entreranno mai in memoria
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("elenco.pdf", 9_000), dichiarato("enorme.xml", 20_001)));
+        inMemoria(prima);
+        inMemoria(seconda);
+    }
+
+    @Test
+    void ilNumeroDiAnteprimeNonFaScartareNientePrimaDellaLettura() {
+        servizio = servizio(DataSize.ofKilobytes(100));
+        String prima = anteprima(file("M-0", PESO));
+        for (int i = 1; i < 20; i++) {
+            anteprima(file("M-" + i, PESO));
+        }
+        // 20 in memoria (il massimo), 80.000 byte: un carico di 4000 ci sta. La ventunesima fara' uscire la prima solo se si legge.
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("nuovo.xml", PESO)));
+        inMemoria(prima);
+    }
+
+    @Test
+    void farPostoPrimaNonTogliePiuDiQuantoToglierebbeLaLetturaRiuscita() {
+        // lo stesso scenario di oltreIlTettoInByteSiScartaLaPiuVecchiaPerOrdineDArrivo, col posto fatto prima: stesso esito
+        String prima = anteprima(file("N-1", PESO));
+        String seconda = anteprima(file("N-2", PESO));
+        byte[] nuovo = file("N-3", PESO);
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("f0.xml", nuovo.length)));
+        String terza = anteprima(nuovo);
+        scartata(prima);
+        inMemoria(seconda);
+        inMemoria(terza);
+    }
+
+    @Test
+    void seLaLetturaPoiFallisceSiEPersaSoloLaPiuVecchiaCheServivaAFarlePosto() {
+        // il costo dichiarato della regola (docs/api.md): un file che sembra leggibile ma non e' una fattura
+        String prima = anteprima(file("O-1", PESO));
+        String seconda = anteprima(file("O-2", PESO));
+        servizio.faiPostoPerLaLettura(List.of(dichiarato("rotto.xml", PESO)));
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("rotto.xml", "<nonUnaFattura/>".getBytes(StandardCharsets.UTF_8))));
+        assertThat(a.fatture()).isEmpty();
+        scartata(prima);    // uscita per far posto a un carico che poi non e' entrato
+        inMemoria(seconda); // le altre no: si toglie solo quanto serve
+    }
+
+    // ---- s52: il limite per file segue la memoria ----
+
+    @Test
+    void conLaMemoriaDellInstallerUnFileOltreSediciMegabyteNonSiLegge() {
+        servizio = servizioConMemoria(512L * 1024 * 1024);
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("grande.xml", new byte[16 * 1024 * 1024 + 1]),
+                new FileCaricato("buona.xml", file("P-1", PESO))));
+        assertThat(a.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("grande.xml");
+            assertThat(e.messaggio()).isEqualTo("Il file «grande.xml» è troppo grande per essere letto (massimo 16 MB).");
+        });
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("P-1"); // gli altri file si leggono
+    }
+
+    @Test
+    void conTantaMemoriaIlLimitePerFileRestaVentiMegabyte() {
+        servizio = servizioConMemoria(4096L * 1024 * 1024);
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("grande.xml", new byte[20 * 1024 * 1024 + 1])));
+        assertThat(a.errori()).singleElement()
+                .satisfies(e -> assertThat(e.messaggio()).isEqualTo("Il file «grande.xml» è troppo grande per essere letto (massimo 20 MB)."));
+    }
+
+    // Review di s52: una voce troppo grande dentro uno zip si scarta da sola, il resto dell'archivio si legge.
+    @Test
+    void conLaMemoriaDellInstallerUnaVoceOltreSediciMegabyteNonFaSaltareLoZip() throws Exception {
+        servizio = servizioConMemoria(512L * 1024 * 1024);
+        byte[] zip = FattureProva.zip(FattureProva.voci("gennaio.xml", file("R-1", PESO), "col pdf.xml", new byte[16 * 1024 * 1024 + 1],
+                "febbraio.xml", file("R-2", PESO)));
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("anno.zip", zip)));
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("R-1", "R-2");
+        assertThat(a.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("anno.zip › col pdf.xml");
+            assertThat(e.messaggio()).isEqualTo("Il file «col pdf.xml» nello zip è troppo grande per essere letto (massimo 16 MB).");
+        });
+        inMemoria(a.importazioneId());
     }
 }

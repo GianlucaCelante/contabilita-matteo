@@ -61,9 +61,14 @@
   <?define JpUpgradeVersionOnlyDetectDowngrade="yes"?>
   <?define JpUpgradeVersionIncludeMinimum="no"?>
 
+  <!--
+    Name: il nome MOSTRATO in "App installate" e nelle finestre dell'installer, "Fuorigioco". Non e' $(var.JpAppName)
+    ("Contabilita"), che resta il nome tecnico: cartella C:\Program Files\Contabilita, servizio, file. L'aggiornamento
+    riconosce l'installazione di prima dall'UpgradeCode, non dal nome.
+  -->
   <Product
     Id="*"
-    Name="$(var.JpAppName)"
+    Name="Fuorigioco"
     Language="$(var.JpProductLanguage)"
     Version="$(var.JpAppVersion)"
     Manufacturer="$(var.JpAppVendor)"

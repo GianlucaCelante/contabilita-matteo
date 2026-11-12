@@ -2,6 +2,7 @@
 import { ErroreRichiesta, stringaQuery } from "./client";
 import type { CorpoErrore, Documento, Movimento, Origine, Riepilogo, Tipo, VoceRiepilogo } from "./tipi";
 import { numeroCent } from "../util/formato";
+import { PREFISSO_FILE } from "../util/nomeProgramma";
 
 export type FormatoFile = "xlsx" | "csv";
 
@@ -111,7 +112,7 @@ export interface ParametriEsportazione {
 
 // Il nome previsto del file, come lo manda il servizio.
 export function nomeFileEsportazione({ formato, da, a }: Pick<ParametriEsportazione, "formato" | "da" | "a">): string {
-  return `contabilita-${da}_${a}.${formato}`;
+  return `${PREFISSO_FILE}-${da}_${a}.${formato}`;
 }
 
 // Le opzioni dell'Excel si mandano solo per l'Excel e solo quando sono state scelte (il servizio ha i suoi predefiniti).
