@@ -1,5 +1,10 @@
 import { NOME_PROGRAMMA } from "./nomeProgramma";
 
+// Il titolo della scheda finche' non si e' dentro: caricamento, errore del Cancello, schermata della password (e l'avvio della
+// demo). Non deve dire cos'e' l'app, quindi niente nome del programma. `index.html` non puo' importarlo e lo ripete nel suo
+// <title>: nomeProgramma.test.ts controlla che siano uguali. Dopo l'accesso i titoli sono «<vista> · <nome>» (Guscio).
+export const TITOLO_PRIMA_DELL_ACCESSO = "Area soci · Calcio";
+
 // I titoli delle viste, per la scheda del browser: «<titolo> · Fuorigioco» (le viste con un nome proprio, come il dettaglio
 // di una voce, lo impostano da sole con useTitoloPagina).
 const TITOLI_PAGINA: [string, string][] = [

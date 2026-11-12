@@ -38,7 +38,7 @@ spring:
   servlet:
     multipart:
       # Fase 4: uno zip di fatture puo' pesare diverse decine di MB (i limiti sui file decompressi, al piu' 20 MB
-      # per file e 200 MB in totale, meno se la memoria e' poca: 16 MB per file con -Xmx512m; li applica LettoreFile); gli allegati (foto, PDF) sono limitati a 8 MB
+      # per file e 200 MB in totale, meno se la memoria e' poca: sotto i 480 MB di -Xmx scende anche il limite per file, 10 MB con 256; li applica LettoreFile); gli allegati (foto, PDF) sono limitati a 8 MB
       # da AllegatiService. Questi sono i massimi: un'importazione accetta comunque non piu' di
       # contabilita.importa.lettura-massima, che segue la memoria del programma (vedi sotto).
       # I due limiti sono uguali apposta: oltre, GestoreErrori dice «massimo 120 MB per volta», vero per un file come per tanti.

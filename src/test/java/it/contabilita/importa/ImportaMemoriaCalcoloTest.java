@@ -137,24 +137,28 @@ class ImportaMemoriaCalcoloTest {
 
     @Test
     void ilLimitePerFileEIlMinimoFraVentiMegabyteEUnQuartoDellaMemoriaDivisoPerIlFattoreDelDom() {
-        assertThat(ImportazioneService.FATTORE_DOM).isEqualTo(8);
-        // con i 512 MB dell'installer: 128 MB / 8 = 16 MB; con 256 MB la meta'
-        assertThat(ImportazioneService.limiteFile(512 * MB)).isEqualTo(16 * MB);
-        assertThat(ImportazioneService.limiteFile(256 * MB)).isEqualTo(8 * MB);
-        // i 20 MB di LettoreFile valgono solo da 640 MB di memoria in su
-        assertThat(ImportazioneService.limiteFile(640 * MB)).isEqualTo(20 * MB);
-        assertThat(ImportazioneService.limiteFile(639 * MB)).isEqualTo(19 * MB); // 19,97: MB interi, per difetto (il messaggio dice «19 MB»)
+        assertThat(ImportazioneService.FATTORE_DOM).isEqualTo(6);
+        // con i 512 MB dell'installer: 128 MB / 6 = 21,3 MB, piu' del massimo: valgono i 20 MB di LettoreFile
+        assertThat(ImportazioneService.limiteFile(512 * MB)).isEqualTo(20 * MB);
+        // i 20 MB valgono da 480 MB di memoria in su (120 MB / 6 = 20 giusti); con un MB in meno si scende
+        assertThat(ImportazioneService.limiteFile(480 * MB)).isEqualTo(20 * MB);
+        assertThat(ImportazioneService.limiteFile(479 * MB)).isEqualTo(19 * MB); // 19,96: MB interi, per difetto (il messaggio dice «19 MB»)
+        // un PC dove la JVM conta qualche MB in meno dei 512 dell'installer resta a 20
+        assertThat(ImportazioneService.limiteFile(494 * MB)).isEqualTo(20 * MB);
+        assertThat(ImportazioneService.limiteFile(384 * MB)).isEqualTo(16 * MB);
+        assertThat(ImportazioneService.limiteFile(256 * MB)).isEqualTo(10 * MB); // 64 MB / 6 = 10,67
+        assertThat(ImportazioneService.limiteFile(128 * MB)).isEqualTo(5 * MB);
         assertThat(ImportazioneService.limiteFile(4096 * MB)).isEqualTo(LettoreFile.MAX_BYTE_FILE);
         assertThat(ImportazioneService.limiteFile(Long.MAX_VALUE)).isEqualTo(LettoreFile.MAX_BYTE_FILE);
         // sotto il megabyte resta in byte; mai negativo
-        assertThat(ImportazioneService.limiteFile(6400)).isEqualTo(200);
+        assertThat(ImportazioneService.limiteFile(4800)).isEqualTo(200);
         assertThat(ImportazioneService.limiteFile(0)).isZero();
         assertThat(ImportazioneService.limiteFile(-5)).isZero();
     }
 
     @Test
     void unFileAlLimiteApertoStaNellaParteDiMemoriaDiUnaLettura() {
-        for (long memoria : new long[]{128 * MB, 256 * MB, 512 * MB, 1024 * MB, 4096 * MB}) {
+        for (long memoria : new long[]{128 * MB, 256 * MB, 384 * MB, 479 * MB, 480 * MB, 512 * MB, 1024 * MB, 4096 * MB}) {
             assertThat(ImportazioneService.limiteFile(memoria) * ImportazioneService.FATTORE_DOM).as("memoria %d MB", memoria / MB)
                     .isLessThanOrEqualTo(memoria / 4);
         }
@@ -163,7 +167,12 @@ class ImportaMemoriaCalcoloTest {
     @Test
     void lAvvisoAllAvvioDiceIlLimitePerFileQuandoLoAbbassaLaMemoria() {
         assertThat(ImportazioneService.avvisoLimiteFile(4096 * MB)).isNull();
-        assertThat(ImportazioneService.avvisoLimiteFile(512 * MB))
-                .isEqualTo("Importazione: un file si legge se pesa al massimo 16 MB invece di 20 MB, perché la memoria del programma è 512 MB.");
+        // con la memoria dell'installer il limite per file e' il massimo: all'avvio non c'e' niente da dire
+        assertThat(ImportazioneService.avvisoLimiteFile(512 * MB)).isNull();
+        assertThat(ImportazioneService.avvisoLimiteFile(480 * MB)).isNull();
+        assertThat(ImportazioneService.avvisoLimiteFile(479 * MB))
+                .isEqualTo("Importazione: un file si legge se pesa al massimo 19 MB invece di 20 MB, perché la memoria del programma è 479 MB.");
+        assertThat(ImportazioneService.avvisoLimiteFile(256 * MB))
+                .isEqualTo("Importazione: un file si legge se pesa al massimo 10 MB invece di 20 MB, perché la memoria del programma è 256 MB.");
     }
 }

@@ -102,14 +102,21 @@ public class ImportazioneService {
     private static final int PERCENTO_DI_UNA_LETTURA = 25;
 
     /**
-     * Quante volte i suoi byte puo' occupare un XML aperto da {@link ParserFatturaPa} (un DOM): vedi {@link #limiteFile}.
-     * Misurato con Java 17 su file da 10 MB: una fattura con tante righe (elementi brevi, come {@code DettaglioLinee})
-     * occupa circa 6 volte i suoi byte dopo la visita, un allegato in base64 circa 1 volta, un file fatto apposta di
-     * elementi minimi ({@code <a>1</a>}) circa 26. 8 copre il caso peggiore misurato fra le fatture vere (6) con un terzo
-     * di margine, e non respinge i file grandi veri, che sono fatture con un PDF allegato (circa 1). NON copre il file
-     * fatto apposta, e la misura e' della memoria che resta a file aperto: il picco durante l'apertura non e' misurato.
+     * Quante volte i suoi byte si mette in conto che occupi un XML mentre {@link ParserFatturaPa} lo legge: vedi
+     * {@link #limiteFile}. Il nome viene da quando il file si apriva tutto in memoria come DOM: allora valeva 8 (una
+     * fattura con tante righe, visitata tutta, occupava circa 6 volte i suoi byte; un file fatto apposta di elementi
+     * minimi circa 26, e non era coperto).
+     *
+     * <p>Da novembre 2026 {@link ParserFatturaPa} legge a flusso e tiene solo quello che guarda, e il fattore e' 6.
+     * Misure con Java 17 su file da 10 MB, picco compreso (la memoria piu' piccola con cui la lettura riesce): una
+     * fattura vera, con tante righe o con un PDF allegato, chiede circa 4 MB oltre ai suoi byte; i file peggiori che si
+     * e' riusciti a costruire (soli riepiloghi vuoti; sole righe del semplificato) fra 4 e 4,8 volte i loro byte a file
+     * letto e circa 5 di picco (5,2). 6 copre quindi le fatture vere e i file fatti apposta che sono stati misurati, con
+     * poco margine sul peggiore; una busta firmata attorno a uno di quei file (un'altra volta i suoi byte) sta appena sopra.
+     * NON e' una dimostrazione del caso peggiore possibile, e non e' stato misurato il picco di piu' letture insieme
+     * (numeri in docs/api.md, «Lettura a flusso»).
      */
-    static final int FATTORE_DOM = 8;
+    static final int FATTORE_DOM = 6;
 
     /** Un file caricato come lo dichiara il browser, prima di essere letto: nome e dimensione. */
     public record Dichiarato(String nome, long byteTotali) {
@@ -219,10 +226,11 @@ public class ImportazioneService {
      * Quanto puo' pesare, al piu', UN file da leggere (caricato da solo o estratto da uno zip): il minimo fra i 20 MB di
      * {@link LettoreFile} e il {@value #PERCENTO_DI_UNA_LETTURA}% della memoria massima della JVM diviso per
      * {@value #FATTORE_DOM} ({@link #FATTORE_DOM}). Stessa regola e stessa parte di {@link #limiteLettura}: li' contano i
-     * byte dei file, qui la memoria che serve per APRIRNE uno, che e' molte volte i suoi byte (si apre un file alla
-     * volta, e il suo DOM si butta appena lette le fatture). Con i 512 MB dell'installer sono 16 MB; i 20 MB valgono da
-     * 640 MB di memoria in su. Dal megabyte in su il risultato e' in MB interi, per difetto: e' il numero che il
-     * messaggio dice al cliente («massimo 16 MB»), e un file fra 16 e 17 MB non deve passare con un massimo dichiarato di 16.
+     * byte dei file, qui la memoria che serve per LEGGERNE uno, che puo' essere piu' volte i suoi byte (si legge un file
+     * alla volta, e quello che il parser tiene si butta appena lette le fatture). Con i 512 MB dell'installer sono 20 MB
+     * (128 / 6 fa 21, vale il massimo); il limite scende sotto i 20 MB solo con meno di 480 MB di memoria: con 256 MB sono
+     * 10. Dal megabyte in su il risultato e' in MB interi, per difetto: e' il numero che il messaggio dice al cliente
+     * («massimo 10 MB»), e un file fra 10 e 11 MB non deve passare con un massimo dichiarato di 10.
      */
     static long limiteFile(long memoriaDellaJvm) {
         long limite = Math.min(LettoreFile.MAX_BYTE_FILE, parteDellaMemoria(Long.MAX_VALUE, memoriaDellaJvm, PERCENTO_DI_UNA_LETTURA) / FATTORE_DOM);
@@ -309,11 +317,14 @@ public class ImportazioneService {
         for (FileCaricato caricato : caricati) {
             LettoreFile.Risultato letti = lettore.leggi(nomeBase(caricato.nome()), caricato.contenuto(), giaLetti);
             letti.errori().forEach(e -> errori.add(new ErroreImportazione(e.nomeFile(), e.messaggio())));
+            // I file di questo carico (di uno zip: tutte le voci lette) sono gia' in memoria tutti insieme: contano da subito.
             for (LettoreFile.FileXml file : letti.file()) {
                 giaLetti += file.originale().length;
+            }
+            for (LettoreFile.FileXml file : letti.file()) {
                 List<DatiFattura> fatture;
                 try {
-                    fatture = ParserFatturaPa.leggi(file.xml());
+                    fatture = leggiFatture(file, giaLetti);
                 } catch (ErroreLettura e) {
                     log.warn("Importazione, {}: {}", PerLog.pulisci(file.nomeFile()), PerLog.pulisci(e.dettaglio()));
                     errori.add(new ErroreImportazione(file.nomeFile(), e.getMessage()));
@@ -340,6 +351,15 @@ public class ImportazioneService {
             aggiungi(id, clock.instant().plus(DURATA), perIndice, peso(lette));
         }
         return new Anteprima(id, lette.stream().map(Letta::pubblica).toList(), errori);
+    }
+
+    /**
+     * Apre un file e ne legge le fatture. L'XML di una fattura firmata e' una copia in piu' dei byte, estratta qui e
+     * lasciata all'uscita: vive solo per la lettura di QUESTO file, e in quel tempo conta nel totale della lettura
+     * ({@link LettoreFile#xmlDi}).
+     */
+    private List<DatiFattura> leggiFatture(LettoreFile.FileXml file, long inMemoria) throws ErroreLettura {
+        return ParserFatturaPa.leggi(lettore.xmlDi(file, inMemoria));
     }
 
     // I tipi che non si importano, col nome che il cliente capisce: il codice (TD26…) e' gergo e resta nel log.

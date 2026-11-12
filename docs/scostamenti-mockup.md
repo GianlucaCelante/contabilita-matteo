@@ -38,7 +38,7 @@ Il mockup è il riferimento. Dove l'app deve fare di più di quanto il mockup di
 - Campo «Descrizione» per ricavi e voci fisse diverse dalla retribuzione (dà il titolo alla riga).
 - Scelta «A mano / Importa XML o ZIP» in Nuovo movimento sul telefono.
 - Filtro di periodo e totali in Movimenti sul telefono, e «Periodo» libero nel Riepilogo del telefono.
-- «Scegli copia» al posto di «Scegli file» (si sceglie da un elenco), righe «Dove vanno le copie» e «Versione del programma».
+- «Scegli copia» al posto di «Scegli file» (si sceglie da un elenco), righe «Dove vanno le copie» e «Programma» («Fuorigioco · versione 0.1.0»: nome e versione insieme; fino a novembre 2026 era «Versione del programma»).
 - «Apri cartella» non c'è: un sito non può aprire cartelle del computer.
 - «Fatture · N documenti» in Riepilogo: l'API non restituisce il numero di documenti.
 - Nell'importazione: «(anche firmati, .xml.p7m)» nel testo del banner; il titolo dice «da N file» quando i file sono più di uno.

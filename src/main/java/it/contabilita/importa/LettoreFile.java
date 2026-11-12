@@ -34,6 +34,9 @@ import java.util.zip.ZipFile;
  * l'archivio di un anno non deve saltare per una fattura con un PDF grande. Si ignorano cartelle, {@code __MACOSX}, {@code .DS_Store}
  * e ogni altro file che non sia {@code .xml} o {@code .xml.p7m} (gli zip annidati non si aprono).
  *
+ * <p>Una fattura firmata ({@code .p7m}) qui si legge soltanto: l'XML che contiene si estrae dopo, quando la si apre, con
+ * {@link #xmlDi}, e li' conta nei limiti (una busta senza fattura dentro si scopre in quel momento).
+ *
  * <p>Il totale vale per tutta una lettura, non per ogni zip: chi legge piu' file insieme passa a
  * {@link #leggi(String, byte[], long)} i byte gia' letti. E i 200 MB sono solo il massimo: {@link ImportazioneService}
  * costruisce il lettore con un totale piu' basso se la memoria del programma e' poca (vedi
@@ -48,8 +51,17 @@ public class LettoreFile {
     public static final long MAX_BYTE_FILE = 20L * 1024 * 1024;
     public static final long MAX_BYTE_TOTALE = 200L * 1024 * 1024;
 
-    /** {@code nomeFile} per l'utente («fatture.zip › sotto/a.xml»), {@code originale} = byte da allegare. */
-    public record FileXml(String nomeFile, String nomeAllegato, byte[] xml, byte[] originale) {
+    /**
+     * {@code nomeFile} per l'utente («fatture.zip › sotto/a.xml»), {@code originale} = i byte letti, che sono anche quelli da
+     * allegare. Di un file resta in memoria questa copia sola: l'XML dentro una fattura firmata si estrae quando lo si apre
+     * ({@link LettoreFile#xmlDi}) e non si conserva.
+     */
+    public record FileXml(String nomeFile, String nomeAllegato, byte[] originale) {
+
+        /** Una fattura firmata ({@code .p7m}): l'XML da aprire e' dentro la busta, non sono i byte del file. */
+        public boolean firmato() {
+            return eP7m(nomeAllegato.toLowerCase(Locale.ROOT));
+        }
     }
 
     public record ErroreFile(String nomeFile, String messaggio) {
@@ -97,7 +109,7 @@ public class LettoreFile {
                         giaLetti, contenuto.length, maxByteTotale);
                 errori.add(new ErroreFile(nome, troppiInsieme(nome)));
             } else {
-                aggiungi(nome, nome, contenuto, file, errori);
+                file.add(new FileXml(nome, nome, contenuto));
             }
         } else {
             errori.add(new ErroreFile(nome, "Tipo di file non supportato: servono file .xml, .xml.p7m o uno .zip."));
@@ -136,13 +148,39 @@ public class LettoreFile {
         return minuscolo.endsWith(".p7m");
     }
 
-    private void aggiungi(String nomeFile, String nomeAllegato, byte[] originale, List<FileXml> file, List<ErroreFile> errori) {
-        try {
-            byte[] xml = eP7m(nomeAllegato.toLowerCase(Locale.ROOT)) ? EstrattoreP7m.estraiXml(originale) : originale;
-            file.add(new FileXml(nomeFile, nomeAllegato, xml, originale));
-        } catch (ErroreLettura e) {
-            log.warn("Importazione, {}: {}", PerLog.pulisci(nomeFile), PerLog.pulisci(e.dettaglio()));
-            errori.add(new ErroreFile(nomeFile, e.getMessage()));
+    /**
+     * L'XML da aprire per leggere le fatture di {@code file}. Per un {@code .xml} sono i suoi stessi byte, senza copie. Per
+     * una fattura firmata e' l'XML estratto dalla busta: una SECONDA copia dei byte, che serve solo a chi la apre. Per
+     * questo non sta in {@link FileXml} (prima ci stava: di uno zip restavano in memoria insieme le copie di tutte le sue
+     * fatture firmate, e nessun limite le contava): si estrae qui, una alla volta, e chi chiama la lascia appena lette le
+     * fatture. Finche' esiste conta nei limiti come un file letto: vedi {@link #controllaEstratto}.
+     *
+     * @param inMemoria i byte dei file letti finora nella stessa anteprima, questo compreso (di uno zip: tutte le sue voci
+     *                  lette, perche' sono in memoria tutte insieme)
+     */
+    public byte[] xmlDi(FileXml file, long inMemoria) throws ErroreLettura {
+        if (!file.firmato()) {
+            return file.originale();
+        }
+        byte[] xml = EstrattoreP7m.estraiXml(file.originale());
+        controllaEstratto(file.nomeFile(), xml.length, inMemoria);
+        return xml;
+    }
+
+    /**
+     * I limiti per l'XML estratto da una fattura firmata, gli stessi di un file letto: da solo non oltre il limite per
+     * file (e' lui che si apre), e insieme ai file gia' in memoria non oltre il totale di una lettura. Oggi il primo non
+     * puo' scattare (l'XML e' un pezzo della busta, che il limite per file l'ha gia' passato): resta perche' il limite
+     * per file e' la difesa della memoria di chi apre, e non deve dipendere da come e' fatto l'estrattore.
+     */
+    void controllaEstratto(String nome, long byteXml, long inMemoria) throws ErroreLettura {
+        if (byteXml > massimoDiUnFile()) {
+            throw new ErroreLettura("Il file «" + nome + "» è troppo grande per essere letto (massimo " + formato(massimoDiUnFile()) + ").",
+                    "XML estratto dal .p7m di " + byteXml + " byte oltre il massimo per file (" + massimoDiUnFile() + " byte)");
+        }
+        if (inMemoria + byteXml > maxByteTotale) {
+            throw new ErroreLettura(troppiInsieme(nome), "XML estratto dal .p7m di " + byteXml + " byte oltre il totale di una lettura (file letti "
+                    + inMemoria + " byte, massimo " + maxByteTotale + ")");
         }
     }
 
@@ -231,7 +269,7 @@ public class LettoreFile {
                         continue;
                     }
                     totale += letto.contati();
-                    aggiungi(etichetta, base, letto.dati(), trovati, avvisi);
+                    trovati.add(new FileXml(etichetta, base, letto.dati()));
                 }
             }
         } catch (LimiteSuperato e) {

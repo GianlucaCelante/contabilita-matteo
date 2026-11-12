@@ -12,7 +12,7 @@ import { BOTTONE_RIGA_LARGO, DETTAGLIO_RIGA, TESTO_SCHEDA, TITOLO_RIGA, TITOLO_S
 import Testata from "../componenti/Testata";
 import { useAvviso } from "../hooks/useAvviso";
 import { useSchermoGrande } from "../hooks/useSchermoGrande";
-import { COPIE_NELLA_DEMO, doveSonoIDati } from "../util/datiECopie";
+import { COPIE_NELLA_DEMO, doveSonoIDati, ETICHETTA_PROGRAMMA, programmaEVersione } from "../util/datiECopie";
 import { dataOraRelativa } from "../util/formato";
 
 // I pulsanti compatti delle righe di «Dati e copie» (44 px, angoli 10 px, testo 14 px).
@@ -209,7 +209,7 @@ function DatiECopie() {
         <div>
           <Dato nome="Dove sono i dati" valore={doveSonoIDati(true)} />
           <Dato nome="Copie di sicurezza" valore={COPIE_NELLA_DEMO} />
-          <Dato nome="Versione del programma" valore="Demo" />
+          <Dato nome={ETICHETTA_PROGRAMMA} valore={programmaEVersione(p.versione, true)} />
         </div>
       )}
       {p && !DEMO && (
@@ -242,7 +242,7 @@ function DatiECopie() {
               </button>
             }
           />
-          <Dato nome="Versione del programma" valore={p.versione} />
+          <Dato nome={ETICHETTA_PROGRAMMA} valore={programmaEVersione(p.versione, false)} />
         </div>
       )}
       {cartellaAperta && p && <CambiaCartella programma={p} onChiudi={() => setCartellaAperta(false)} />}

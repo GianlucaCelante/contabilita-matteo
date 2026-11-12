@@ -2,7 +2,6 @@ package it.contabilita.importa;
 
 import it.contabilita.importa.ParserFatturaPa.ErroreLettura;
 
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -151,24 +150,37 @@ final class EstrattoreP7m {
             if (contenuto.isEmpty()) {
                 return null;
             }
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            raccogli(b, contenuto.get(0), out, 0);
-            return out.toByteArray();
+            // Prima si trovano i pezzi, poi si copiano in un array della misura giusta: una copia sola del contenuto (con un
+            // buffer che cresce ce ne sarebbero state due, e un file firmato puo' pesare megabyte).
+            List<Tlv> pezzi = new ArrayList<>();
+            raccogli(b, contenuto.get(0), pezzi, 0);
+            long totale = 0;
+            for (Tlv pezzo : pezzi) {
+                totale += pezzo.fineValore - pezzo.inizioValore;
+            }
+            byte[] unito = new byte[Math.toIntExact(totale)];
+            int scritti = 0;
+            for (Tlv pezzo : pezzi) {
+                int lunghezza = pezzo.fineValore - pezzo.inizioValore;
+                System.arraycopy(b, pezzo.inizioValore, unito, scritti, lunghezza);
+                scritti += lunghezza;
+            }
+            return unito;
         } catch (RuntimeException e) {
             return null; // struttura non leggibile: si prova per posizione
         }
     }
 
-    /** OCTET STRING semplice (0x04) oppure costruita (0x24) con blocchi 0x04 (anche annidati): concatena. */
-    private static void raccogli(byte[] b, Tlv t, ByteArrayOutputStream out, int profondita) {
+    /** OCTET STRING semplice (0x04) oppure costruita (0x24) con blocchi 0x04 (anche annidati): i blocchi, in ordine. */
+    private static void raccogli(byte[] b, Tlv t, List<Tlv> pezzi, int profondita) {
         if (profondita > PROFONDITA_MASSIMA) {
             throw new IllegalStateException("troppo annidato");
         }
         if (t.tag == 0x04) {
-            out.write(b, t.inizioValore, t.fineValore - t.inizioValore);
+            pezzi.add(t);
         } else if (t.tag == 0x24) {
             for (Tlv figlio : figli(b, t)) {
-                raccogli(b, figlio, out, profondita + 1);
+                raccogli(b, figlio, pezzi, profondita + 1);
             }
         } else {
             throw new IllegalStateException("non e' un OCTET STRING");

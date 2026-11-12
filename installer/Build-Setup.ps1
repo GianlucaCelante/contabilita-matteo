@@ -3,6 +3,7 @@
 # =============================================================================
 # Uso:
 #   .\Build-Setup.ps1                              # versione letta da ..\pom.xml (<version>, senza -SNAPSHOT)
+#   .\Build-Setup.ps1 -MsiVersion "0.1.4000"       # forza il numero scritto nell'MSI (di norma non serve)
 #   .\Build-Setup.ps1 -Version "1.0.0"
 #   .\Build-Setup.ps1 -Version "1.0.0" -SkipMaven   # ripacchettizza solo, jar gia' costruito
 #   .\Build-Setup.ps1 -Version "1.0.0" -CodeSign    # firma l'MSI alla fine
@@ -13,7 +14,13 @@
 # Output:
 #   ..\target\contabilita-*.jar                (jar prodotto da Maven, se non -SkipMaven)
 #   ..\target\runtime\                       (immagine jlink)
-#   ..\target\installer\Contabilita-{versione}.msi
+#   ..\target\installer\Contabilita-{versione dell'MSI}.msi
+#
+# Due versioni, da non confondere:
+#   -Version    la versione del PROGRAMMA (pom.xml, es. 0.1.0): nome del jar, /api/versione, Impostazioni.
+#   -MsiVersion la versione dell'MSI: stessi primi due numeri, e al terzo un numero di build che cresce
+#               col tempo (es. 0.1.3156), calcolato da Get-MsiVersion in build_common.ps1. Cosi' due MSI
+#               costruiti in momenti diversi si distinguono e il piu' nuovo aggiorna sempre il piu' vecchio.
 #
 # Richiede:
 #   - JDK 17 con bin\jpackage e bin\jlink (verifica $env:JAVA_HOME o passa -JdkHome)
@@ -34,6 +41,12 @@ param(
     # l'eventuale suffisso -SNAPSHOT) - cosi' jar, MSI e /api/versione
     # dicono sempre la stessa versione senza doverla scrivere in due posti.
     [string]$Version = "",
+
+    # La versione scritta nell'MSI (tre numeri, al massimo 255.255.65535). Se omessa si calcola da
+    # -Version e dall'ora (Get-MsiVersion in build_common.ps1). Passarla a mano serve solo per rifare
+    # un MSI con un numero preciso: deve essere MAGGIORE di quella gia' installata, altrimenti
+    # Windows Installer rifiuta l'installazione (niente downgrade).
+    [string]$MsiVersion = "",
     [string]$JdkHome = $env:JAVA_HOME,
     [switch]$SkipMaven,
 
@@ -48,6 +61,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+. (Join-Path $PSScriptRoot "build_common.ps1")
 
 # --- WinSW: stessa versione e stesso SHA-256 del progetto gemello ---
 # Fonte: https://github.com/winsw/winsw/releases
@@ -101,6 +116,13 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     Write-Host "  Versione (da pom.xml, -Version non passato): $Version" -ForegroundColor Gray
 }
 
+if ([string]::IsNullOrWhiteSpace($MsiVersion)) {
+    $MsiVersion = Get-MsiVersion -AppVersion $Version
+} else {
+    $MsiVersion = Assert-MsiVersion -MsiVersion $MsiVersion
+}
+Write-Host "  Versione dell'MSI: $MsiVersion (programma: $Version)" -ForegroundColor Gray
+
 if (-not $JdkHome -or -not (Test-Path $JdkHome)) {
     throw "JAVA_HOME non impostato o non valido. Passa -JdkHome 'C:\Program Files\Java\jdk-17' oppure imposta JAVA_HOME."
 }
@@ -117,7 +139,7 @@ if (-not $HasIcon) {
 }
 
 Write-Host "==============================================" -ForegroundColor Cyan
-Write-Host " Contabilita - Build $Version"                     -ForegroundColor Cyan
+Write-Host " Contabilita - Build $Version (MSI $MsiVersion)"   -ForegroundColor Cyan
 Write-Host "==============================================" -ForegroundColor Cyan
 Write-Host "  Repository : $ProjectRoot"
 Write-Host "  JDK        : $JdkHome"
@@ -297,7 +319,8 @@ $jpackageArgs = @(
     "--main-jar", "contabilita.jar",
     "--main-class", "org.springframework.boot.loader.launch.JarLauncher",
     "--runtime-image", $RuntimeDir,
-    "--app-version", $Version,
+    # La versione dell'MSI, non quella del programma: vedi l'intestazione e build_common.ps1.
+    "--app-version", $MsiVersion,
     "--vendor", "Fuorigioco",
     "--copyright", "Copyright (C) 2026 Fuorigioco",
     "--description", "Fuorigioco, i conti della pizzeria: ricavi, costi e riepiloghi (servizio Windows, interfaccia web su porta 8766)",
@@ -318,7 +341,9 @@ if ($HasIcon) { $jpackageArgs += @("--icon", $IconFile) }
 & $JpackageExe @jpackageArgs
 if ($LASTEXITCODE -ne 0) { throw "jpackage ha fallito (codice $LASTEXITCODE)" }
 
-$Msi = Get-ChildItem -Path $InstallerDir -Filter "*.msi" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# Il nome porta la versione dell'MSI: in target\installer possono restare MSI di build precedenti, si prende questo.
+$Msi = Get-Item -LiteralPath (Join-Path $InstallerDir "Contabilita-$MsiVersion.msi") -ErrorAction SilentlyContinue
+if (-not $Msi) { throw "jpackage non ha prodotto $InstallerDir\Contabilita-$MsiVersion.msi" }
 
 # --- Passo opzionale: firma dell'MSI -----------------------------------------
 if ($CodeSign) {

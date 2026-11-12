@@ -3,24 +3,35 @@ package it.contabilita.importa;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.xml.sax.Attributes;
 import org.xml.sax.EntityResolver;
 import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXNotRecognizedException;
+import org.xml.sax.SAXNotSupportedException;
 import org.xml.sax.SAXParseException;
+import org.xml.sax.XMLReader;
+import org.xml.sax.helpers.DefaultHandler;
 
 import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Lettura di una fattura elettronica FatturaPA (anche un lotto con piu' {@code FatturaElettronicaBody}), nel tracciato
@@ -40,6 +51,11 @@ import java.util.List;
  * <p>Sicurezza (XXE, "billion laughs"): il parser rifiuta qualunque {@code DOCTYPE}, quindi nessuna entita'
  * (interna o esterna) e nessuna DTD viene mai espansa o scaricata; nessun file locale viene letto e nessuna
  * richiesta di rete parte. Le altre funzioni di accesso esterno sono spente comunque (difesa a strati).
+ *
+ * <p>Memoria: il file si legge <b>a flusso</b> (SAX: e' lo stesso lettore XML che prima costruiva il DOM, quindi stessi
+ * controlli e stessi errori) e in memoria si tengono solo gli elementi che la lettura guarda: vedi
+ * {@link SoloQuelloCheSiLegge}. Gli {@code Allegati} (un PDF in base64 pesa megabyte) e le righe di dettaglio si
+ * controllano come tutto il resto, ma non si conservano: i byte del file restano comunque a chi li allega.
  */
 public final class ParserFatturaPa {
 
@@ -70,14 +86,17 @@ public final class ParserFatturaPa {
         }
     }
 
-    private static final DocumentBuilderFactory FABBRICA = creaFabbrica();
+    private static final SAXParserFactory FABBRICA = creaFabbrica();
+
+    /** Serve solo a creare il documento vuoto in cui {@link SoloQuelloCheSiLegge} mette gli elementi tenuti: non legge niente. */
+    private static final DocumentBuilderFactory FABBRICA_DOCUMENTI = creaFabbricaDocumenti();
 
     private ParserFatturaPa() {
     }
 
-    private static DocumentBuilderFactory creaFabbrica() {
+    private static SAXParserFactory creaFabbrica() {
         try {
-            DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+            SAXParserFactory f = SAXParserFactory.newInstance();
             f.setNamespaceAware(true);
             f.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
             f.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
@@ -85,21 +104,28 @@ public final class ParserFatturaPa {
             f.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
             f.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
             f.setXIncludeAware(false);
-            f.setExpandEntityReferences(false);
-            try {
-                f.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
-                f.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
-            } catch (IllegalArgumentException nonSupportato) {
-                // le funzioni sopra bastano
-            }
             return f;
-        } catch (ParserConfigurationException e) {
+        } catch (ParserConfigurationException | SAXException e) {
             throw new IllegalStateException("Parser XML non configurabile in modo sicuro", e);
         }
     }
 
+    private static DocumentBuilderFactory creaFabbricaDocumenti() {
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(true);
+        return f;
+    }
+
     public static List<DatiFattura> leggi(byte[] xml) throws ErroreLettura {
-        Document documento = analizza(xml);
+        return leggiDocumento(analizza(xml));
+    }
+
+    /**
+     * Le fatture di un documento gia' aperto. Guarda SOLO gli elementi elencati in {@link SoloQuelloCheSiLegge}: chi
+     * aggiunge qui la lettura di un altro elemento deve aggiungerlo anche li', altrimenti non lo trova. Separato da
+     * {@link #leggi} perche' il test di parita' lo chiama anche sul documento intero, aperto come si faceva prima.
+     */
+    static List<DatiFattura> leggiDocumento(Document documento) throws ErroreLettura {
         Element radice = documento.getDocumentElement();
         boolean semplificata = "FatturaElettronicaSemplificata".equals(nome(radice));
         if (!semplificata && !"FatturaElettronica".equals(nome(radice))) {
@@ -267,12 +293,24 @@ public final class ParserFatturaPa {
 
     // ---- XML ----
 
-    private static Document analizza(byte[] xml) throws ErroreLettura {
+    /**
+     * Legge tutto il file (un errore in qualunque punto, allegati compresi, lo rifiuta come prima) e restituisce un
+     * documento con i soli elementi che {@link #leggiDocumento} guarda.
+     */
+    static Document analizza(byte[] xml) throws ErroreLettura {
         try {
-            DocumentBuilder builder = FABBRICA.newDocumentBuilder();
-            builder.setEntityResolver(NESSUNA_RISORSA_ESTERNA);
-            builder.setErrorHandler(SILENZIOSO);
-            return builder.parse(new ByteArrayInputStream(xml));
+            SAXParser parser = FABBRICA.newSAXParser();
+            senzaAccessoEsterno(parser, XMLConstants.ACCESS_EXTERNAL_DTD);
+            senzaAccessoEsterno(parser, XMLConstants.ACCESS_EXTERNAL_SCHEMA);
+            Document documento = FABBRICA_DOCUMENTI.newDocumentBuilder().newDocument();
+            // i nomi li ha gia' controllati il lettore, con le regole della versione di XML del file: qui non si ricontrollano
+            documento.setStrictErrorChecking(false);
+            XMLReader lettore = parser.getXMLReader();
+            lettore.setEntityResolver(NESSUNA_RISORSA_ESTERNA);
+            lettore.setErrorHandler(SILENZIOSO);
+            lettore.setContentHandler(new SoloQuelloCheSiLegge(documento));
+            lettore.parse(new InputSource(new ByteArrayInputStream(xml)));
+            return documento;
         } catch (SAXParseException e) {
             String m = e.getMessage() == null ? "" : e.getMessage();
             if (m.contains("DOCTYPE")) {
@@ -282,6 +320,140 @@ public final class ParserFatturaPa {
             throw new ErroreLettura("Il file non è una fattura elettronica valida.", "XML non valido, riga " + e.getLineNumber() + ": " + m);
         } catch (SAXException | IOException | ParserConfigurationException e) {
             throw new ErroreLettura("Il file non è una fattura elettronica valida.", "XML non leggibile: " + e);
+        }
+    }
+
+    private static void senzaAccessoEsterno(SAXParser parser, String proprieta) {
+        try {
+            parser.setProperty(proprieta, "");
+        } catch (SAXNotRecognizedException | SAXNotSupportedException nonSupportata) {
+            // le funzioni impostate sulla fabbrica bastano
+        }
+    }
+
+    /**
+     * Mette nel documento solo quello che {@link #leggiDocumento} guarda, nei punti in cui lo guarda; il resto (con tutto
+     * quello che contiene) si legge e si butta. La lettura cerca i figli per nome e in punti precisi, quindi quello che qui
+     * non si tiene non lo vedrebbe comunque: il risultato e' lo stesso del documento intero ({@code ParserParitaTest} lo
+     * confronta, file per file).
+     *
+     * <ul>
+     *   <li>La radice si tiene sempre (il suo nome decide se e' una fattura); dentro, solo {@link #NELLA_RADICE}.</li>
+     *   <li>Di ogni elemento "contenitore" si tengono solo i figli elencati in {@link #FIGLI} (quindi non {@code Allegati},
+     *       {@code DatiPagamento}, {@code DettaglioLinee}...).</li>
+     *   <li>Di un figlio che la lettura prende una volta sola (il primo con quel nome) si tiene solo il primo; si tengono
+     *       tutti solo quelli che la lettura scorre: {@link #RIPETUTI}.</li>
+     *   <li>Gli altri elementi tenuti sono "foglie" (numero, data, importi, nomi): la lettura ne prende il testo, compreso
+     *       quello di eventuali elementi al loro interno, quindi si tiene solo quel testo, tutto in un pezzo.</li>
+     * </ul>
+     *
+     * Cosi' la memoria non cresce con il file: gli allegati e le righe non contano, e nemmeno un file fatto apposta di
+     * elementi ripetuti puo' riempire il documento di elementi che nessuno legge.
+     */
+    private static final class SoloQuelloCheSiLegge extends DefaultHandler {
+
+        private static final Set<String> NELLA_RADICE = Set.of("FatturaElettronicaHeader", "FatturaElettronicaBody");
+
+        /** Per ogni contenitore (per nome locale), i figli che la lettura guarda. Chi non e' fra le chiavi e' una foglia. */
+        private static final Map<String, Set<String>> FIGLI = Map.ofEntries(
+                Map.entry("FatturaElettronicaHeader", Set.of("CedentePrestatore")),
+                // ordinario: DatiAnagrafici; semplificato: partita IVA e nome direttamente qui
+                Map.entry("CedentePrestatore", Set.of("DatiAnagrafici", "IdFiscaleIVA", "Denominazione", "Nome", "Cognome")),
+                Map.entry("DatiAnagrafici", Set.of("IdFiscaleIVA", "Anagrafica")),
+                Map.entry("Anagrafica", Set.of("Denominazione", "Nome", "Cognome")),
+                Map.entry("IdFiscaleIVA", Set.of("IdCodice")),
+                Map.entry("FatturaElettronicaBody", Set.of("DatiGenerali", "DatiBeniServizi")),
+                Map.entry("DatiGenerali", Set.of("DatiGeneraliDocumento")),
+                Map.entry("DatiGeneraliDocumento", Set.of("TipoDocumento", "Numero", "Data", "ImportoTotaleDocumento")),
+                // ordinario: DatiRiepilogo; semplificato: Importo e DatiIVA
+                Map.entry("DatiBeniServizi", Set.of("DatiRiepilogo", "Importo", "DatiIVA")),
+                Map.entry("DatiRiepilogo", Set.of("ImponibileImporto", "Imposta")),
+                Map.entry("DatiIVA", Set.of("Imposta", "Aliquota")));
+
+        /** I soli figli che la lettura scorre tutti (un lotto, i riepiloghi, le righe del semplificato): degli altri prende il primo. */
+        private static final Set<String> RIPETUTI = Set.of("FatturaElettronicaBody", "DatiBeniServizi", "DatiRiepilogo");
+
+        private final Document documento;
+        private final StringBuilder testo = new StringBuilder();
+        /** Per ogni elemento tenuto e aperto, i nomi dei figli non ripetuti gia' tenuti. */
+        private final Deque<Set<String>> giaTenuti = new ArrayDeque<>();
+        private Node corrente;
+        /** Quanti elementi non tenuti sono aperti, uno dentro l'altro: finche' non e' zero non si tiene niente. */
+        private int saltati;
+        /** Dentro una foglia: 1 = la foglia stessa, di piu' = elementi al suo interno (di cui conta solo il testo). */
+        private int nellaFoglia;
+
+        SoloQuelloCheSiLegge(Document documento) {
+            this.documento = documento;
+            this.corrente = documento;
+        }
+
+        @Override
+        public void startElement(String uri, String nomeLocale, String nomeQualificato, Attributes attributi) {
+            if (saltati > 0) {
+                saltati++;
+                return;
+            }
+            if (nellaFoglia > 0) {
+                nellaFoglia++;
+                return;
+            }
+            int profondita = giaTenuti.size(); // quella di corrente: 0 = il documento, 1 = la radice
+            if (!siTiene(nomeLocale, profondita)) {
+                saltati = 1;
+                return;
+            }
+            // Solo il nome locale, senza prefisso: la lettura guarda solo quello. Con il nome qualificato («p:Numero») il
+            // documento ricaverebbe il nome locale tagliando il nome intero, cioe' una stringa nuova per OGNI elemento
+            // (misurato: un file di soli elementi con prefisso tratteneva quasi 7 volte i suoi byte invece di 4); cosi'
+            // invece tutti gli elementi con lo stesso nome usano la stessa stringa, quella del lettore XML.
+            Element e = documento.createElementNS(uri == null || uri.isEmpty() ? null : uri, nomeLocale);
+            corrente.appendChild(e);
+            corrente = e;
+            giaTenuti.push(new HashSet<>());
+            if (profondita >= 1 && !FIGLI.containsKey(nomeLocale)) {
+                nellaFoglia = 1;
+            }
+        }
+
+        /** Se un elemento che si apre dentro {@link #corrente} (un contenitore, alla profondita' data) va tenuto. */
+        private boolean siTiene(String nomeLocale, int profondita) {
+            if (profondita == 0) {
+                return true;
+            }
+            Set<String> guardati = profondita == 1 ? NELLA_RADICE : FIGLI.get(nome(corrente));
+            if (!guardati.contains(nomeLocale)) {
+                return false;
+            }
+            return RIPETUTI.contains(nomeLocale) || giaTenuti.peek().add(nomeLocale);
+        }
+
+        @Override
+        public void endElement(String uri, String nomeLocale, String nomeQualificato) {
+            if (saltati > 0) {
+                saltati--;
+                return;
+            }
+            if (nellaFoglia > 1) {
+                nellaFoglia--;
+                return;
+            }
+            if (nellaFoglia == 1) {
+                nellaFoglia = 0;
+                if (testo.length() > 0) {
+                    corrente.appendChild(documento.createTextNode(testo.toString()));
+                    testo.setLength(0);
+                }
+            }
+            corrente = corrente.getParentNode();
+            giaTenuti.pop();
+        }
+
+        @Override
+        public void characters(char[] caratteri, int inizio, int lunghezza) {
+            if (saltati == 0 && nellaFoglia > 0) {
+                testo.append(caratteri, inizio, lunghezza);
+            }
         }
     }
 

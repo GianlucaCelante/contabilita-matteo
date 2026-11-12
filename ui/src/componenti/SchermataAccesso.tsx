@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { messaggioErrore } from "../api/client";
+import { TITOLO_PRIMA_DELL_ACCESSO } from "../util/titoloPagina";
 
 // La schermata della password. Di proposito non dice «contabilità»: e' una pagina da tifosi, con un campo da calcio
 // disegnato qui (SVG, nessuna immagine da fuori) e un pallone. Chi la vede per sbaglio non pensa a conti e fatture.
@@ -62,7 +63,7 @@ function Pallone({ lato }: { lato: number }) {
   );
 }
 
-export default function SchermataAccesso({ onEntra, titoloPagina = "Area soci · Calcio" }: { onEntra: (password: string) => Promise<void>; titoloPagina?: string }) {
+export default function SchermataAccesso({ onEntra, titoloPagina = TITOLO_PRIMA_DELL_ACCESSO }: { onEntra: (password: string) => Promise<void>; titoloPagina?: string }) {
   const [password, setPassword] = useState("");
   const [errore, setErrore] = useState<string | null>(null);
   const [invio, setInvio] = useState(false);

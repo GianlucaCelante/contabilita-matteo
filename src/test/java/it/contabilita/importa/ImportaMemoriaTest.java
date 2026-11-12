@@ -286,15 +286,30 @@ class ImportaMemoriaTest {
     // ---- s52: il limite per file segue la memoria ----
 
     @Test
-    void conLaMemoriaDellInstallerUnFileOltreSediciMegabyteNonSiLegge() {
+    void conLaMemoriaDellInstallerUnFileOltreVentiMegabyteNonSiLegge() {
         servizio = servizioConMemoria(512L * 1024 * 1024);
-        Anteprima a = servizio.anteprima(List.of(new FileCaricato("grande.xml", new byte[16 * 1024 * 1024 + 1]),
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("grande.xml", new byte[20 * 1024 * 1024 + 1]),
                 new FileCaricato("buona.xml", file("P-1", PESO))));
         assertThat(a.errori()).singleElement().satisfies(e -> {
             assertThat(e.nomeFile()).isEqualTo("grande.xml");
-            assertThat(e.messaggio()).isEqualTo("Il file «grande.xml» è troppo grande per essere letto (massimo 16 MB).");
+            assertThat(e.messaggio()).isEqualTo("Il file «grande.xml» è troppo grande per essere letto (massimo 20 MB).");
         });
         assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("P-1"); // gli altri file si leggono
+        // un file fra 16 e 20 MB, che con il fattore di prima (8) era rifiutato, ora passa il limite (non e' una fattura: l'errore e' un altro)
+        a = servizio.anteprima(List.of(new FileCaricato("diciotto.xml", new byte[18 * 1024 * 1024])));
+        assertThat(a.errori()).singleElement().satisfies(e -> assertThat(e.messaggio()).isEqualTo("Il file non è una fattura elettronica valida."));
+    }
+
+    @Test
+    void conMetaDellaMemoriaDellInstallerIlLimitePerFileScendeADieciMegabyte() {
+        servizio = servizioConMemoria(256L * 1024 * 1024);
+        Anteprima a = servizio.anteprima(List.of(new FileCaricato("grande.xml", new byte[10 * 1024 * 1024 + 1]),
+                new FileCaricato("buona.xml", file("P-1", PESO))));
+        assertThat(a.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("grande.xml");
+            assertThat(e.messaggio()).isEqualTo("Il file «grande.xml» è troppo grande per essere letto (massimo 10 MB).");
+        });
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("P-1");
     }
 
     @Test
@@ -307,16 +322,77 @@ class ImportaMemoriaTest {
 
     // Review di s52: una voce troppo grande dentro uno zip si scarta da sola, il resto dell'archivio si legge.
     @Test
-    void conLaMemoriaDellInstallerUnaVoceOltreSediciMegabyteNonFaSaltareLoZip() throws Exception {
+    void conLaMemoriaDellInstallerUnaVoceOltreVentiMegabyteNonFaSaltareLoZip() throws Exception {
         servizio = servizioConMemoria(512L * 1024 * 1024);
-        byte[] zip = FattureProva.zip(FattureProva.voci("gennaio.xml", file("R-1", PESO), "col pdf.xml", new byte[16 * 1024 * 1024 + 1],
+        byte[] zip = FattureProva.zip(FattureProva.voci("gennaio.xml", file("R-1", PESO), "col pdf.xml", new byte[20 * 1024 * 1024 + 1],
                 "febbraio.xml", file("R-2", PESO)));
         Anteprima a = servizio.anteprima(List.of(new FileCaricato("anno.zip", zip)));
         assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("R-1", "R-2");
         assertThat(a.errori()).singleElement().satisfies(e -> {
             assertThat(e.nomeFile()).isEqualTo("anno.zip › col pdf.xml");
-            assertThat(e.messaggio()).isEqualTo("Il file «col pdf.xml» nello zip è troppo grande per essere letto (massimo 16 MB).");
+            assertThat(e.messaggio()).isEqualTo("Il file «col pdf.xml» nello zip è troppo grande per essere letto (massimo 20 MB).");
         });
         inMemoria(a.importazioneId());
+    }
+
+    // s58: l'XML estratto da una fattura firmata (.p7m) e' una seconda copia dei byte, che vive solo mentre si apre quel
+    // file. Finche' esiste conta nel totale della lettura, insieme ai file letti; dopo no.
+    private static byte[] firmata(String numero) {
+        return FattureProva.p7mABlocchi(file(numero, PESO), 1000);
+    }
+
+    private Anteprima anteprimaDi(FileCaricato... caricati) {
+        return servizio.anteprima(List.of(caricati));
+    }
+
+    @Test
+    void laCopiaEstrattaDaUnaFatturaFirmataContaNelTotaleDellaLettura() {
+        byte[] p7m = firmata("P-1");
+        // ci stanno i due file (4000 + il p7m), ma non anche l'XML estratto dal p7m (altri 4000): manca un byte
+        servizio = servizio(DataSize.ofMegabytes(1), DataSize.ofBytes(PESO + p7m.length + PESO - 1));
+        Anteprima a = anteprimaDi(new FileCaricato("a.xml", file("A-1", PESO)), new FileCaricato("firmata.xml.p7m", p7m));
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("A-1");
+        assertThat(a.errori()).singleElement().satisfies(e -> {
+            assertThat(e.nomeFile()).isEqualTo("firmata.xml.p7m");
+            assertThat(e.messaggio()).isEqualTo("I file scelti sono troppo grandi tutti insieme (massimo " + (PESO + p7m.length + PESO - 1)
+                    + " byte per volta): «firmata.xml.p7m» non è stato letto. Leggi meno file per volta.");
+        });
+        // con quel byte in piu' si leggono tutti e due
+        servizio = servizio(DataSize.ofMegabytes(1), DataSize.ofBytes(PESO + p7m.length + PESO));
+        a = anteprimaDi(new FileCaricato("a.xml", file("A-1", PESO)), new FileCaricato("firmata.xml.p7m", p7m));
+        assertThat(a.errori()).isEmpty();
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("A-1", "P-1");
+    }
+
+    @Test
+    void laCopiaEstrattaContaSoloFincheEsiste() throws Exception {
+        byte[] uno = firmata("P-1");
+        byte[] due = firmata("P-2");
+        byte[] tre = firmata("P-3");
+        // tre fatture firmate e il posto per UNA sola copia estratta: si aprono una alla volta, quindi si leggono tutte
+        servizio = servizio(DataSize.ofMegabytes(1), DataSize.ofBytes(uno.length + due.length + tre.length + PESO));
+        Anteprima a = anteprimaDi(new FileCaricato("1.xml.p7m", uno), new FileCaricato("2.xml.p7m", due), new FileCaricato("3.xml.p7m", tre));
+        assertThat(a.errori()).isEmpty();
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("P-1", "P-2", "P-3");
+        // lo stesso dentro uno zip: le tre voci sono in memoria insieme, le copie estratte no
+        a = anteprimaDi(new FileCaricato("anno.zip", FattureProva.zip(FattureProva.voci("1.xml.p7m", uno, "2.xml.p7m", due, "3.xml.p7m", tre))));
+        assertThat(a.errori()).isEmpty();
+        assertThat(a.fatture()).extracting(f -> f.numero()).containsExactly("P-1", "P-2", "P-3");
+        // ma con un byte in meno la prima che si apre non ci sta gia' piu': dello zip contano tutte le voci, non solo quelle gia' aperte
+        servizio = servizio(DataSize.ofMegabytes(1), DataSize.ofBytes(uno.length + due.length + tre.length + PESO - 1));
+        a = anteprimaDi(new FileCaricato("anno.zip", FattureProva.zip(FattureProva.voci("1.xml.p7m", uno, "2.xml.p7m", due, "3.xml.p7m", tre))));
+        assertThat(a.fatture()).isEmpty();
+        assertThat(a.errori()).extracting(e -> e.nomeFile()).containsExactly("anno.zip › 1.xml.p7m", "anno.zip › 2.xml.p7m", "anno.zip › 3.xml.p7m");
+    }
+
+    @Test
+    void laFatturaFirmataLettaSiAllegaConIByteDelFileFirmato() {
+        byte[] p7m = firmata("P-1");
+        String id = anteprimaDi(new FileCaricato("firmata.xml.p7m", p7m)).importazioneId();
+        // il peso dell'anteprima tenuta in memoria e' quello del file firmato, una volta sola: la copia estratta non resta
+        servizio.faiPostoPerLaLettura(List.of(new Dichiarato("b.xml", 10_240 - p7m.length)));
+        inMemoria(id);
+        servizio.faiPostoPerLaLettura(List.of(new Dichiarato("b.xml", 10_240 - p7m.length + 1)));
+        scartata(id);
     }
 }

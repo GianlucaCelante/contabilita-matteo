@@ -7,7 +7,7 @@ import { osservaAccesso } from "./api/accesso";
 import { ProviderAvviso } from "./componenti/Avviso";
 import Cancello from "./componenti/Cancello";
 import { ProviderSedi } from "./componenti/ProviderSedi";
-import { NOME_PROGRAMMA } from "./util/nomeProgramma";
+import { TITOLO_PRIMA_DELL_ACCESSO } from "./util/titoloPagina";
 import "./index.css";
 
 // Build della demo (npm run build:demo): il servizio e' finto, dentro il browser (src/demo), e il router usa
@@ -16,7 +16,8 @@ const demo = import.meta.env.VITE_DEMO === "1";
 if (demo) {
   const { installaDemo } = await import("./demo/installa");
   installaDemo();
-  document.title = `${NOME_PROGRAMMA} · demo`;
+  // Come index.html: prima dell'accesso la scheda non dice cos'e' l'app (dopo, il Guscio mette «<vista> · <nome>»).
+  document.title = TITOLO_PRIMA_DELL_ACCESSO;
 }
 osservaAccesso();
 

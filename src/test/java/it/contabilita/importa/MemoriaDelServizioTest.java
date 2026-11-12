@@ -92,7 +92,8 @@ class MemoriaDelServizioTest {
     void iLimitiScrittiNellaDocumentazioneSonoQuelliDellaMemoriaDellInstaller() throws Exception {
         long memoria = xmxDiWindows() * MB;
         assertThat(ImportazioneService.limiteLettura(200 * MB, memoria)).isEqualTo(128 * MB); // «128 MB» in docs/api.md
-        assertThat(ImportazioneService.limiteFile(memoria)).isEqualTo(16 * MB);               // «16 MB»
+        assertThat(ImportazioneService.limiteFile(memoria)).isEqualTo(20 * MB);               // «20 MB»
+        assertThat(ImportazioneService.avvisoLimiteFile(memoria)).isNull();                   // «quella riga non c'è» (anche in installer/README.md)
         assertThat(ImportazioneService.tettoEffettivo(96 * MB, memoria)).isEqualTo(96 * MB);  // «96 MB»
     }
 

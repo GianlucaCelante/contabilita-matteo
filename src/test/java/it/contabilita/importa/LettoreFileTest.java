@@ -12,6 +12,7 @@ import static it.contabilita.importa.FattureProva.fattura;
 import static it.contabilita.importa.FattureProva.voci;
 import static it.contabilita.importa.FattureProva.zip;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LettoreFileTest {
 
@@ -20,18 +21,21 @@ class LettoreFileTest {
             body("TD01", "1", "2026-10-03", "122.00", "100.00", "22.00"));
 
     @Test
-    void unXmlSingoloEUnP7mSingolo() {
+    void unXmlSingoloEUnP7mSingolo() throws Exception {
         Risultato r = lettore.leggi("a.xml", byt(xml));
         assertThat(r.errori()).isEmpty();
         assertThat(r.file()).hasSize(1);
-        assertThat(r.file().get(0).xml()).isEqualTo(byt(xml));
         assertThat(r.file().get(0).originale()).isEqualTo(byt(xml));
+        assertThat(r.file().get(0).firmato()).isFalse();
+        // un .xml e' gia' l'XML da aprire: nessuna copia
+        assertThat(lettore.xmlDi(r.file().get(0), 0)).isSameAs(r.file().get(0).originale());
         assertThat(r.file().get(0).nomeAllegato()).isEqualTo("a.xml");
 
         byte[] p7m = FattureProva.p7mContiguo(byt(xml));
         Risultato p = lettore.leggi("b.XML.P7M", p7m);
         assertThat(p.errori()).isEmpty();
-        assertThat(p.file().get(0).xml()).isEqualTo(byt(xml));
+        assertThat(p.file().get(0).firmato()).isTrue();
+        assertThat(lettore.xmlDi(p.file().get(0), p7m.length)).isEqualTo(byt(xml));
         assertThat(p.file().get(0).originale()).isEqualTo(p7m); // l'allegato e' il p7m originale
         assertThat(p.file().get(0).nomeAllegato()).isEqualTo("b.XML.P7M");
     }
@@ -58,7 +62,7 @@ class LettoreFileTest {
 
         Risultato r = lettore.leggi("2026.zip", z);
         assertThat(r.errori()).isEmpty();
-        assertThat(r.file()).extracting(LettoreFile.FileXml::xml).containsExactly(byt(xml), byt(xml.replace("<Numero>1<", "<Numero>2<")));
+        assertThat(r.file()).extracting(LettoreFile.FileXml::originale).containsExactly(byt(xml), byt(xml.replace("<Numero>1<", "<Numero>2<")));
         assertThat(r.file()).extracting(LettoreFile.FileXml::nomeAllegato).containsExactly("a.xml", "b.xml");
     }
 
@@ -241,5 +245,54 @@ class LettoreFileTest {
         assertThat(piccolo.pesoAtteso("fatture.zip", 50_001)).isEqualTo(50_001);
         // poca memoria: il totale sotto il limite per file
         assertThat(new LettoreFile(100, 10_000, 5_000).pesoAtteso("a.xml", 6_000)).isZero();
+    }
+
+    // s58: l'XML dentro una fattura firmata e' una seconda copia dei byte. Si estrae solo quando si apre il file (una alla
+    // volta, non tutte quelle di uno zip insieme) e, finche' esiste, conta nel totale della lettura insieme ai file letti.
+    @Test
+    void lXmlEstrattoDaUnaFatturaFirmataContaNelTotaleDellaLettura() throws Exception {
+        byte[] p7m = FattureProva.p7mContiguo(byt(xml));
+        int estratto = byt(xml).length;
+        LettoreFile giusto = new LettoreFile(100, 10_000, p7m.length + estratto);
+        Risultato r = giusto.leggi("firmata.xml.p7m", p7m);
+        assertThat(r.errori()).isEmpty();
+        LettoreFile.FileXml firmata = r.file().get(0);
+        // in memoria ci sono i byte del p7m: l'estratto ci sta giusto
+        assertThat(giusto.xmlDi(firmata, p7m.length)).isEqualTo(byt(xml));
+        // con un byte in piu' gia' letto (un altro file della stessa richiesta) non ci sta piu'
+        assertThatThrownBy(() -> giusto.xmlDi(firmata, p7m.length + 1))
+                .isInstanceOfSatisfying(ParserFatturaPa.ErroreLettura.class, e -> {
+                    assertThat(e.getMessage()).isEqualTo("I file scelti sono troppo grandi tutti insieme (massimo " + (p7m.length + estratto)
+                            + " byte per volta): «firmata.xml.p7m» non è stato letto. Leggi meno file per volta.");
+                    assertThat(e.dettaglio()).contains(".p7m").contains(String.valueOf(estratto)).contains(String.valueOf(p7m.length + 1));
+                });
+        // un .xml non ha una seconda copia: non c'e' niente da contare
+        LettoreFile.FileXml semplice = giusto.leggi("a.xml", byt(xml)).file().get(0);
+        assertThat(giusto.xmlDi(semplice, p7m.length + estratto)).isSameAs(semplice.originale());
+    }
+
+    @Test
+    void lXmlEstrattoRispettaIlLimitePerFile() throws Exception {
+        LettoreFile piccolo = new LettoreFile(100, 1_000, 50_000);
+        piccolo.controllaEstratto("firmata.xml.p7m", 1_000, 0);
+        assertThatThrownBy(() -> piccolo.controllaEstratto("firmata.xml.p7m", 1_001, 0)).isInstanceOf(ParserFatturaPa.ErroreLettura.class)
+                .hasMessage("Il file «firmata.xml.p7m» è troppo grande per essere letto (massimo 1000 byte).");
+        // poca memoria: il totale sotto il limite per file, come per un file caricato da solo
+        assertThatThrownBy(() -> new LettoreFile(100, 10_000, 5_000).controllaEstratto("firmata.xml.p7m", 6_000, 0))
+                .hasMessage("Il file «firmata.xml.p7m» è troppo grande per essere letto (massimo 5000 byte).");
+    }
+
+    @Test
+    void lXmlDelleFattureFirmateDiUnoZipNonSiEstraeAllaLetturaDelloZip() throws Exception {
+        byte[] p7m = FattureProva.p7mABlocchi(byt(xml), 64);
+        Risultato r = lettore.leggi("fatture.zip", zip(voci("a.xml.p7m", p7m, "rotta.xml.p7m", "non è una busta firmata", "b.xml.p7m", p7m)));
+        // le voci si leggono tutte: di ogni file resta in memoria una copia sola, quella da allegare
+        assertThat(r.errori()).isEmpty();
+        assertThat(r.file()).extracting(LettoreFile.FileXml::nomeAllegato).containsExactly("a.xml.p7m", "rotta.xml.p7m", "b.xml.p7m");
+        assertThat(r.file().get(0).originale()).isEqualTo(p7m);
+        // una busta senza fattura dentro si scopre quando la si apre, con il messaggio di sempre
+        assertThat(lettore.xmlDi(r.file().get(0), 0)).isEqualTo(byt(xml));
+        assertThatThrownBy(() -> lettore.xmlDi(r.file().get(1), 0)).isInstanceOf(ParserFatturaPa.ErroreLettura.class)
+                .hasMessageStartingWith("Nel file firmato (.p7m) non ho trovato una fattura elettronica.");
     }
 }

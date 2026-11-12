@@ -191,4 +191,63 @@ class ParserFatturaPaTest {
                 .hasMessage("L'IVA della fattura non è un importo valido: «y».")
                 .satisfies(e -> assertThat(e.dettaglio()).contains("Imposta"));
     }
+
+    // s59: il file si legge a flusso e in memoria restano solo gli elementi che la lettura guarda. Gli allegati (un PDF in
+    // base64) e le righe di dettaglio si controllano ma non si tengono; il risultato e' quello di prima (ParserParitaTest).
+    @Test
+    void gliAllegatiELeRigheDiDettaglioNonRestanoInMemoria() throws Exception {
+        String base64 = "QUJDREVGR0g=".repeat(50_000);
+        String xml = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "FT-12/A", "2026-10-03", "122.00", "100.00", "22.00")
+                .replace("<DatiBeniServizi>", "<DatiBeniServizi><DettaglioLinee><Descrizione>Farina tipo 00</Descrizione></DettaglioLinee>")
+                .replace("</FatturaElettronicaBody>", "<Allegati><NomeAttachment>fattura.pdf</NomeAttachment><Attachment>" + base64
+                        + "</Attachment></Allegati></FatturaElettronicaBody>"));
+        org.w3c.dom.Document documento = ParserFatturaPa.analizza(byt(xml));
+        assertThat(documento.getElementsByTagNameNS("*", "Allegati").getLength()).isZero();
+        assertThat(documento.getElementsByTagNameNS("*", "Attachment").getLength()).isZero();
+        assertThat(documento.getElementsByTagNameNS("*", "DettaglioLinee").getLength()).isZero();
+        assertThat(documento.getElementsByTagNameNS("*", "DatiRiepilogo").getLength()).isEqualTo(1);
+        assertThat(documento.getDocumentElement().getTextContent()).hasSizeLessThan(200).doesNotContain("QUJD").doesNotContain("Farina");
+
+        DatiFattura f = ParserFatturaPa.leggi(byt(xml)).get(0);
+        assertThat(f.fornitoreNome()).isEqualTo("Forno Rossi Srl");
+        assertThat(f.numero()).isEqualTo("FT-12/A");
+        assertThat(f.imponibileCent()).isEqualTo(10000);
+        assertThat(f.ivaCent()).isEqualTo(2200);
+        assertThat(f.totaleCent()).isEqualTo(12200);
+    }
+
+    @Test
+    void unErroreDentroUnAllegatoFaAncoraRifiutareIlFile() {
+        String xml = fattura(denominazione("Forno Rossi Srl", "01234567890"), body("TD01", "1", "2026-10-03", "122.00", "100.00", "22.00")
+                .replace("</FatturaElettronicaBody>", "<Allegati><Attachment>QUJD\nQUJD<</Attachment></Allegati></FatturaElettronicaBody>"));
+        assertThat(errore(xml)).hasMessage("Il file non è una fattura elettronica valida.")
+                .satisfies(e -> assertThat(e.dettaglio()).startsWith("XML non valido, riga 3: "));
+        // anche un'entita' dentro un allegato
+        assertThat(errore(xml.replace("QUJD<", "&xxe;"))).hasMessage("Il file non è una fattura elettronica valida.");
+    }
+
+    // Review di s59: un elemento tenuto non porta con se' il prefisso. Con il nome qualificato («p:DatiRiepilogo») il
+    // documento si faceva una stringa nuova per OGNI elemento (il nome locale ricavato dal nome intero), e un file fatto
+    // apposta di soli elementi con prefisso tratteneva quasi 7 volte i suoi byte invece di 4.
+    @Test
+    void gliElementiTenutiNonPortanoIlPrefisso() throws Exception {
+        String xml = fatturaConPrefisso("p", denominazione("Cantina Verdi", "11111111111"), body("TD01", "9", "2026-02-01", "10.00", "8.20", "1.80"),
+                body("TD01", "10", "2026-02-02", "10.00", "8.20", "1.80"));
+        org.w3c.dom.NodeList tenuti = ParserFatturaPa.analizza(byt(xml)).getElementsByTagNameNS("*", "*");
+        assertThat(tenuti.getLength()).isGreaterThan(20);
+        String riepilogo = null;
+        for (int i = 0; i < tenuti.getLength(); i++) {
+            org.w3c.dom.Node e = tenuti.item(i);
+            assertThat(e.getPrefix()).as(e.getNodeName()).isNull();
+            assertThat(e.getNodeName()).isSameAs(e.getLocalName());
+            assertThat(e.getNamespaceURI()).isEqualTo("http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2");
+            if (e.getLocalName().equals("DatiRiepilogo")) {
+                // lo stesso nome e' la stessa stringa per tutti gli elementi: nessuna copia per elemento
+                assertThat(riepilogo == null || riepilogo == e.getLocalName()).isTrue();
+                riepilogo = e.getLocalName();
+            }
+        }
+        assertThat(riepilogo).isNotNull();
+        assertThat(ParserFatturaPa.leggi(byt(xml))).extracting(DatiFattura::numero).containsExactly("9", "10");
+    }
 }

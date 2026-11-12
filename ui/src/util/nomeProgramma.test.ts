@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { nomeFileEsportazione } from "../api/esporta";
 import { NOME_PROGRAMMA, PREFISSO_FILE } from "./nomeProgramma";
-import { titoloDocumento } from "./titoloPagina";
+import { TITOLO_PRIMA_DELL_ACCESSO, titoloDocumento } from "./titoloPagina";
 
 // Il programma si chiama «Fuorigioco» (come nel calcio, in linea con la schermata della password). Il nome sta in una costante sola; qui si controlla
 // che i posti che non la possono importare (index.html, il manifest) dicano lo stesso nome, e che il vecchio nome «Contabilità» non
@@ -45,11 +45,26 @@ describe("nome del programma", () => {
     expect(titoloDocumento("")).toBe(NOME_PROGRAMMA);
   });
 
-  it("index.html: il titolo e il nome dell'app sul telefono", () => {
+  // Finche' non si e' dentro (caricamento, errore del Cancello, schermata della password) la scheda del browser non deve dire
+  // cos'e' l'app: index.html non puo' importare la costante, quindi si controlla qui che dica lo stesso titolo.
+  it("index.html: il titolo e' quello di prima dell'accesso, non il nome; il nome dell'app installata sul telefono resta", () => {
     const pagina = readFileSync(join(ui, "index.html"), "utf8");
-    expect(pagina).toContain(`<title>${NOME_PROGRAMMA}</title>`);
+    expect(TITOLO_PRIMA_DELL_ACCESSO).toBe("Area soci · Calcio");
+    expect(pagina).toContain(`<title>${TITOLO_PRIMA_DELL_ACCESSO}</title>`);
+    expect(pagina.match(/<title>/g)).toHaveLength(1);
     expect(pagina).toContain(`<meta name="apple-mobile-web-app-title" content="${NOME_PROGRAMMA}" />`);
     expect(pagina).not.toMatch(/Contabilit/);
+  });
+
+  it("prima dell'accesso nessuno scrive il nome nel titolo: la demo parte col titolo dell'accesso, preso dalla costante", () => {
+    const avvio = readFileSync(join(src, "main.tsx"), "utf8");
+    expect(avvio).toContain("document.title = TITOLO_PRIMA_DELL_ACCESSO;");
+    expect(avvio).not.toMatch(/NOME_PROGRAMMA|nomeProgramma/);
+    const accesso = readFileSync(join(src, "componenti", "SchermataAccesso.tsx"), "utf8");
+    expect(accesso).toContain("titoloPagina = TITOLO_PRIMA_DELL_ACCESSO");
+    // scritto una volta sola in tutto il sorgente
+    const dove = sorgenti(src).filter((file) => readFileSync(file, "utf8").includes(`"${TITOLO_PRIMA_DELL_ACCESSO}"`));
+    expect(dove.map((file) => file.slice(src.length + 1).replaceAll("\\", "/"))).toEqual(["util/titoloPagina.ts"]);
   });
 
   it("il manifest dell'app installata sul telefono", () => {

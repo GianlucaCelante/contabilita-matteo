@@ -53,7 +53,11 @@ jobs:
           $pfx = Join-Path $env:RUNNER_TEMP "cert.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_B64))
           $env:SIGNING_CERT_PATH = $pfx
-          ./installer/Build-Setup.ps1 -SkipMaven -CodeSign
+          # Ricostruisce l'MSI con lo STESSO numero di quello appena fatto (il numero di build segue l'ora:
+          # senza -MsiVersion in target/installer resterebbero due MSI, e l'artefatto li caricherebbe entrambi).
+          $fatto = Get-ChildItem target/installer/Contabilita-*.msi | Select-Object -First 1
+          $numero = $fatto.BaseName -replace '^Contabilita-', ''
+          ./installer/Build-Setup.ps1 -SkipMaven -CodeSign -MsiVersion $numero
 
       - uses: actions/upload-artifact@v4
         with:
